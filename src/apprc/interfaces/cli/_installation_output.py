@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
+from collections.abc import Mapping
 
 import typer
 from rich.console import Console
@@ -54,67 +55,109 @@ def print_installation_path(
     )
 
 
+def _add_path_tree(
+    root: Tree, targets: Mapping[PurePath, tuple[str, str]]
+) -> None:
+    """Group captured targets by filesystem ancestry, folding unbranched parents.
+
+    :param root: Presentation parent for the filesystem paths.
+    :param targets: Captured paths mapped to action and explanation.
+    """
+    children: dict[PurePath, set[PurePath]] = {}
+    anchors: set[PurePath] = set()
+    for target in targets:
+        for path in (target, *target.parents):
+            children.setdefault(path, set())
+            if path.parent == path:
+                anchors.add(path)
+            else:
+                children.setdefault(path.parent, set()).add(path)
+
+    def add(parent: Tree, path: PurePath, ancestor: PurePath | None) -> None:
+        while path not in targets and len(children[path]) == 1:
+            path = next(iter(children[path]))
+        label = Text.assemble(
+            path_text(
+                str(path if ancestor is None else path.relative_to(ancestor))
+            )
+        )
+        if path in targets:
+            action, explanation = targets[path]
+            label.append("  ")
+            label.append(
+                action, style="bold red" if action == "Delete" else "bold green"
+            )
+            label.append(" — " + explanation)
+        branch = parent.add(label)
+        for child in sorted(
+            children[path], key=lambda value: str(value).casefold()
+        ):
+            add(branch, child, path)
+
+    for anchor in sorted(anchors, key=lambda value: str(value).casefold()):
+        add(root, anchor, None)
+
+
 def uninstall_tree(preparation: UninstallPreparation) -> Tree:
-    """Describe selected deletion and retention without traversing the filesystem.
+    """Show captured targets under shared parents without filesystem traversal.
 
     :param preparation: Exact prepared selection and recorded integrations.
-    :return: A compact tree with full path labels.
+    :return: A filesystem tree with actions on selected targets only.
     """
-    root = Tree("Uninstall preview")
-    deleting = root.add(Text("Delete", style="bold red"))
-    keeping = root.add(Text("Keep", style="bold green"))
+    root = Tree("Uninstall preview (actions apply to marked targets)")
     plan = preparation.plan
     record = preparation.inspection.record
     if plan is None:
-        deleting.add("No executable removal plan; see diagnostics.")
-        keeping.add("No changes will be made.")
+        root.add(
+            "No executable removal plan; no changes will be made. See diagnostics."
+        )
         return root
+    targets: dict[PurePath, tuple[str, str]] = {}
+    registrations: list[str] = []
     if plan.complete:
-        deleting.add(
-            "Installation files and managed runtimes — including all contents"
-        ).add(path_text(plan.directory))
+        targets[plan.directory] = (
+            "Delete",
+            "installation files and managed runtimes; all contents",
+        )
     labels = {
-        "config": "Configuration — including settings and secrets",
-        "appdata": "Application data",
-        "cache": "Cache",
-        "state": "State",
+        "config": "configuration, including settings and secrets",
+        "appdata": "application data",
+        "cache": "cache",
+        "state": "state",
     }
-    seen: set[Path] = set()
     for entry in plan.inventory.entries:
         if plan.complete and entry.path.is_relative_to(plan.directory):
             continue
-        if entry.path in seen:
-            continue
-        seen.add(entry.path)
         label = (
-            "Editable checkout"
+            "editable checkout"
             if entry.kind == "repository"
-            else labels.get(entry.resource or "", "Installation file")
+            else labels.get(entry.resource or "", "installation file")
         )
         if entry.kind in {"tree", "repository"}:
-            label += " — including all contents"
+            label += "; all contents"
         elif entry.kind == "symlink":
-            label += " — link only; destination preserved"
-        deleting.add(label).add(path_text(entry.path))
+            label += "; link only, destination preserved"
+        targets[entry.path] = ("Delete", label)
     if record is not None:
         for output in record.owned_outputs:
             if output.kind == "hkcu":
-                deleting.add("Windows uninstall registration").add(
-                    Text(output.path)
-                )
+                registrations.append(output.path)
             elif output.kind in {"command", "shortcut"}:
                 path = Path(output.path)
-                if path in seen or (
+                if path in targets or (
                     plan.complete and path.is_relative_to(plan.directory)
                 ):
                     continue
-                seen.add(path)
-                deleting.add(
-                    "Global command" if output.kind == "command" else "Shortcut"
-                ).add(path_text(path))
+                targets[path] = (
+                    "Delete",
+                    "global command"
+                    if output.kind == "command"
+                    else "shortcut",
+                )
     for entry in plan.inventory.retained:
-        keeping.add(labels.get(entry.resource or "", "Retained directory")).add(
-            path_text(entry.path)
+        targets[entry.path] = (
+            "Keep",
+            labels.get(entry.resource or "", "retained directory"),
         )
     if (
         record is not None
@@ -123,12 +166,14 @@ def uninstall_tree(preparation: UninstallPreparation) -> Tree:
             entry.kind == "repository" for entry in plan.inventory.entries
         )
     ):
-        keeping.add("Editable checkout").add(
-            path_text(record.active_runtime.project)
+        targets[record.active_runtime.project] = ("Keep", "editable checkout")
+        targets[record.active_runtime.environment] = (
+            "Keep",
+            "development environment",
         )
-        keeping.add("Development environment").add(
-            path_text(record.active_runtime.environment)
-        )
-    if not keeping.children:
-        keeping.add("No retained installation resources.")
+    _add_path_tree(root, targets)
+    if registrations:
+        registry = root.add("Windows registration")
+        for key in registrations:
+            registry.add(Text.assemble(("Delete", "bold red"), " — ", key))
     return root

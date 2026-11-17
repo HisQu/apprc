@@ -1164,15 +1164,18 @@ old-record converter or permission to claim arbitrary database files.
 ## Remove a managed program
 
 Interactive uninstall asks whether to keep the whole config directory, defaulting
-to Yes, then shows a **Delete / Keep** tree for final confirmation. The prompt
-names the application and confirms only items under **Delete**. Appdata, cache
+to Yes, then shows a filesystem tree with **Delete / Keep** labels for final confirmation. The prompt
+names the application and confirms only items marked **Delete**. Appdata, cache
 and state are removed. `--yes` skips all prompts and removes config too,
 unless `--keep-config` is explicitly selected. `--dry-run` never prompts.
 `--keep-data` has been replaced by `--keep-config`; it no longer means retain
 application data. Back up saved application data separately before removing it.
 
-Windows Settings invokes the same terminal uninstall flow with `--wait`, which
+Windows Settings invokes the same cleanup flow with `--wait`, which
 keeps the final result visible until acknowledged. `--yes` suppresses this wait.
+Interactive Windows uninstall shows cleanup and its final result in a separate
+window. The original PowerShell prompt remains usable. After the result, press
+Enter in the cleanup window to close it; `--yes` skips that acknowledgement.
 Known paths use cyan in interactive output; Delete and Keep labels remain clear
 when color is unavailable. A completed removal can warn if temporary cleanup
 files remain; this does not mean the app is still installed.

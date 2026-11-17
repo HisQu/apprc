@@ -241,11 +241,17 @@ Respect terminal detection, Click's explicit color setting, and `NO_COLOR`.
 JSON, logs, and plain fallbacks contain no styling. Apply this policy to install
 and uninstall prompts, previews, completion messages, and recovery guidance.
 
-The uninstall preview separates **Delete** from **Keep** in a tree. It lists
-complete paths for owned resources, installation files, commands, shortcuts
+The uninstall preview groups paths under shared filesystem parents, with **Delete** or **Keep**
+labels on each target. Unmarked parents provide context only. It lists paths for owned resources, installation files, commands, shortcuts
 and registration entries. Whole-directory targets say that contents are
 included. Link entries say that only the link is removed; its destination stays
 untouched. Do not enumerate every file inside large data directories.
+
+On Windows, interactive cleanup uses a separate console. Preserve the stdin/stdout
+readiness and exit-handshake pipes; attach human-facing output to that console
+without replacing the control channels. The finalizer owns completion and Enter
+acknowledgement. Stage the canonical path styles with the finalizer so result
+paths retain color after removing the application.
 
 Final cleanup runs from a surviving working directory. After the originating
 handoff process exits, an external finalizer removes private staging files so

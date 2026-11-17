@@ -261,6 +261,8 @@ aliases. Python `ensure_path` and maintenance purge planning remain available
 with their existing [ownership and safety boundaries](docs/Explanations.md#maintenance).
 
 Application uninstall removes the program and its managed data by default.
+Interactive Windows cleanup shows its result in a separate window and waits
+for Enter before closing; the original shell remains usable.
 Use `app uninstall --keep-config` to retain configuration only. Editable
 repositories remain unless explicitly selected with `--remove-repository`;
 the preview separates **Delete** and **Keep**, and terminal paths use cyan.

@@ -37,3 +37,29 @@ def test_result_path_is_literal_and_no_color(monkeypatch, capsys, tmp_path):
     result = capsys.readouterr().err
     assert str(path) in result
     assert "\x1b[" not in result
+
+
+def test_result_window_preserves_readiness_and_exit_pipes(monkeypatch):
+    control_input, control_output = io.StringIO("EXIT\n"), io.StringIO()
+    display = io.StringIO()
+    monkeypatch.setattr(
+        terminal,
+        "os",
+        SimpleNamespace(
+            name="nt", environ={"_APPRC_UNINSTALL_RESULT_WINDOW": "1"}
+        ),
+    )
+    monkeypatch.setattr(terminal.sys, "stdin", control_input)
+    monkeypatch.setattr(terminal.sys, "stdout", control_output)
+    monkeypatch.setattr(
+        "builtins.open",
+        lambda path, *args, **kwargs: display if path == "CONOUT$" else None,
+    )
+    terminal.prepare_result_window()
+    assert terminal.sys.stdin is control_input
+    assert terminal.sys.stdout is control_output
+    assert terminal.sys.stderr is display
+    assert control_input.tell() == 0
+    terminal.sys.stderr.write("Uninstall completed.\n")
+    assert "Uninstall completed" in display.getvalue()
+    assert control_output.getvalue() == ""

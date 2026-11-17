@@ -608,6 +608,11 @@ def execute_handoff(
     expected_identity: InstallationIdentity | None = None,
 ) -> None:
     """Validate and resume the exact pending uninstall handoff."""
+    from apprc.distribution.runtime._uninstall_terminal import (
+        prepare_result_window,
+    )
+
+    prepare_result_window()
     global _REPOSITORY_FINALIZER
     _REPOSITORY_FINALIZER = None
     assert_no_links(plan_file)
@@ -1572,6 +1577,13 @@ def _stage_repository_finalizer(staging: Path) -> Path:
             elif resource.is_file():
                 write_bytes_atomic(target, resource.read_bytes(), private=True)
 
+    write_bytes_atomic(
+        staging / "_terminal_styles.py",
+        resources.files("apprc.interfaces")
+        .joinpath("_terminal_styles.py")
+        .read_bytes(),
+        private=True,
+    )
     copy_dependency(resources.files(filelock), staging / "filelock")
     return leaf
 

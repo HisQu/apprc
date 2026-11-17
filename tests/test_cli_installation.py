@@ -970,25 +970,23 @@ def test_uninstall_tree_separates_retained_paths_and_integrations(
     with console.capture() as captured:
         console.print(tree)
     output = captured.get()
-    deleting, keeping = output.split("Keep", 1)
-    assert str(cache) in deleting and str(command) in deleting
-    assert (str(checkout) in keeping) is not repository_selected
-    assert (str(checkout) in deleting) is repository_selected
-    assert (str(config) in keeping) is keep_config
-    assert (str(config) in deleting) is not keep_config
+
+    def labels(node):
+        for child in node.children:
+            yield child.label
+            yield from labels(child)
+
+    path_labels = [label for label in labels(tree) if isinstance(label, Text)]
+    by_name = {
+        Path(label.plain.split("  ")[0]).name: label for label in path_labels
+    }
+    assert "Delete" in by_name[cache.name].plain
+    assert "Delete" in by_name[command.name].plain
+    assert ("Keep" in by_name[checkout.name].plain) is not repository_selected
+    assert ("Keep" in by_name[config.name].plain) is keep_config
+    assert output.count(str(tmp_path)) == 1
     assert not config.exists(), "Preview must not create or scan targets"
-    path_labels = [
-        leaf.label
-        for branch in tree.children
-        for group in branch.children
-        for leaf in group.children
-    ]
-    assert any(
-        isinstance(label, Text)
-        and label.plain == str(config)
-        and label.style == "cyan"
-        for label in path_labels
-    )
+    assert any(span.style == "cyan" for span in by_name[config.name].spans)
 
 
 @pytest.mark.parametrize(
@@ -1017,3 +1015,40 @@ def test_installation_path_output_honors_color_policy(
     assert result.exit_code == 0, result.output
     assert "/example/[literal]" in result.output
     assert ("\x1b[36m" in result.output) is expected
+
+
+def test_uninstall_path_tree_shares_windows_parents_and_preserves_unc():
+    from pathlib import PureWindowsPath
+    from rich.console import Console
+    from rich.tree import Tree
+    from apprc.interfaces.cli._installation_output import _add_path_tree
+
+    user = PureWindowsPath(r"C:\Users\example")
+    app = user / "AppData" / "Local" / "persodb"
+    checkout = PureWindowsPath(r"L:\repos\persodb")
+    unc = PureWindowsPath(r"\\server\share\app\config")
+    root = Tree("Preview")
+    _add_path_tree(
+        root,
+        {
+            app / "installation": ("Delete", "all contents"),
+            app / "appdata": ("Delete", "all contents"),
+            app / "config": ("Keep", "settings"),
+            user / ".local" / "bin" / "pdb.exe": ("Delete", "command"),
+            checkout: ("Keep", "checkout"),
+            checkout / ".venv": ("Keep", "environment"),
+            unc: ("Keep", "settings"),
+        },
+    )
+    console = Console(width=250)
+    with console.capture() as captured:
+        console.print(root)
+    output = captured.get()
+    assert output.count(str(user)) == 1
+    assert str(app) not in output
+    assert "AppData\\Local\\persodb" in output
+    assert "installation  Delete" in output
+    assert "config  Keep" in output
+    assert str(checkout) in output and ".venv  Keep" in output
+    assert str(checkout / ".venv") not in output
+    assert str(unc) in output

@@ -99,6 +99,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Release publication continues after intentionally skipped CI while still requiring successful artifacts and honoring cancellation.
+
 ### 🔒 Security
 
 <br>

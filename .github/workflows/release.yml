@@ -98,7 +98,7 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && !cancelled() && needs.build.result == 'success'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -128,7 +128,8 @@ jobs:
   pypi-publish:
     name: Publish to PyPI
     if: >-
-      github.event_name == 'push' &&
+      github.event_name == 'push' && !cancelled() &&
+      needs.build.result == 'success' && needs.github-release.result == 'success' &&
       needs.build.outputs.release_pypi == 'true'
     needs:
       - build

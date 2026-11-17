@@ -64,6 +64,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+- Checkout installation documentation now shows the command from an activated environment, with `uv run --locked` as an alternative.
 - CI now runs feature branches through pull requests and cancels superseded checks. Release hosted-CI gating is controlled separately by `RELEASE_REQUIRE_CI`.
 
 - Native and editable installation reuse runtime-option declarations and placement construction. Diagnostic aggregation lives in the CLI diagnostics package; shared installation test fixtures no longer import other test modules.

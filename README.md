@@ -300,9 +300,10 @@ command handles installation diagnostics, repair and removal independently of
 the application's environment, and forwards normal commands—including
 `launch`—to the recorded active slot. Updates use a newer setup executable.
 
-For development, `uv run --locked <app> app install -e` registers the checkout's
-existing `.venv` and initializes declared resources without copying or owning
-the checkout or its environment. Git and uv remain responsible for updating it.
+For development, run `<app> app install -e` from the checkout with its `.venv`
+activated. This registers the existing environment and initializes declared
+resources without copying or owning the checkout or environment. Git and uv
+remain responsible for updating it.
 See the [installation guide](docs/How-To-User-Guides.md#install-from-a-checkout)
 and [native authoring requirements](docs/Development.md#native-application-frontends).
 

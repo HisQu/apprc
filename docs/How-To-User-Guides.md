@@ -987,11 +987,35 @@ their program environments.
 
 ## Install from a checkout
 
-For a fresh application checkout:
+From the checkout, prepare the environment:
 
 ```shell
-uv run --locked demo app install -e
+uv sync --locked
 ```
+
+For a uv workspace member, activate the workspace root's `.venv` in the
+following commands.
+
+Activate the checkout environment on Linux or macOS:
+
+```shell
+source .venv/bin/activate
+```
+
+Or activate it in Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+With that environment active, run:
+
+```shell
+demo app install -e
+```
+
+Alternatively, without activating the environment, run
+`uv run --locked demo app install -e` from the checkout.
 
 The command reports the global command and checkout paths after installation.
 On Windows, if replacing the global command is denied, stop running application
@@ -999,7 +1023,7 @@ processes, including servers, and retry. If the denial persists, check file
 permissions. If optional `config setup` fails, the global command remains
 installed; run `demo config setup` to retry.
 
-uv prepares the repository's existing `.venv` when necessary; AppRC then
+`uv sync --locked` prepares the repository's `.venv`; AppRC then
 registers it and initializes only declared configuration/data/cache/state.
 Registration does not create another environment, copy the repository, resolve
 dependencies or take ownership of the checkout.
@@ -1071,11 +1095,11 @@ Native locations remain the default. The resource layout controls configuration,
 appdata, cache and state—not Python dependencies or the fixed installation
 authority. Disabled resource categories remain disabled.
 
-For explicit single-root editable registration, pass the ordinary root controls
-before the command:
+With the checkout environment active, pass the ordinary root controls before
+the command for explicit single-root editable registration:
 
 ```shell
-uv run --locked demo --layout single-root --app-root "/absolute/path/demo-files" app install -e
+demo --layout single-root --app-root "/absolute/path/demo-files" app install -e
 ```
 
 `--layout native` uses the OS defaults; single-root needs an explicit app root.

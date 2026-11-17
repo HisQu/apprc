@@ -28,24 +28,25 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
-4. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
-5. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
-6. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
-7. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
-8. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
-9. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
-10. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
-11. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
-12. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
-13. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
-14. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
-15. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
-16. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
-17. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
-18. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
-19. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
-20. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
+3. [\[0.36.0\] - 2026-11-17](#0360---2026-11-17)
+4. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
+5. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
+6. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
+7. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
+8. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
+9. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
+10. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
+11. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
+12. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
+13. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
+14. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
+15. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
+16. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
+17. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
+18. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
+19. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
+20. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
+21. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -53,7 +54,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.35.1...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/HisQu/apprc/compare/v0.35.1...v0.36.0
 [0.35.1]: https://github.com/HisQu/apprc/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/HisQu/apprc/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/HisQu/apprc/compare/v0.33.0...v0.34.0
@@ -87,6 +89,22 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ## [Unreleased]
 
+### ✨ Added
+
+### 🛠️ Changed
+
+### 🗑️ Deprecated
+
+### 🔥 Removed
+
+### 🐛 Fixed
+
+### 🔒 Security
+
+<br>
+
+## [0.36.0] - 2026-11-17
+
 <br>
 
 ### ✨ Added
@@ -99,8 +117,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🛠️ Changed
 
-- Interactive uninstall uses a Delete/Keep tree, clear confirmation, and cyan
-  filesystem paths. AppRC documents cyan paths as terminal-output policy.
+- Interactive uninstall uses a shared-parent filesystem tree with Delete/Keep
+  target labels, clear confirmation, and cyan filesystem paths. AppRC documents cyan paths as terminal-output policy.
 
 - **Breaking:** 💥 Uninstall replaces `--keep-data` with config-only `--keep-config`. Interactive removal offers config retention; `--yes` removes all selected resources without prompts. Uninstall includes obsolete and unexpected files inside the validated installation directory. Windows Settings uses the shared terminal flow and keeps the outcome visible.
 
@@ -122,15 +140,13 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-### 🗑️ Deprecated
-
 <br>
-
-### 🔥 Removed
 
 <br>
 
 ### 🐛 Fixed
+
+- Uninstall previews group shared filesystem parents once and label individual targets Delete or Keep instead of repeating absolute paths. Interactive Windows cleanup uses a separate result window with explicit completion and Enter-to-close feedback, preserving the original shell prompt.
 
 - Windows uninstall releases working-directory and executable locks before
   removing staging files. Post-commit staging cleanup issues are warnings.
@@ -142,8 +158,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - A freshly rebuilt runtime candidate is no longer rebuilt again after a validation probe fails. Previously prepared candidates retain one recovery rebuild.
 
 <br>
-
-### 🔒 Security
 
 <br>
 

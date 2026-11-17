@@ -638,6 +638,16 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
     plan = preparation.plan
     assert preparation.can_execute and plan is not None
 
+    from apprc.distribution.runtime import _uninstall_terminal
+
+    def unexpected_result_window():
+        raise AssertionError("validation must fail on the foreground stream")
+
+    monkeypatch.setattr(
+        _uninstall_terminal, "prepare_result_window", unexpected_result_window
+    )
+    foreground_stderr = uninstall_handoff.sys.stderr
+
     with owned_child_process() as original:
         handoff = _pending_receiver_handoff(
             plan, tmp_path, monkeypatch, original.pid
@@ -666,6 +676,7 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
                 expected_identity=authority.record.identity,
             )
 
+        assert uninstall_handoff.sys.stderr is foreground_stderr
         assert stdin.tell() == 0
         assert "APPRC-UNINSTALL-READY:" not in capsys.readouterr().out
         assert original.poll() is None
@@ -1032,3 +1043,33 @@ def test_successful_delegation_transfers_wait_to_finalizer(
     uninstall_handoff.execute_handoff(handoff.plan_file)
     assert not (directory / "installation.json").exists()
     assert handoff.plan_file.exists()
+
+
+def test_result_window_launch_keeps_handshake_pipes(tmp_path, monkeypatch):
+    import subprocess
+
+    directory, _ = _installed_zero_capability_scenario(tmp_path, monkeypatch)
+    preparation = prepare_uninstall(directory)
+    assert preparation.plan is not None
+    staging_parent = tmp_path / "safe-staging"
+    staging_parent.mkdir()
+    monkeypatch.setattr(
+        _uninstall_controller.tempfile,
+        "gettempdir",
+        lambda: str(staging_parent),
+    )
+    launched = []
+
+    def launch(command, **options):
+        launched.append(options)
+        return SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO())
+
+    monkeypatch.setattr(_uninstall_controller.subprocess, "Popen", launch)
+    handoff = _uninstall_controller.start_uninstall_handoff(
+        preparation.plan, result_window=True, wait=True
+    )
+    assert launched[0]["creationflags"] == 0x10
+    assert launched[0]["stdin"] == subprocess.PIPE
+    assert launched[0]["stdout"] == subprocess.PIPE
+    assert launched[0]["env"]["_APPRC_UNINSTALL_RESULT_WINDOW"] == "1"
+    assert uninstall_handoff._parse_plan(handoff.plan_file)["wait"] is True

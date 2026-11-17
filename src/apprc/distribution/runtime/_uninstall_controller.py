@@ -840,6 +840,7 @@ def start_uninstall_handoff(
     manager_executable: Path | None = None,
     wait: bool = False,
     color: bool | None = None,
+    result_window: bool = False,
 ) -> UninstallHandoff:
     """Launch an independent native or Python controller for the staged plan."""
     directory = plan.directory
@@ -871,6 +872,9 @@ def start_uninstall_handoff(
     _handoff.assert_outside_removal(temp_parent, removal_roots)
     assert_no_links(temp_parent)
     environment = dict(os.environ)
+    environment.pop("_APPRC_UNINSTALL_RESULT_WINDOW", None)
+    if result_window:
+        environment["_APPRC_UNINSTALL_RESULT_WINDOW"] = "1"
     if color is False:
         environment["NO_COLOR"] = "1"
     elif color is True and "NO_COLOR" not in environment:
@@ -1002,6 +1006,9 @@ def start_uninstall_handoff(
         process: subprocess.Popen[str] = subprocess.Popen(
             command,
             cwd=temp_parent,
+            creationflags=0x10
+            if result_window
+            else 0,  # < CREATE_NEW_CONSOLE on Windows.
             env=environment,
             text=True,
             stdin=subprocess.PIPE,

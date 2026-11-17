@@ -362,6 +362,10 @@ def mount_installation_group(
         from apprc.distribution.runtime import _uninstall_terminal
 
         wait = wait and not assume_yes and not dry_run
+        result_window = (
+            os.name == "nt" and not dry_run and (wait or sys.stdin.isatty())
+        )
+        closing_wait = wait or (result_window and not assume_yes)
         handed_off = False
         if wait:
             _uninstall_terminal.prepare()
@@ -425,7 +429,7 @@ def mount_installation_group(
             if not assume_yes and not sys.stdin.isatty():
                 raise typer.BadParameter("Unattended removal requires --yes.")
             if not assume_yes and not typer.confirm(
-                f'Uninstall {command_context.manager.spec.display_name or command_context.manager.spec.app_id} and delete the items listed under "Delete"?',
+                f'Uninstall {command_context.manager.spec.display_name or command_context.manager.spec.app_id} and delete the items marked "Delete"?',
                 default=False,
             ):
                 raise typer.Abort()
@@ -434,11 +438,22 @@ def mount_installation_group(
                 handoff = _uninstall_controller.start_uninstall_handoff(
                     preparation.plan,
                     original_pid=os.getpid(),
-                    wait=wait,
+                    wait=closing_wait,
+                    result_window=result_window,
                     color=ctx.color,
                     manager_executable=command_context._native_manager_executable,
                 )
                 handoff.wait_ready()
+                if result_window and not json_output:
+                    typer.echo(
+                        "Uninstall results will appear in a separate window."
+                        + (
+                            " Press Enter there to close it after cleanup."
+                            if closing_wait
+                            else ""
+                        ),
+                        err=True,
+                    )
                 handoff.signal_exit()
                 handed_off = True
             except (OSError, ValueError) as exc:

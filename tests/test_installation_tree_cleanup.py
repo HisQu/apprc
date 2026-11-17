@@ -620,3 +620,35 @@ def test_temporary_cleanup_failure_warns_without_failing_uninstall(
     assert "temporary cleanup failed" in message
     assert str(staging) in message
     assert staging.exists()
+
+
+def test_staged_results_keep_colors_without_application_package(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from apprc.distribution.runtime.uninstall_handoff import (
+        _stage_repository_finalizer,
+    )
+
+    staging = tmp_path / "staging"
+    staging.mkdir(mode=0o700)
+    _stage_repository_finalizer(staging)
+    environment = dict(os.environ)
+    environment.pop("NO_COLOR", None)
+    environment["FORCE_COLOR"] = "1"
+    environment["TERM"] = "xterm"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.modules['apprc'] = None; import _uninstall_terminal; _uninstall_terminal.result_line('Retained configuration', '/example/[settings]')",
+        ],
+        cwd=staging,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "\x1b[36m" in result.stderr
+    assert "/example/[settings]" in result.stderr

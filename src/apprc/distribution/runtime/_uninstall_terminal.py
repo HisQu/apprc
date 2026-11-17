@@ -24,10 +24,21 @@ def prepare() -> None:
         sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
 
 
+def prepare_result_window() -> None:
+    """Attach only result output to the new console, preserving control pipes."""
+    if (
+        os.name == "nt"
+        and os.environ.get("_APPRC_UNINSTALL_RESULT_WINDOW") == "1"
+    ):
+        sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+
+
 def acknowledge() -> None:
     """Keep the terminal result visible until the user acknowledges it."""
     print(
-        "Press Enter to close this uninstall terminal.",
+        "Press Enter to close this uninstall window."
+        if os.name == "nt"
+        else "Press Enter to close this uninstall terminal.",
         file=sys.stderr,
         flush=True,
     )
@@ -46,7 +57,11 @@ def result_line(message: str, path: str | Path | None = None) -> None:
     """
     try:
         from rich.console import Console
-        from apprc.interfaces._terminal_styles import path_text
+
+        if __package__:
+            from apprc.interfaces._terminal_styles import path_text
+        else:
+            from _terminal_styles import path_text  # type: ignore[reportMissingImports]
     except ImportError:
         print(
             message + (f": {path}" if path is not None else ""),

@@ -1367,6 +1367,12 @@ def _wait_for_caller_exit(value: HandoffPlan) -> None:
     waiter = _open_process_waiter(
         value["original_pid"], value["original_start"]
     )
+    from apprc.distribution.runtime._uninstall_terminal import (
+        prepare_result_window,
+    )
+
+    # > Validation failures must remain on the caller's foreground error stream.
+    prepare_result_window()
     print(f"APPRC-UNINSTALL-READY:{value['readiness_token']}", flush=True)
     if waiter[0] == "already-exited":
         return
@@ -1572,6 +1578,13 @@ def _stage_repository_finalizer(staging: Path) -> Path:
             elif resource.is_file():
                 write_bytes_atomic(target, resource.read_bytes(), private=True)
 
+    write_bytes_atomic(
+        staging / "_terminal_styles.py",
+        resources.files("apprc.interfaces")
+        .joinpath("_terminal_styles.py")
+        .read_bytes(),
+        private=True,
+    )
     copy_dependency(resources.files(filelock), staging / "filelock")
     return leaf
 

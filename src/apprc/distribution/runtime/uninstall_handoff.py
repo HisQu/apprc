@@ -1340,16 +1340,30 @@ def _remove_registry_outputs(
     """
     if os.name != "nt":
         return
+    from apprc.distribution.runtime._windows_registration import (
+        pending_registry_output,
+    )
+
+    pending = pending_registry_output(directory, record)
+    outputs = tuple(
+        item
+        for item in record.owned_outputs
+        if pending is None or item.path != pending.path
+    )
+    if pending is not None:
+        outputs += (pending,)
     expected = (
         "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
         + record.identity.app_id
     )
-    for output in record.owned_outputs:
+    for output in outputs:
         if output.kind != "hkcu":
             continue
-        if output.path != expected or dict(output.values).get(
-            "InstallLocation"
-        ) != str(directory):
+        if (
+            output.path != expected
+            or dict(output.values).get("InstallLocation") != str(directory)
+            and output != pending
+        ):
             raise InstallationError(
                 "Recorded HKCU registration path is malformed."
             )
@@ -1358,7 +1372,25 @@ def _remove_registry_outputs(
         if snapshot.values is None:
             continue
         removed.append(snapshot)
-        _os_integration.remove_windows_registration(output)
+        if output == pending and not snapshot.values:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                output.path.removeprefix("HKCU\\"),
+                0,
+                winreg.KEY_QUERY_VALUE,
+            ) as key:
+                children, count, _ = winreg.QueryInfoKey(key)
+                if children or count:
+                    raise InstallationError(
+                        "Windows uninstall entry changed before removal"
+                    )
+                winreg.DeleteKey(
+                    winreg.HKEY_CURRENT_USER, output.path.removeprefix("HKCU\\")
+                )
+        else:
+            _os_integration.remove_windows_registration(output)
 
 
 def main() -> int:

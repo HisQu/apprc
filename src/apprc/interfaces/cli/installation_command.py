@@ -498,20 +498,25 @@ def _register_editable(
     )
 
     try:
-        return register_editable_application(
-            context.manager,
-            distribution_spec.metadata.identity,
-            EditableCheckout(
-                project=project_root,
-                environment=prefix,
-                hooks=distribution_spec.hooks,
-            ),
-            placement,
-            command_name=command,
-            uv=uv,
-            command_directory=command_directory,
-            assume_yes=assume_yes,
+        from apprc.distribution.runtime.installation import (
+            installation_maintenance_group,
         )
+
+        with installation_maintenance_group(maintenance_group):
+            return register_editable_application(
+                context.manager,
+                distribution_spec.metadata.identity,
+                EditableCheckout(
+                    project=project_root,
+                    environment=prefix,
+                    hooks=distribution_spec.hooks,
+                ),
+                placement,
+                command_name=command,
+                uv=uv,
+                command_directory=command_directory,
+                assume_yes=assume_yes,
+            )
     except OSError as exc:
         exc.add_note(guidance)
         raise

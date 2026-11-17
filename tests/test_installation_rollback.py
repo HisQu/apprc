@@ -128,19 +128,6 @@ def native_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _NativeCase:
     for path in files:
         path.write_bytes(path.name.encode())
     monkeypatch.setattr(installation, "_prepare_candidate", _prepare)
-    monkeypatch.setattr(
-        installation,
-        "_ensure_registration_intent",
-        lambda manager, operation_id, revision, identity, stable, prior: (
-            None,
-            revision,
-        ),
-    )
-    monkeypatch.setattr(
-        installation,
-        "publish_windows_registration",
-        lambda *args, **kwargs: None,
-    )
     return _NativeCase(
         manager,
         InstallationIdentity(

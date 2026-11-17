@@ -34,6 +34,8 @@ from apprc.definition.installation import (
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime.backend import runtime_environment
 from apprc.distribution.runtime import _os_integration
+
+
 from apprc.distribution.runtime._os_integration import (
     capture_windows_registration,
     publish_windows_registration,
@@ -743,3 +745,30 @@ def test_uninstall_registry_capture_uses_exact_typed_ownership(
         assert len(removed) == 1
         restore_windows_registration(removed[0])
         assert windows_registry.keys[key_path].values == before
+
+
+def test_windows_command_replacement_denial_explains_running_processes(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+    import os
+
+    source = tmp_path / "source.exe"
+    source.write_bytes(b"command")
+    destination = tmp_path / "app.exe"
+
+    def deny(*args):
+        error = PermissionError("access denied")
+        error.winerror = 5
+        raise error
+
+    monkeypatch.setattr(
+        _os_integration,
+        "os",
+        SimpleNamespace(
+            name="nt", fdopen=os.fdopen, fsync=os.fsync, replace=deny
+        ),
+    )
+    with pytest.raises(PermissionError) as captured:
+        _os_integration.publish_global_command(destination, source)
+    assert "running application processes" in " ".join(captured.value.__notes__)

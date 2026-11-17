@@ -2121,6 +2121,7 @@ def offer_configuration_setup(
     runtime_options: CliRuntimeOptionsProtocol | None = None,
     environment: Mapping[str, str] | None = None,
     input_stream: TextIO | None = None,
+    raise_on_failure: bool = False,
 ) -> bool:
     """Dispatch conditional configuration setup through the ready runtime.
 
@@ -2208,6 +2209,8 @@ def offer_configuration_setup(
             **spawn_options,
         )
     except (OSError, subprocess.CalledProcessError):
+        if raise_on_failure:
+            raise
         return False
     finally:
         if lease is not None:

@@ -151,7 +151,16 @@ def publish_global_command(
                 shutil.copyfileobj(origin, stream)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, command)
+            try:
+                os.replace(temporary, command)
+            except PermissionError as error:
+                if getattr(error, "winerror", None) == 5:
+                    error.add_note(
+                        f"Could not replace global command {command}. Stop any "
+                        "running application processes, including servers, and retry. "
+                        "If the error persists, check permissions."
+                    )
+                raise
         finally:
             temporary.unlink(missing_ok=True)
         digest = content_digest

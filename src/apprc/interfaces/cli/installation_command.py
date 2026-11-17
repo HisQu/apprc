@@ -18,6 +18,7 @@ from urllib.request import url2pathname
 
 import typer
 from typer._click import Context as ClickContext
+from typer._click import ClickException
 from typer.core import TyperCommand
 
 from apprc.definition.installation import (
@@ -125,6 +126,34 @@ def mount_installation_group(
                         command_directory=command_directory,
                         assume_yes=assume_yes,
                     )
+                except OSError as exc:
+                    typer.echo(
+                        f"Installation failed: {_installation_error_message(exc)}",
+                        err=True,
+                    )
+                    raise typer.Exit(code=2) from exc
+                except ValueError as exc:
+                    raise typer.BadParameter(
+                        _installation_error_message(exc)
+                    ) from exc
+                record = result.record
+                if record is None or not isinstance(
+                    record.active_runtime, EditableCheckout
+                ):
+                    raise ClickException(
+                        "Installation did not return an editable checkout."
+                    )
+                command = next(
+                    output.path
+                    for output in reversed(record.owned_outputs)
+                    if output.kind == "command"
+                    and Path(output.path).name
+                    == record.command_name + (".exe" if os.name == "nt" else "")
+                )
+                typer.echo(
+                    f"Global command available: {command}\nCheckout: {record.active_runtime.project}"
+                )
+                try:
                     from apprc.distribution.runtime.installation import (
                         offer_configuration_setup,
                     )
@@ -136,11 +165,14 @@ def mount_installation_group(
                         config_group_name=config_group_name,
                         runtime_options=context.runtime_options,
                         environment=context.environment,
+                        raise_on_failure=True,
                     )
-                except (OSError, ValueError) as exc:
-                    raise typer.BadParameter(
-                        _installation_error_message(exc)
-                    ) from exc
+                except (OSError, subprocess.CalledProcessError) as exc:
+                    typer.echo(
+                        f"The global command is available, but {record.command_name} {config_group_name} setup failed: {exc}\nRun `{record.command_name} {config_group_name} setup` to retry.",
+                        err=True,
+                    )
+                    raise typer.Exit(code=1) from exc
                 return
             if installer_entrypoint is None:
                 command = (
@@ -480,7 +512,10 @@ def _register_editable(
             command_directory=command_directory,
             assume_yes=assume_yes,
         )
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
+        exc.add_note(guidance)
+        raise
+    except ValueError as exc:
         raise ValueError(
             f"{_installation_error_message(exc)} {guidance}"
         ) from exc

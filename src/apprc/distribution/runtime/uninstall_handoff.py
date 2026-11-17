@@ -608,11 +608,6 @@ def execute_handoff(
     expected_identity: InstallationIdentity | None = None,
 ) -> None:
     """Validate and resume the exact pending uninstall handoff."""
-    from apprc.distribution.runtime._uninstall_terminal import (
-        prepare_result_window,
-    )
-
-    prepare_result_window()
     global _REPOSITORY_FINALIZER
     _REPOSITORY_FINALIZER = None
     assert_no_links(plan_file)
@@ -1372,6 +1367,12 @@ def _wait_for_caller_exit(value: HandoffPlan) -> None:
     waiter = _open_process_waiter(
         value["original_pid"], value["original_start"]
     )
+    from apprc.distribution.runtime._uninstall_terminal import (
+        prepare_result_window,
+    )
+
+    # > Validation failures must remain on the caller's foreground error stream.
+    prepare_result_window()
     print(f"APPRC-UNINSTALL-READY:{value['readiness_token']}", flush=True)
     if waiter[0] == "already-exited":
         return

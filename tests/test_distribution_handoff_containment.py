@@ -638,6 +638,16 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
     plan = preparation.plan
     assert preparation.can_execute and plan is not None
 
+    from apprc.distribution.runtime import _uninstall_terminal
+
+    def unexpected_result_window():
+        raise AssertionError("validation must fail on the foreground stream")
+
+    monkeypatch.setattr(
+        _uninstall_terminal, "prepare_result_window", unexpected_result_window
+    )
+    foreground_stderr = uninstall_handoff.sys.stderr
+
     with owned_child_process() as original:
         handoff = _pending_receiver_handoff(
             plan, tmp_path, monkeypatch, original.pid
@@ -666,6 +676,7 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
                 expected_identity=authority.record.identity,
             )
 
+        assert uninstall_handoff.sys.stderr is foreground_stderr
         assert stdin.tell() == 0
         assert "APPRC-UNINSTALL-READY:" not in capsys.readouterr().out
         assert original.poll() is None

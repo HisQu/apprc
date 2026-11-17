@@ -327,4 +327,4 @@ and [native authoring requirements](docs/Development.md#native-application-front
   - [README maintenance](docs/Development.md#readme-maintenance)
   - [Verification](docs/Development.md#checks)
   - [Releases](docs/Development.md#release-procedure)
-- [Changelog](CHANGELOG.md) — Current release notes and migration requirements; [older releases](CHANGELOG-ARCHIVE.md) are archived.
+- [Changelog](CHANGELOG.md) — Complete release history and migration requirements.

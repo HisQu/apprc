@@ -41,7 +41,7 @@ def sample_changelog(
     :return: Changelog fixture text.
     """
     version_toc = (
-        f"3. [{version} - 2026-07-13](#123---2026-07-13)\n" if toc_entry else ""
+        f"3. [\\[{version}\\] - 2026-07-13](#123---2026-07-13)\n" if toc_entry else ""
     )
     return (
         "# Changelog\n\n"
@@ -49,33 +49,31 @@ def sample_changelog(
         "1. [Changelog](#changelog)\n"
         "2. [[Unreleased]](#unreleased)\n"
         f"{version_toc}\n"
-        "# [Unreleased]\n\n"
+        "## [Unreleased]\n\n"
         "<br>\n\n"
-        "### 💥 Breaking changes\n\n"
-        "<br>\n\n"
-        "### ➕ Added\n\n"
+        "### ✨ Added\n\n"
         f"{unreleased_entry}\n\n"
         "<br>\n\n"
-        "### 💔 Changed\n\n"
+        "### 🛠️ Changed\n\n"
         "<br>\n\n"
-        "### ⚠️ Deprecated\n\n"
+        "### 🗑️ Deprecated\n\n"
         "<br>\n\n"
-        "### 🗑️ Removed\n\n"
+        "### 🔥 Removed\n\n"
         "<br>\n\n"
-        "### 🔨 Fixed\n\n"
+        "### 🐛 Fixed\n\n"
         "<br>\n\n"
         "### 🔒 Security\n\n"
         "<br>\n\n"
         "---\n\n"
         "<!-- ======================================================== -->\n\n"
-        f"# {version} - 2026-07-13\n\n"
+        f"## [{version}] - 2026-07-13\n\n"
         "<br>\n\n"
-        "### ➕ Added\n\n"
+        "### ✨ Added\n\n"
         f"{release_entry}\n\n"
         "<br>\n\n"
         "---\n\n"
         "<!-- ======================================================== -->\n\n"
-        "# 1.2.2 - 2026-07-12\n"
+        "## [1.2.2] - 2026-07-12\n"
     )
 
 
@@ -83,7 +81,26 @@ def test_build_release_notes_extracts_and_cleans_version_section() -> None:
     module = load_release_notes_module()
 
     assert module.build_release_notes(sample_changelog(), "1.2.3") == (
-        "## ➕ Added\n\n  - Added a tested release workflow.\n"
+        "## ✨ Added\n\n  - Added a tested release workflow.\n"
+    )
+
+
+def test_build_release_notes_accepts_yanked_heading_and_excludes_link_definitions() -> None:
+    module = load_release_notes_module()
+    markdown = sample_changelog()
+    markdown = markdown.replace(
+        "## [1.2.3] - 2026-07-13",
+        "## [1.2.3] - 2026-07-13 [YANKED]",
+    )
+    markdown = markdown.replace(
+        "3. [\\[1.2.3\\] - 2026-07-13](#123---2026-07-13)",
+        "3. [\\[1.2.3\\] - 2026-07-13 [YANKED]](#123---2026-07-13-yanked)",
+    )
+    markdown = markdown.replace("\n## [1.2.2] - 2026-07-12\n", "\n")
+    markdown += "\n[Unreleased]: https://example.invalid/compare\n[1.2.3]: https://example.invalid/release\n"
+
+    assert module.build_release_notes(markdown, "1.2.3") == (
+        "## ✨ Added\n\n  - Added a tested release workflow.\n"
     )
 
 
@@ -93,7 +110,7 @@ def test_write_release_notes_creates_parent_directory(tmp_path: Path) -> None:
 
     module.write_release_notes(sample_changelog(), "1.2.3", output)
 
-    assert output.read_text(encoding="utf-8").startswith("## ➕ Added")
+    assert output.read_text(encoding="utf-8").startswith("## ✨ Added")
 
 
 @pytest.mark.parametrize("version", ["v1.2.3", "1.2", "1.2.3.4", "01.2.3"])
@@ -115,8 +132,8 @@ def test_build_release_notes_rejects_duplicate_release() -> None:
     module = load_release_notes_module()
     markdown = sample_changelog()
     duplicate = markdown.replace(
-        "# 1.2.2 - 2026-07-12",
-        "# 1.2.3 - 2026-07-13",
+        "## [1.2.2] - 2026-07-12",
+        "## [1.2.3] - 2026-07-13",
     )
 
     with pytest.raises(ValueError, match="found 2"):

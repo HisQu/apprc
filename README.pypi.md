@@ -327,4 +327,4 @@ and [native authoring requirements](https://github.com/HisQu/apprc/blob/main/doc
   - [README maintenance](https://github.com/HisQu/apprc/blob/main/docs/Development.md#readme-maintenance)
   - [Verification](https://github.com/HisQu/apprc/blob/main/docs/Development.md#checks)
   - [Releases](https://github.com/HisQu/apprc/blob/main/docs/Development.md#release-procedure)
-- [Changelog](https://github.com/HisQu/apprc/blob/main/CHANGELOG.md) — Current release notes and migration requirements; [older releases](https://github.com/HisQu/apprc/blob/main/CHANGELOG-ARCHIVE.md) are archived.
+- [Changelog](https://github.com/HisQu/apprc/blob/main/CHANGELOG.md) — Complete release history and migration requirements.

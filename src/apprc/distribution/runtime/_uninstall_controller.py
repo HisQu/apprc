@@ -839,6 +839,7 @@ def start_uninstall_handoff(
     original_pid: int | None = None,
     manager_executable: Path | None = None,
     wait: bool = False,
+    color: bool | None = None,
 ) -> UninstallHandoff:
     """Launch an independent native or Python controller for the staged plan."""
     directory = plan.directory
@@ -870,6 +871,10 @@ def start_uninstall_handoff(
     _handoff.assert_outside_removal(temp_parent, removal_roots)
     assert_no_links(temp_parent)
     environment = dict(os.environ)
+    if color is False:
+        environment["NO_COLOR"] = "1"
+    elif color is True and "NO_COLOR" not in environment:
+        environment["FORCE_COLOR"] = "1"
     invocation_cwd = Path.cwd()
     for key in (
         "UV_CACHE_DIR",
@@ -996,7 +1001,7 @@ def start_uninstall_handoff(
         _assert_handoff_inputs_outside_removal(handoff_inputs, removal_roots)
         process: subprocess.Popen[str] = subprocess.Popen(
             command,
-            cwd=staging,
+            cwd=temp_parent,
             env=environment,
             text=True,
             stdin=subprocess.PIPE,

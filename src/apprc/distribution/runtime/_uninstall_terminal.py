@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 
 def prepare() -> None:
@@ -35,3 +36,28 @@ def acknowledge() -> None:
             stream.readline()
     elif sys.stdin.isatty():
         sys.stdin.readline()
+
+
+def result_line(message: str, path: str | Path | None = None) -> None:
+    """Print a cleanup outcome with optional terminal styling and plain fallback.
+
+    :param message: Outcome or label, never parsed for paths.
+    :param path: Structured path value, when available.
+    """
+    try:
+        from rich.console import Console
+        from apprc.interfaces._terminal_styles import path_text
+    except ImportError:
+        print(
+            message + (f": {path}" if path is not None else ""),
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    from rich.text import Text
+
+    line = Text(message)
+    if path is not None:
+        line.append(": ")
+        line.append_text(path_text(str(path)))
+    Console(file=sys.stderr, highlight=False, soft_wrap=True).print(line)

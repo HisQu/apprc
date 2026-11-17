@@ -904,3 +904,116 @@ def test_uninstall_config_prompt_and_unattended_policy(
     result = CliRunner().invoke(_app(args=args), args)
     assert result.exit_code == (0 if mode == "preview" else 1), result.output
     assert len(prompts) == (1 if mode == "interactive" else 0)
+
+
+@pytest.mark.parametrize("keep_config", [False, True])
+@pytest.mark.parametrize("repository_selected", [False, True])
+def test_uninstall_tree_separates_retained_paths_and_integrations(
+    tmp_path, keep_config, repository_selected
+):
+    from dataclasses import replace
+    from rich.console import Console
+    from rich.text import Text
+    from apprc.definition.installation import (
+        CleanupInventory,
+        EditableCheckout,
+        InventoryEntry,
+        OwnedOutput,
+    )
+    from apprc.distribution.runtime._uninstall_controller import (
+        UninstallPreparation,
+        prepare_uninstall,
+    )
+    from apprc.interfaces.cli._installation_output import uninstall_tree
+    from tests.support_installation import managed_installation
+
+    directory, _ = managed_installation(tmp_path)
+    preparation = prepare_uninstall(directory)
+    assert (
+        preparation.plan is not None
+        and preparation.inspection.record is not None
+    )
+    config = tmp_path / "settings[private]"
+    cache = tmp_path / "cache"
+    command = tmp_path / "bin" / "app"
+    checkout = tmp_path / "checkout"
+    entry = InventoryEntry(config, "directory", None, "config")
+    inventory = CleanupInventory(
+        (
+            InventoryEntry(cache, "tree", "a" * 64, "cache"),
+            *(() if keep_config else (entry,)),
+        ),
+        (entry,) if keep_config else (),
+    )
+    if repository_selected:
+        inventory = replace(
+            inventory,
+            entries=(
+                *inventory.entries,
+                InventoryEntry(checkout, "repository", "a" * 64),
+            ),
+        )
+    record = replace(
+        preparation.inspection.record,
+        active_runtime=EditableCheckout(checkout, checkout / ".venv"),
+        owned_outputs=(OwnedOutput("command", str(command), "a" * 64),),
+    )
+    preparation = UninstallPreparation(
+        replace(preparation.plan, inventory=inventory),
+        replace(preparation.inspection, record=record),
+        inventory.entries,
+        (),
+        True,
+    )
+    tree = uninstall_tree(preparation)
+    console = Console(record=True, width=250)
+    with console.capture() as captured:
+        console.print(tree)
+    output = captured.get()
+    deleting, keeping = output.split("Keep", 1)
+    assert str(cache) in deleting and str(command) in deleting
+    assert (str(checkout) in keeping) is not repository_selected
+    assert (str(checkout) in deleting) is repository_selected
+    assert (str(config) in keeping) is keep_config
+    assert (str(config) in deleting) is not keep_config
+    assert not config.exists(), "Preview must not create or scan targets"
+    path_labels = [
+        leaf.label
+        for branch in tree.children
+        for group in branch.children
+        for leaf in group.children
+    ]
+    assert any(
+        isinstance(label, Text)
+        and label.plain == str(config)
+        and label.style == "cyan"
+        for label in path_labels
+    )
+
+
+@pytest.mark.parametrize(
+    "color,no_color,expected",
+    [(True, False, True), (False, False, False), (True, True, False)],
+)
+def test_installation_path_output_honors_color_policy(
+    monkeypatch, color, no_color, expected
+):
+    from apprc.interfaces.cli._installation_output import (
+        print_installation_path,
+    )
+
+    if no_color:
+        monkeypatch.setenv("NO_COLOR", "1")
+    else:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+    app = typer.Typer()
+
+    @app.command()
+    def show(ctx: typer.Context):
+        ctx.color = color
+        print_installation_path(ctx, "Path", Path("/example/[literal]"))
+
+    result = CliRunner().invoke(app, [], color=color)
+    assert result.exit_code == 0, result.output
+    assert "/example/[literal]" in result.output
+    assert ("\x1b[36m" in result.output) is expected

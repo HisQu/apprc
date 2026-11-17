@@ -150,8 +150,15 @@ def mount_installation_group(
                     and Path(output.path).name
                     == record.command_name + (".exe" if os.name == "nt" else "")
                 )
-                typer.echo(
-                    f"Global command available: {command}\nCheckout: {record.active_runtime.project}"
+                from apprc.interfaces.cli._installation_output import (
+                    print_installation_path,
+                )
+
+                print_installation_path(
+                    ctx, "Global command available", command
+                )
+                print_installation_path(
+                    ctx, "Checkout", record.active_runtime.project
                 )
                 try:
                     from apprc.distribution.runtime.installation import (
@@ -351,7 +358,7 @@ def mount_installation_group(
             bool, typer.Option("--json", help="Emit machine-readable JSON.")
         ] = False,
     ) -> None:
-        """Preview or remove the program and only explicitly selected owned data."""
+        """Preview or remove the installation and selected application data."""
         from apprc.distribution.runtime import _uninstall_terminal
 
         wait = wait and not assume_yes and not dry_run
@@ -373,8 +380,15 @@ def mount_installation_group(
                 and record.placement.config_dir is not None
                 and record.placement.config_dir.exists()
             ):
+                from apprc.interfaces.cli._installation_output import (
+                    print_installation_path,
+                )
+
+                print_installation_path(
+                    ctx, "User configuration", record.placement.config_dir
+                )
                 keep_config = typer.confirm(
-                    f"Keep user configuration at {record.placement.config_dir}?",
+                    "Keep this configuration directory (settings and secrets)?",
                     default=True,
                 )
             try:
@@ -393,28 +407,12 @@ def mount_installation_group(
             if json_output:
                 _emit(payload, True)
             else:
-                typer.echo("Uninstall targets:")
-                targets = (
-                    preparation.plan.inventory.entries
-                    if preparation.plan is not None
-                    else ()
+                from apprc.interfaces.cli._installation_output import (
+                    installation_console,
+                    uninstall_tree,
                 )
-                for entry in targets:
-                    typer.echo(f"  {entry.path}")
-                if preparation.plan is not None:
-                    for entry in preparation.plan.inventory.retained:
-                        typer.echo(f"Keep: {entry.path}")
-                if (
-                    record is not None
-                    and isinstance(record.active_runtime, EditableCheckout)
-                    and not remove_repository
-                ):
-                    typer.echo(
-                        f"Keep checkout: {record.active_runtime.project}"
-                    )
-                    typer.echo(
-                        f"Keep environment: {record.active_runtime.environment}"
-                    )
+
+                installation_console(ctx).print(uninstall_tree(preparation))
                 for diagnostic in preparation.diagnostics:
                     typer.echo(
                         f"Cannot uninstall: {diagnostic.message} {diagnostic.recovery}",
@@ -427,7 +425,7 @@ def mount_installation_group(
             if not assume_yes and not sys.stdin.isatty():
                 raise typer.BadParameter("Unattended removal requires --yes.")
             if not assume_yes and not typer.confirm(
-                "Remove the program and the exact owned targets shown above?",
+                f'Uninstall {command_context.manager.spec.display_name or command_context.manager.spec.app_id} and delete the items listed under "Delete"?',
                 default=False,
             ):
                 raise typer.Abort()
@@ -437,6 +435,7 @@ def mount_installation_group(
                     preparation.plan,
                     original_pid=os.getpid(),
                     wait=wait,
+                    color=ctx.color,
                     manager_executable=command_context._native_manager_executable,
                 )
                 handoff.wait_ready()

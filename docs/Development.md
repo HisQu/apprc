@@ -232,6 +232,28 @@ Check diagnostic content independently of ANSI styling and terminal line
 wrapping; exercise colored output as well as plain output. Reproduce CI's
 terminal settings locally before changing a message or retrying a failed job.
 
+### Terminal paths and color
+
+Known filesystem paths in AppRC human-facing terminal output use the shared cyan
+path style from `apprc.interfaces._terminal_styles`. Build styled output from
+structured paths; do not guess paths inside arbitrary exception messages.
+Respect terminal detection, Click's explicit color setting, and `NO_COLOR`.
+JSON, logs, and plain fallbacks contain no styling. Apply this policy to install
+and uninstall prompts, previews, completion messages, and recovery guidance.
+
+The uninstall preview separates **Delete** from **Keep** in a tree. It lists
+complete paths for owned resources, installation files, commands, shortcuts
+and registration entries. Whole-directory targets say that contents are
+included. Link entries say that only the link is removed; its destination stays
+untouched. Do not enumerate every file inside large data directories.
+
+Final cleanup runs from a surviving working directory. After the originating
+handoff process exits, an external finalizer removes private staging files so
+Windows releases its working-directory and executable locks. A failure before
+uninstall commits remains an uninstall failure with recovery available. A
+staging-only cleanup failure after commit is a warning with the remaining path;
+it does not imply that the application remains installed.
+
 <br>
 
 # Verify and update changes

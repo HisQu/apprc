@@ -263,7 +263,8 @@ with their existing [ownership and safety boundaries](docs/Explanations.md#maint
 Application uninstall removes the program and its managed data by default.
 Use `app uninstall --keep-config` to retain configuration only. Editable
 repositories remain unless explicitly selected with `--remove-repository`;
-see the [removal guide](docs/How-To-User-Guides.md#remove-a-managed-program).
+the preview separates **Delete** and **Keep**, and terminal paths use cyan.
+See the [removal guide](docs/How-To-User-Guides.md#remove-a-managed-program).
 
 Passing `launcher_spec` and `launcher_handlers` adds optional root `launch`,
 which opens the existing Textual management launcher. It is separate from a

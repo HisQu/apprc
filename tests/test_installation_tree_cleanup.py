@@ -263,6 +263,12 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
         "_wait_for_caller_exit",
         lambda payload: waits.append(payload["operation_id"]),
     )
+    launches = []
+    monkeypatch.setattr(
+        uninstall_handoff,
+        "_launch_repository_finalizer",
+        lambda *args: launches.append(args),
+    )
     uninstall_handoff._finalize_committed_handoff(
         staging / "handoff.json",
         value,
@@ -271,11 +277,12 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
         caller_exited=caller_exited,
     )
     assert len(waits) == (0 if caller_exited else 1)
-    assert not staging.exists()
+    assert staging.exists()
+    assert len(launches) == 1
     reminder = (
         "Any retained editable checkout and development environment remain."
     )
-    assert (reminder in capsys.readouterr().err) is (not caller_exited)
+    assert reminder not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -496,3 +503,120 @@ def test_pending_uninstall_rejects_new_config_retention_choice(tmp_path):
     with pytest.raises(InstallationError, match="retention differs"):
         prepare_uninstall(directory, keep_config=True)
     assert settings.read_text() == "preserve until confirmed removal"
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_external_finalizer_waits_for_owner_and_cleans_staging(
+    tmp_path: Path,
+    partial: bool,
+) -> None:
+    import subprocess
+    import sys
+    from uuid import uuid4
+    from apprc.distribution.runtime import _process_waiter
+    from apprc.distribution.runtime.uninstall_handoff import (
+        _stage_repository_finalizer,
+    )
+    from tests.support_installation import owned_child_process
+
+    staging = tmp_path / "staging"
+    recovery = staging / "recovery"
+    staging.mkdir(mode=0o700)
+    recovery.mkdir(mode=0o700)
+    leaf = _stage_repository_finalizer(staging)
+    directory = tmp_path / "removed-installation"
+    proof = recovery / "finalization.json"
+    proof.write_text(
+        json.dumps(
+            {
+                "directory": str(directory),
+                "app_id": "fixture",
+                "generation_id": str(uuid4()),
+                "support": [],
+            }
+        )
+    )
+    proof.chmod(0o600)
+    authority_bytes = None
+    resource = tmp_path / "retained-resource"
+    if partial:
+        directory, _ = managed_installation(
+            tmp_path / "retained", hooks=InstallationHooks()
+        )
+        authority_bytes = (directory / "installation.json").read_bytes()
+        resource.write_text("retained data")
+        proof = staging / "handoff.json"
+        proof.write_text(
+            json.dumps({"complete": False, "directory": str(directory)})
+        )
+        proof.chmod(0o600)
+    with owned_child_process() as owner:
+        finalizer = subprocess.Popen(
+            [
+                sys.executable,
+                "-S",
+                str(leaf),
+                "--plan",
+                str(proof),
+                "--directory",
+                str(directory),
+                "--cleanup-staging",
+                *(["--cleanup-only"] if partial else []),
+                "--parent",
+                str(owner.pid),
+                "--parent-token",
+                _process_waiter.process_start_token(owner.pid),
+            ],
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            with pytest.raises(subprocess.TimeoutExpired):
+                finalizer.communicate(timeout=0.2)
+            assert staging.exists()
+            assert owner.stdin is not None
+            owner.stdin.write("exit\n")
+            owner.stdin.flush()
+            owner.wait(timeout=5)
+            out, err = finalizer.communicate(timeout=10)
+            assert finalizer.returncode == 0, out + err
+            assert "Uninstall completed" in err
+            assert not staging.exists()
+            assert tmp_path.is_dir()
+            if partial:
+                assert (
+                    directory / "installation.json"
+                ).read_bytes() == authority_bytes
+                assert resource.read_text() == "retained data"
+        finally:
+            if finalizer.poll() is None:
+                finalizer.kill()
+                finalizer.wait(timeout=5)
+
+
+def test_temporary_cleanup_failure_warns_without_failing_uninstall(
+    tmp_path, monkeypatch, capsys
+):
+    import shutil
+    from apprc.distribution.runtime import (
+        namespace_finalizer,
+        uninstall_handoff,
+    )
+
+    staging = tmp_path / "staging"
+    staging.mkdir(mode=0o700)
+    leaf = uninstall_handoff._stage_repository_finalizer(staging)
+    monkeypatch.setattr(namespace_finalizer, "__file__", str(leaf))
+
+    def locked(path):
+        raise PermissionError("temporary directory locked")
+
+    monkeypatch.setattr(shutil, "rmtree", locked)
+    namespace_finalizer.cleanup_staging(staging)
+    message = capsys.readouterr().err
+    assert "uninstall completed" in message
+    assert "temporary cleanup failed" in message
+    assert str(staging) in message
+    assert staging.exists()

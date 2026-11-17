@@ -964,3 +964,71 @@ def test_handoff_python_rejects_managed_executable_before_launch(
         _uninstall_controller._handoff_python((managed,))
 
     assert executable.read_bytes() == b"managed interpreter"
+
+
+def test_delegation_failure_after_commit_preserves_retired_state(
+    tmp_path, monkeypatch
+):
+    directory, _runtime = _installed_zero_capability_scenario(
+        tmp_path, monkeypatch
+    )
+    preparation = prepare_uninstall(directory)
+    assert preparation.plan is not None
+    handoff = _pending_receiver_handoff(
+        preparation.plan, tmp_path, monkeypatch, os.getpid()
+    )
+    monkeypatch.setattr(
+        uninstall_handoff, "_wait_for_caller_exit", lambda _: None
+    )
+
+    def fail(*args):
+        raise OSError("finalizer could not launch")
+
+    monkeypatch.setattr(uninstall_handoff, "_launch_repository_finalizer", fail)
+    with pytest.raises(
+        InstallationError, match="Uninstall committed; finalization incomplete"
+    ):
+        uninstall_handoff.execute_handoff(handoff.plan_file)
+    assert not (directory / "installation.json").exists()
+    assert handoff.plan_file.exists()
+
+
+def test_successful_delegation_transfers_wait_to_finalizer(
+    tmp_path, monkeypatch
+):
+    import json
+    from apprc.distribution.runtime import _uninstall_terminal
+
+    directory, _runtime = _installed_zero_capability_scenario(
+        tmp_path, monkeypatch
+    )
+    preparation = prepare_uninstall(directory)
+    assert preparation.plan is not None
+    handoff = _pending_receiver_handoff(
+        preparation.plan, tmp_path, monkeypatch, os.getpid()
+    )
+    value = json.loads(handoff.plan_file.read_text())
+    value["wait"] = True
+    handoff.plan_file.write_text(json.dumps(value))
+    monkeypatch.setattr(
+        uninstall_handoff, "_wait_for_caller_exit", lambda _: None
+    )
+
+    def delegate(*args):
+        monkeypatch.setattr(
+            uninstall_handoff, "_REPOSITORY_FINALIZER", SimpleNamespace()
+        )
+
+    monkeypatch.setattr(
+        uninstall_handoff, "_launch_repository_finalizer", delegate
+    )
+
+    def unexpected_acknowledgement():
+        raise AssertionError("parent must not acknowledge after delegation")
+
+    monkeypatch.setattr(
+        _uninstall_terminal, "acknowledge", unexpected_acknowledgement
+    )
+    uninstall_handoff.execute_handoff(handoff.plan_file)
+    assert not (directory / "installation.json").exists()
+    assert handoff.plan_file.exists()

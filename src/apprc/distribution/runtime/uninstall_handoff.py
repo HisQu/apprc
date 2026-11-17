@@ -43,7 +43,6 @@ from apprc.distribution.runtime._leases import (
     try_acquire_runtime_quiescence,
     try_retire_runtime_slot,
 )
-from apprc.distribution.runtime.namespace_finalizer import finalize_namespace
 from apprc.distribution.runtime.probe import application_bridge
 from apprc.user_files.app_home.locations import (
     assert_no_links,
@@ -111,6 +110,10 @@ class _PendingHandoff:
     plan: UninstallPlan
     record: InstallationRecord
     manager_executable: Path | None
+
+
+class _CommittedFinalizationError(InstallationError):
+    """Removal committed but finalization could not be delegated or completed."""
 
 
 PathKind = Literal["file", "directory", "symlink", "tree", "repository"]
@@ -605,6 +608,8 @@ def execute_handoff(
     expected_identity: InstallationIdentity | None = None,
 ) -> None:
     """Validate and resume the exact pending uninstall handoff."""
+    global _REPOSITORY_FINALIZER
+    _REPOSITORY_FINALIZER = None
     assert_no_links(plan_file)
     value = _parse_plan(plan_file)
     if (
@@ -646,9 +651,14 @@ def execute_handoff(
             )
             raise
         else:
-            print("Uninstall completed.", file=sys.stderr, flush=True)
+            if _REPOSITORY_FINALIZER is None:
+                print("Uninstall completed.", file=sys.stderr, flush=True)
         finally:
-            if value["wait"] and completion[0]:
+            if (
+                value["wait"]
+                and completion[0]
+                and _REPOSITORY_FINALIZER is None
+            ):
                 from apprc.distribution.runtime._uninstall_terminal import (
                     acknowledge,
                 )
@@ -667,18 +677,29 @@ def execute_handoff(
             plan_file, value, recovery, pending, completion=completion
         )
     except BaseException as error:
-        print(f"Uninstall failed: {error}", file=sys.stderr, flush=True)
+        print(
+            str(error)
+            if isinstance(error, _CommittedFinalizationError)
+            else f"Uninstall failed: {error}",
+            file=sys.stderr,
+            flush=True,
+        )
         raise
     else:
-        print("Uninstall completed.", file=sys.stderr, flush=True)
-        for entry in pending.plan.inventory.retained:
+        if _REPOSITORY_FINALIZER is None:
+            print("Uninstall completed.", file=sys.stderr, flush=True)
+        for entry in (
+            ()
+            if _REPOSITORY_FINALIZER is not None
+            else pending.plan.inventory.retained
+        ):
             print(
                 f"Retained configuration: {entry.path}",
                 file=sys.stderr,
                 flush=True,
             )
     finally:
-        if value["wait"] and completion[0]:
+        if value["wait"] and completion[0] and _REPOSITORY_FINALIZER is None:
             from apprc.distribution.runtime._uninstall_terminal import (
                 acknowledge,
             )
@@ -740,45 +761,7 @@ def _finalize_committed_handoff(
         _wait_for_caller_exit(value)
         if completion is not None:
             completion[0] = True
-    manager = (
-        Path(value["manager_executable"])
-        if value["manager_executable"] is not None
-        else None
-    )
-    if any(
-        isinstance(entry, dict) and entry.get("kind") == "repository"
-        for entry in value["inventory"]
-    ):
-        _launch_repository_finalizer(plan_file, value, recovery)
-        return
-    if manager is None:
-        finalize_namespace(
-            finalization_plan, directory, expected_app_id=expected_app_id
-        )
-    else:
-        environment = dict(os.environ)
-        environment["PYAPP"] = str(manager)
-        environment["_APPRC_NATIVE_EXECUTABLE"] = str(manager)
-        subprocess.run(
-            [
-                str(manager),
-                "--apprc-finalize-namespace",
-                str(finalization_plan),
-                str(directory),
-            ],
-            cwd=plan_file.parent,
-            env=environment,
-            check=True,
-        )
-    if any(
-        isinstance(entry, dict) and entry.get("kind") == "repository"
-        for entry in value["inventory"]
-    ):
-        _launch_repository_finalizer(plan_file, value, recovery)
-    else:
-        shutil.rmtree(plan_file.parent)
-        if not caller_exited:
-            print(_UNKNOWN_EDITABLE_RETENTION, file=sys.stderr, flush=True)
+    _launch_repository_finalizer(plan_file, value, recovery)
 
 
 def _prepare_pending_handoff(
@@ -1324,6 +1307,8 @@ def _execute_pending_handoff(
                 operation_id=operation_id,
                 expected_revision=latest_revision,
             )
+            committed = True
+            _launch_repository_finalizer(plan_file, value, recovery)
             succeeded = True
 
         if plan.complete:
@@ -1348,6 +1333,10 @@ def _execute_pending_handoff(
                     f"Uninstall failed; exact recovery data remains at {recovery}.",
                     [error, recovery_error],
                 ) from error
+        if committed:
+            raise _CommittedFinalizationError(
+                f"Uninstall committed; finalization incomplete. Recovery remains at {recovery}: {error}"
+            ) from error
         raise
     finally:
         if succeeded:
@@ -1358,23 +1347,19 @@ def _execute_pending_handoff(
                 entry.kind == "repository" for entry in inventory.entries
             ):
                 if isinstance(editable, EditableCheckout):
-                    print(
-                        f"Editable installation remains at {editable.project}; its development environment was preserved at {editable.environment}.",
-                        file=sys.stderr,
-                        flush=True,
+                    from apprc.distribution.runtime._uninstall_terminal import (
+                        result_line,
+                    )
+
+                    result_line("Editable checkout preserved", editable.project)
+                    result_line(
+                        "Development environment preserved",
+                        editable.environment,
                     )
                 elif editable is None:
                     print(
                         _UNKNOWN_EDITABLE_RETENTION, file=sys.stderr, flush=True
                     )
-        if (
-            succeeded
-            and plan_file.parent.exists()
-            and not any(
-                entry.kind == "repository" for entry in inventory.entries
-            )
-        ):
-            shutil.rmtree(plan_file.parent)
 
 
 def _wait_for_caller_exit(value: HandoffPlan) -> None:
@@ -1557,7 +1542,11 @@ def _stage_repository_finalizer(staging: Path) -> Path:
     import inspect
     from importlib import resources
     import filelock
-    from apprc.distribution.runtime import namespace_finalizer, _process_waiter
+    from apprc.distribution.runtime import (
+        namespace_finalizer,
+        _process_waiter,
+        _uninstall_terminal,
+    )
     from apprc.user_files.installation import _namespace_lock
 
     leaf = staging / "repository_finalizer.py"
@@ -1565,6 +1554,7 @@ def _stage_repository_finalizer(staging: Path) -> Path:
         (namespace_finalizer, leaf),
         (_process_waiter, staging / "_process_waiter.py"),
         (_namespace_lock, staging / "_namespace_lock.py"),
+        (_uninstall_terminal, staging / "_uninstall_terminal.py"),
     ):
         write_bytes_atomic(
             target, inspect.getsource(module).encode("utf-8"), private=True
@@ -1591,32 +1581,60 @@ def _launch_repository_finalizer(
 ) -> None:
     """Hand committed checkout deletion to an externally locked process."""
     global _REPOSITORY_FINALIZER
-    proof = recovery / "repository.json"
-    if not proof.is_file():
-        raise InstallationError(
-            "Committed repository removal has no recovery proof."
-        )
-    leaf = _stage_repository_finalizer(plan_file.parent)
-    roots = tuple(
-        Path(entry["path"])
+    repository = any(
+        isinstance(entry, dict) and entry.get("kind") == "repository"
         for entry in value["inventory"]
-        if isinstance(entry, dict) and entry.get("kind") == "repository"
+    )
+    proof = (
+        recovery / ("repository.json" if repository else "finalization.json")
+        if value["complete"]
+        else plan_file
+    )
+    if not proof.is_file():
+        raise InstallationError("Committed removal has no finalization proof.")
+    leaf = _stage_repository_finalizer(plan_file.parent)
+    roots = (
+        Path(value["directory"]),
+        plan_file.parent,
+        *tuple(
+            Path(entry["path"])
+            for entry in value["inventory"]
+            if isinstance(entry, dict)
+            and entry.get("kind") in {"repository", "tree"}
+        ),
     )
     from apprc.distribution.runtime._uninstall_controller import _handoff_python
 
     python = _handoff_python(roots)
-    _REPOSITORY_FINALIZER = subprocess.Popen(
-        [
-            str(python),
-            str(leaf),
-            "--repository-plan",
+    cwd = plan_file.parent.parent
+    _handoff.assert_outside_removal(cwd, roots)
+    arguments = [str(python), str(leaf)]
+    if repository:
+        arguments += ["--repository-plan", str(proof)]
+    else:
+        arguments += [
+            "--plan",
             str(proof),
-            "--parent",
-            str(os.getpid()),
-            "--parent-token",
-            _handoff.process_start_token(os.getpid()),
-        ],
-        cwd=plan_file.parent,
+            "--directory",
+            value["directory"],
+            "--cleanup-staging",
+        ]
+    if not value["complete"]:
+        arguments.append("--cleanup-only")
+    arguments += [
+        "--parent",
+        str(os.getpid()),
+        "--parent-token",
+        _handoff.process_start_token(os.getpid()),
+    ]
+    if value["wait"]:
+        arguments.append("--wait")
+    for entry in value["retained"]:
+        if isinstance(entry, dict) and entry.get("resource") == "config":
+            arguments += ["--retained-config", str(entry["path"])]
+    _REPOSITORY_FINALIZER = subprocess.Popen(
+        arguments,
+        cwd=cwd,
         stdout=sys.stderr,
         stderr=sys.stderr,
         text=True,

@@ -149,17 +149,60 @@ def main() -> None:
     parser.add_argument("--repository-plan", type=Path)
     parser.add_argument("--parent", type=int)
     parser.add_argument("--parent-token")
+    parser.add_argument("--cleanup-staging", action="store_true")
+    parser.add_argument("--cleanup-only", action="store_true")
+    parser.add_argument("--wait", action="store_true")
+    parser.add_argument("--retained-config", action="append", default=[])
     arguments = parser.parse_args()
-    if arguments.repository_plan is not None:
-        if arguments.parent is None or arguments.parent_token is None:
-            parser.error("--parent and --parent-token are required")
-        finalize_repository(
-            arguments.repository_plan, arguments.parent, arguments.parent_token
-        )
-    else:
-        if arguments.plan is None or arguments.directory is None:
-            parser.error("--plan and --directory are required")
-        finalize_namespace(arguments.plan, arguments.directory)
+    external = (
+        arguments.repository_plan is not None or arguments.cleanup_staging
+    )
+    if external and (
+        arguments.parent is None or arguments.parent_token is None
+    ):
+        parser.error("--parent and --parent-token are required")
+    terminal = _load_peer("_uninstall_terminal") if external else None
+    try:
+        if arguments.repository_plan is not None:
+            finalize_repository(
+                arguments.repository_plan,
+                arguments.parent,
+                arguments.parent_token,
+            )
+        else:
+            if arguments.plan is None or arguments.directory is None:
+                parser.error("--plan and --directory are required")
+            if arguments.cleanup_staging:
+                process_waiter = _load_peer("_process_waiter")
+                waiter = process_waiter._open_process_waiter(
+                    arguments.parent, arguments.parent_token
+                )
+                process_waiter._wait_open_process(waiter)
+            if arguments.cleanup_only:
+                validate_partial_cleanup(arguments.plan, arguments.directory)
+            else:
+                finalize_namespace(arguments.plan, arguments.directory)
+            if arguments.cleanup_staging:
+                cleanup_staging(
+                    arguments.plan.parent
+                    if arguments.cleanup_only
+                    else arguments.plan.parent.parent
+                )
+        if external:
+            assert terminal is not None
+            terminal.result_line("Uninstall completed.")
+            for path in arguments.retained_config:
+                terminal.result_line("Retained configuration", Path(path))
+    except (OSError, ValueError) as error:
+        if terminal is not None:
+            terminal.result_line(
+                f"Uninstall committed; finalization incomplete: {error}"
+            )
+        raise
+    finally:
+        if external and arguments.wait:
+            assert terminal is not None
+            terminal.acknowledge()
 
 
 def _load_peer(name: str):
@@ -286,7 +329,70 @@ def finalize_repository(proof: Path, parent: int, token: str) -> None:
                 if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
                     raise
     print(f"Repository removed: {repository}", file=sys.stderr, flush=True)
-    shutil.rmtree(proof.parent.parent)
+    cleanup_staging(proof.parent.parent)
+
+
+def validate_partial_cleanup(plan: Path, directory: Path) -> None:
+    """Constrain partial-uninstall housekeeping to its exact staged envelope.
+
+    Remaining installation authority is deliberately not retired or modified.
+
+    :param plan: Existing private handoff envelope.
+    :param directory: Recorded retained installation address.
+    """
+    _assert_no_links(plan)
+    if (
+        not plan.is_absolute()
+        or plan.name != "handoff.json"
+        or plan.parent != Path(__file__).parent
+    ):
+        raise ValueError(
+            "Partial cleanup plan differs from the executing staging directory."
+        )
+    value = json.loads(plan.read_text(), object_pairs_hook=_unique_object)
+    if (
+        not isinstance(value, dict)
+        or value.get("complete") is not False
+        or value.get("directory") != str(directory)
+    ):
+        raise ValueError(
+            "Partial cleanup requires its retained installation envelope."
+        )
+    if directory == plan.parent or directory.is_relative_to(plan.parent):
+        raise ValueError("Retained installation overlaps staging cleanup.")
+
+
+def cleanup_staging(staging: Path) -> None:
+    """Remove only this private finalizer directory; leftover temp files warn.
+
+    :param staging: Exact external staging directory containing this SDK leaf.
+    """
+    import shutil
+    import sys
+
+    _assert_no_links(staging)
+    if not staging.is_absolute() or Path(__file__).parent != staging:
+        raise ValueError(
+            "Staging cleanup differs from the executing finalizer."
+        )
+    for survivor in (
+        Path.cwd(),
+        Path(sys.executable),
+        Path(sys.prefix),
+        Path(sys.base_prefix),
+    ):
+        if survivor == staging or survivor.is_relative_to(staging):
+            raise ValueError(
+                "Finalizer still depends on its staging directory."
+            )
+    terminal = _load_peer("_uninstall_terminal")
+    try:
+        shutil.rmtree(staging)
+    except OSError as error:
+        terminal.result_line(
+            f"Warning: uninstall completed, but temporary cleanup failed ({error})",
+            staging,
+        )
 
 
 if __name__ == "__main__":

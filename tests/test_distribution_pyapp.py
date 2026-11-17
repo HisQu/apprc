@@ -816,6 +816,7 @@ def test_native_default_uninstall_runs_cleanup_and_removes_managed_data(
     assert not provider.exists()
     assert not unrelated.exists()
     assert not (commands / str(spec.metadata.command_name)).exists()
+    assert not tuple(Path(environment["TMPDIR"]).glob("apprc-uninstall-*"))
 
 
 def test_failed_editable_switch_restores_real_global_command_and_authority(
@@ -1081,11 +1082,21 @@ def test_editable_repository_removal_survives_its_environment(
     (checkout / "external-link").symlink_to(external)
     command = commands / str(spec.metadata.command_name)
     preview = run(
-        [str(command), "app", "uninstall", "--remove-repository", "--dry-run"],
+        [
+            str(command),
+            "app",
+            "uninstall",
+            "--remove-repository",
+            "--dry-run",
+            "--json",
+        ],
         environment=environment,
         cwd=tmp_path,
     )
-    assert str(checkout) in preview.stdout
+    assert any(
+        entry["path"] == str(checkout) and entry["kind"] == "repository"
+        for entry in json.loads(preview.stdout)["entries"]
+    )
     assert checkout.is_dir()
     removal = run(
         [str(command), "app", "uninstall", "--remove-repository", "--yes"],
@@ -1167,7 +1178,7 @@ def test_editable_uninstall_removes_single_root_inside_preserved_repository(
         sibling.write_text("unrelated sibling")
     command = commands / str(spec.metadata.command_name)
     preview = run(
-        [str(command), "app", "uninstall", "--dry-run"],
+        [str(command), "app", "uninstall", "--dry-run", "--json"],
         environment=environment,
         cwd=tmp_path,
     )
@@ -1194,7 +1205,6 @@ def test_editable_uninstall_removes_single_root_inside_preserved_repository(
     assert sentinel.read_text() == "preserve the editable environment"
     assert not command.exists() and not command.is_symlink()
     assert not (directory / "installation.json").exists()
-    assert "Editable installation remains at" in removal.stderr
     event = json.loads(
         (
             Path(environment["APPRC_FIXTURE_ROOT"]) / "cleanup-hook.json"

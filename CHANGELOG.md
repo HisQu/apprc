@@ -99,6 +99,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🛠️ Changed
 
+- Interactive uninstall uses a Delete/Keep tree, clear confirmation, and cyan
+  filesystem paths. AppRC documents cyan paths as terminal-output policy.
+
 - **Breaking:** 💥 Uninstall replaces `--keep-data` with config-only `--keep-config`. Interactive removal offers config retention; `--yes` removes all selected resources without prompts. Uninstall includes obsolete and unexpected files inside the validated installation directory. Windows Settings uses the shared terminal flow and keeps the outcome visible.
 
 - **Breaking:** 💥 runtime implementation modules `controllers`, `removal`, and `_integration` are now `_uninstall_controller`, `uninstall_handoff`, and `_os_integration`. Update direct imports and handoff module invocations; runtime facade exports remain available.
@@ -128,6 +131,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 <br>
 
 ### 🐛 Fixed
+
+- Windows uninstall releases working-directory and executable locks before
+  removing staging files. Post-commit staging cleanup issues are warnings.
 
 - Editable installation reports its global command and checkout, and reports a failed optional config setup. Windows command replacement errors suggest stopping running application processes.
 

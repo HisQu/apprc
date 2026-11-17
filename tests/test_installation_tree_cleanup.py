@@ -641,9 +641,9 @@ def test_staged_results_keep_colors_without_application_package(tmp_path):
         [
             sys.executable,
             "-c",
-            "import sys; sys.modules['apprc'] = None; import _uninstall_terminal; _uninstall_terminal.result_line('Retained configuration', '/example/[settings]')",
+            f"import sys, shutil; sys.path.insert(0, {str(staging)!r}); sys.modules['apprc'] = None; import _uninstall_terminal; shutil.rmtree({str(staging)!r}); _uninstall_terminal.result_line('Retained configuration', '/example/[settings]')",
         ],
-        cwd=staging,
+        cwd=tmp_path,
         env=environment,
         capture_output=True,
         text=True,

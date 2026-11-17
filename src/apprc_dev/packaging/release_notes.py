@@ -202,6 +202,7 @@ def _is_layout_line(line: str) -> bool:
         or re.match(r"^\[[^]]+\]:\s+\S+", line) is not None
     )
 
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse release-note command arguments.
 

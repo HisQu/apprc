@@ -101,7 +101,9 @@ def test_repository_changelog_has_compact_toc_and_nearby_references() -> None:
         module._validate_toc_entry(markdown, match)
 
 
-def test_build_release_notes_accepts_yanked_heading_and_excludes_link_definitions() -> None:
+def test_build_release_notes_accepts_yanked_heading_and_excludes_link_definitions() -> (
+    None
+):
     module = load_release_notes_module()
     markdown = sample_changelog(version="1.2.0")
     markdown = markdown.replace(

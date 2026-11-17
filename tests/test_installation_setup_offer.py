@@ -125,6 +125,46 @@ def test_installed_setup_offer_dispatches_conditionally_and_releases_lease(
 
 
 @pytest.mark.parametrize(
+    "error",
+    [OSError("cannot start"), subprocess.CalledProcessError(1, "setup")],
+)
+def test_setup_offer_can_report_process_failure(
+    ready_inspection, monkeypatch, error
+):
+    monkeypatch.setattr(
+        installation, "inspect_installation", lambda *a, **k: ready_inspection
+    )
+
+    class Lease:
+        def environment(self, environment):
+            return dict(environment)
+
+        def subprocess_options(self):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        installation, "acquire_runtime_lease", lambda *a, **k: Lease()
+    )
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(installation.subprocess, "run", fail)
+    stream = io.StringIO()
+    monkeypatch.setattr(stream, "isatty", lambda: True)
+    with pytest.raises(type(error)):
+        installation.offer_configuration_setup(
+            ready_inspection,
+            skip=False,
+            input_stream=stream,
+            raise_on_failure=True,
+        )
+
+
+@pytest.mark.parametrize(
     ("load_layers", "captured_token", "expected_token", "expected_layer"),
     [
         (True, None, "file-token", "managed-layer"),

@@ -993,6 +993,12 @@ For a fresh application checkout:
 uv run --locked demo app install -e
 ```
 
+The command reports the global command and checkout paths after installation.
+On Windows, if replacing the global command is denied, stop running application
+processes, including servers, and retry. If the denial persists, check file
+permissions. If optional `config setup` fails, the global command remains
+installed; run `demo config setup` to retry.
+
 uv prepares the repository's existing `.venv` when necessary; AppRC then
 registers it and initializes only declared configuration/data/cache/state.
 Registration does not create another environment, copy the repository, resolve

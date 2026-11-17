@@ -85,6 +85,8 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+- Editable installation reports its global command and checkout, and reports a failed optional config setup. Windows command replacement errors suggest stopping running application processes.
+
 - Setup completion uses the mounted maintenance group for `app paths` and `app doctor` guidance. AppRC-generated installation, maintenance, and workspace options and arguments now include help descriptions.
 
 - A freshly rebuilt runtime candidate is no longer rebuilt again after a validation probe fails. Previously prepared candidates retain one recovery rebuild.

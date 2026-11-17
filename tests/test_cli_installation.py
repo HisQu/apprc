@@ -796,3 +796,49 @@ def test_editable_install_reports_rollback_notes_and_guidance_once(
     assert "controlled publication failure" in str(error)
     assert str(error).count(outcome) == 1
     assert str(error).count("install -e` from the checkout.") == 1
+
+
+@pytest.mark.parametrize("setup_fails", [False, True])
+def test_editable_install_reports_outcome(tmp_path, monkeypatch, setup_fails):
+    from dataclasses import replace
+    import subprocess
+
+    from apprc.definition.installation import EditableCheckout, OwnedOutput
+    from apprc.distribution.runtime import installation
+    from apprc.interfaces.cli import installation_command
+
+    context, commands = _pending_editable_context(tmp_path, monkeypatch)
+    record = context.inspection.record
+    assert record is not None and record.operation is not None
+    intended = record.operation.intended
+    assert intended is not None
+    assert isinstance(intended.runtime, EditableCheckout)
+    command = commands / "fixture"
+    ready = replace(
+        context.inspection,
+        status="ready",
+        record=replace(
+            record,
+            status="ready",
+            operation=None,
+            active_runtime=intended.runtime,
+            owned_outputs=(OwnedOutput("command", str(command), "digest"),),
+        ),
+    )
+    monkeypatch.setattr(
+        installation_command, "_register_editable", lambda *a, **k: ready
+    )
+
+    def setup(*args, **kwargs):
+        if setup_fails:
+            raise subprocess.CalledProcessError(1, "setup")
+        return False
+
+    monkeypatch.setattr(installation, "offer_configuration_setup", setup)
+    args = ["app", "install", "-e"]
+    result = CliRunner().invoke(_app(args=args), args, terminal_width=1000)
+    assert result.exit_code == (1 if setup_fails else 0), result.output
+    assert str(command) in result.output
+    assert str(intended.runtime.project) in result.output
+    if setup_fails:
+        assert "config setup failed" in result.output

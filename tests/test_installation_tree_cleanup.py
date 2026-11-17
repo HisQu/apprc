@@ -40,12 +40,12 @@ def test_default_removal_needs_no_application_callbacks(tmp_path: Path) -> None:
     assert (root / "payload").read_text() == "application data"
 
 
-def test_keep_data_does_not_select_resource_trees(tmp_path: Path) -> None:
+def test_keep_config_still_selects_cache_tree(tmp_path: Path) -> None:
     directory, root = _owned_cache(tmp_path)
-    preparation = prepare_uninstall(directory, keep_data=True)
+    preparation = prepare_uninstall(directory, keep_config=True)
     assert preparation.can_execute and preparation.plan is not None
-    assert not preparation.plan.complete
-    assert all(entry.resource is None for entry in preparation.entries)
+    assert preparation.plan.complete
+    assert any(entry.resource == "cache" for entry in preparation.entries)
     assert root.exists()
 
 
@@ -142,8 +142,9 @@ def test_repository_target_is_workspace_checkout_and_is_deferred(
     assert len(selected) == 1 and selected[0].path == repository
     _remove_inventory(selected)
     assert local_changes.read_text() == "local work"
-    with pytest.raises(InstallationError, match="cannot be combined"):
-        prepare_uninstall(directory, remove_repository=True, keep_data=True)
+    assert prepare_uninstall(
+        directory, remove_repository=True, keep_config=True
+    ).can_execute
 
 
 def test_repository_finalizer_preserves_external_link_targets(
@@ -247,6 +248,7 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
         "original_start": "exited",
         "readiness_token": "a" * 32,
         "recovery_directory": str(recovery),
+        "wait": False,
         "complete": True,
         "categories": [],
         "forget_retained": False,
@@ -337,3 +339,160 @@ def test_registration_rejects_unusable_callbacks_before_initializing_resources(
             expected_observations={},
         )
     assert not root.exists()
+
+
+def test_support_leftovers_are_captured_and_links_preserve_targets(tmp_path):
+    directory, _ = _owned_cache(tmp_path)
+    names = (
+        "receipt.json",
+        "lifecycle.py",
+        "uninstall.sh",
+        "uninstall.cmd",
+        "uninstall.ps1",
+        "prepare-powershell-windows.cmd",
+    )
+    for name in names:
+        (directory / name).write_text("obsolete support")
+    nested = directory / "old" / "nested"
+    nested.mkdir(parents=True)
+    (nested / "extra").write_text("leftover")
+    outside = tmp_path / "outside"
+    outside.write_text("preserve")
+    (directory / "outside-link").symlink_to(outside)
+    preparation = prepare_uninstall(directory)
+    assert preparation.can_execute and preparation.plan is not None
+    selected = tuple(
+        entry
+        for entry in preparation.plan.inventory.entries
+        if entry.resource is None
+    )
+    assert all(
+        any(entry.path == directory / name for entry in selected)
+        for name in names
+    )
+    # Runtime retirement precedes support removal in the actual handoff.
+    import shutil
+
+    shutil.rmtree(directory / "runtimes")
+    _remove_inventory(selected)
+    assert outside.read_text() == "preserve"
+    assert not (directory / "old").exists()
+
+
+def test_support_link_recovery_refreshes_only_restored_link_identity(tmp_path):
+    from apprc.definition.installation import CleanupInventory, InventoryEntry
+    from apprc.distribution.runtime.uninstall_handoff import (
+        _backup_support,
+        _restore_support_links,
+    )
+    from apprc.user_files.installation.inventory import symlink_revision
+
+    directory = tmp_path / "installation"
+    directory.mkdir()
+    recovery = tmp_path / "recovery"
+    from apprc.user_files.app_home.permissions import (
+        create_private_directory_if_missing,
+    )
+
+    create_private_directory_if_missing(recovery)
+    outside = tmp_path / "outside"
+    outside.write_text("keep external contents")
+    link = directory / "link"
+    link.symlink_to(outside)
+    entry = InventoryEntry(link, "symlink", symlink_revision(link))
+    inventory = CleanupInventory((entry,))
+    _backup_support(inventory.entries, directory, recovery)
+    _remove_inventory(inventory.entries)
+    restored = _restore_support_links(recovery, directory, inventory)
+    assert link.is_symlink() and link.readlink() == outside
+    assert restored.entries[0].revision == symlink_revision(link)
+    _remove_inventory(restored.entries)
+    assert outside.read_text() == "keep external contents"
+
+
+def test_keep_config_removes_cache_and_retires_authority(tmp_path):
+    import shutil
+    from apprc.definition.installation import OperationStep
+    from apprc.user_files.installation.operations import (
+        begin_operation,
+        record_step,
+        commit_uninstall,
+    )
+
+    config = tmp_path / "config"
+    cache = tmp_path / "cache"
+    for root, category in ((config, "config"), (cache, "cache")):
+        root.mkdir()
+        (root / ".apprc-owner.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "app_id": "handoff-app",
+                    "category": category,
+                }
+            )
+        )
+        (root / "payload").write_text(category)
+    directory, _runtime = managed_installation(
+        tmp_path,
+        config_root=config,
+        cache_root=cache,
+        hooks=InstallationHooks(),
+    )
+    preparation = prepare_uninstall(directory, keep_config=True)
+    assert preparation.plan is not None
+    plan = preparation.plan
+    assert plan.complete and plan.forget_retained
+    assert {entry.path for entry in plan.inventory.retained} == {config}
+    assert "config" not in plan.categories and "cache" in plan.categories
+    current = begin_operation(plan)
+    assert current.revision is not None
+    # Runtime retirement is a separate phase; exercise the retained-data commit boundary here.
+    shutil.rmtree(directory / "runtimes")
+    current = record_step(
+        directory,
+        operation_id=plan.operation_id,
+        expected_revision=current.revision,
+        step=OperationStep.RUNTIME_REMOVED,
+    )
+    _remove_inventory(plan.inventory.entries)
+    assert current.revision is not None
+    current = record_step(
+        directory,
+        operation_id=plan.operation_id,
+        expected_revision=current.revision,
+        step=OperationStep.DATA_REMOVED,
+    )
+    assert current.revision is not None
+    result = commit_uninstall(
+        directory,
+        operation_id=plan.operation_id,
+        expected_revision=current.revision,
+    )
+    assert result.kind == "retired"
+    assert not (directory / "installation.json").exists()
+    assert not cache.exists()
+    assert (config / "payload").read_text() == "config"
+
+
+def test_pending_uninstall_rejects_new_config_retention_choice(tmp_path):
+    from apprc.user_files.installation.operations import begin_operation
+
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / ".apprc-owner.json").write_text(
+        json.dumps(
+            {"schema_version": 1, "app_id": "handoff-app", "category": "config"}
+        )
+    )
+    settings = config / "settings"
+    settings.write_text("preserve until confirmed removal")
+    directory, _ = managed_installation(
+        tmp_path, config_root=config, hooks=InstallationHooks()
+    )
+    preparation = prepare_uninstall(directory)
+    assert preparation.plan is not None
+    begin_operation(preparation.plan)
+    with pytest.raises(InstallationError, match="retention differs"):
+        prepare_uninstall(directory, keep_config=True)
+    assert settings.read_text() == "preserve until confirmed removal"

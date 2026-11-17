@@ -320,11 +320,18 @@ def mount_installation_group(
                 help="Show the planned changes without applying them.",
             ),
         ] = False,
-        keep_data: Annotated[
+        keep_config: Annotated[
             bool,
             typer.Option(
-                "--keep-data",
-                help="Remove the program while retaining application data and configuration.",
+                "--keep-config",
+                help="Keep the config directory, including saved settings and secrets.",
+            ),
+        ] = False,
+        wait: Annotated[
+            bool,
+            typer.Option(
+                "--wait",
+                help="Keep the uninstall terminal visible until acknowledged.",
             ),
         ] = False,
         remove_repository: Annotated[
@@ -345,50 +352,104 @@ def mount_installation_group(
         ] = False,
     ) -> None:
         """Preview or remove the program and only explicitly selected owned data."""
-        if keep_data and remove_repository:
-            raise typer.BadParameter(
-                "--keep-data cannot be combined with --remove-repository."
-            )
-        command_context = _inspection(ctx)
-        inspection = command_context.inspection
-        directory = inspection.directory
-        try:
-            from apprc.distribution.runtime import _uninstall_controller
+        from apprc.distribution.runtime import _uninstall_terminal
 
-            manager_executable = command_context._native_manager_executable
-            preparation = _uninstall_controller.prepare_uninstall(
-                directory,
-                keep_data=True if keep_data else None,
-                remove_repository=remove_repository,
-                manager_executable=manager_executable,
-            )
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        payload = _preparation_payload(preparation)
-        _emit(payload, json_output)
-        if dry_run:
-            return
-        if preparation.plan is None or not preparation.can_execute:
-            raise typer.Exit(code=1)
-        if not assume_yes and not sys.stdin.isatty():
-            raise typer.BadParameter("Unattended removal requires --yes.")
-        if not assume_yes and not typer.confirm(
-            "Remove the program and the exact owned targets shown above?",
-            default=False,
-        ):
-            raise typer.Abort()
-
+        wait = wait and not assume_yes and not dry_run
+        handed_off = False
+        if wait:
+            _uninstall_terminal.prepare()
         try:
-            handoff = _uninstall_controller.start_uninstall_handoff(
-                preparation.plan,
-                original_pid=os.getpid(),
-                manager_executable=command_context._native_manager_executable,
-            )
-            handoff.wait_ready()
-            handoff.signal_exit()
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        raise SystemExit(0)
+            command_context = _inspection(ctx)
+            inspection = command_context.inspection
+            directory = inspection.directory
+            record = inspection.record
+            if (
+                not dry_run
+                and not assume_yes
+                and not keep_config
+                and sys.stdin.isatty()
+                and record is not None
+                and record.operation is None
+                and record.placement.config_dir is not None
+                and record.placement.config_dir.exists()
+            ):
+                keep_config = typer.confirm(
+                    f"Keep user configuration at {record.placement.config_dir}?",
+                    default=True,
+                )
+            try:
+                from apprc.distribution.runtime import _uninstall_controller
+
+                manager_executable = command_context._native_manager_executable
+                preparation = _uninstall_controller.prepare_uninstall(
+                    directory,
+                    keep_config=True if keep_config else None,
+                    remove_repository=remove_repository,
+                    manager_executable=manager_executable,
+                )
+            except (OSError, ValueError) as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            payload = _preparation_payload(preparation)
+            if json_output:
+                _emit(payload, True)
+            else:
+                typer.echo("Uninstall targets:")
+                targets = (
+                    preparation.plan.inventory.entries
+                    if preparation.plan is not None
+                    else ()
+                )
+                for entry in targets:
+                    typer.echo(f"  {entry.path}")
+                if preparation.plan is not None:
+                    for entry in preparation.plan.inventory.retained:
+                        typer.echo(f"Keep: {entry.path}")
+                if (
+                    record is not None
+                    and isinstance(record.active_runtime, EditableCheckout)
+                    and not remove_repository
+                ):
+                    typer.echo(
+                        f"Keep checkout: {record.active_runtime.project}"
+                    )
+                    typer.echo(
+                        f"Keep environment: {record.active_runtime.environment}"
+                    )
+                for diagnostic in preparation.diagnostics:
+                    typer.echo(
+                        f"Cannot uninstall: {diagnostic.message} {diagnostic.recovery}",
+                        err=True,
+                    )
+            if dry_run:
+                return
+            if preparation.plan is None or not preparation.can_execute:
+                raise typer.Exit(code=1)
+            if not assume_yes and not sys.stdin.isatty():
+                raise typer.BadParameter("Unattended removal requires --yes.")
+            if not assume_yes and not typer.confirm(
+                "Remove the program and the exact owned targets shown above?",
+                default=False,
+            ):
+                raise typer.Abort()
+
+            try:
+                handoff = _uninstall_controller.start_uninstall_handoff(
+                    preparation.plan,
+                    original_pid=os.getpid(),
+                    wait=wait,
+                    manager_executable=command_context._native_manager_executable,
+                )
+                handoff.wait_ready()
+                handoff.signal_exit()
+                handed_off = True
+            except (OSError, ValueError) as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            raise SystemExit(0)
+        except BaseException as error:
+            if wait and not handed_off:
+                typer.echo(f"Uninstall did not complete: {error}", err=True)
+                _uninstall_terminal.acknowledge()
+            raise
 
     return child
 
@@ -892,12 +953,11 @@ def _preparation_payload(
     record = preparation.inspection.record
     retained: list[dict[str, str]] = []
     if record is not None:
-        if preparation.plan is not None and not preparation.plan.complete:
-            from apprc.user_files.installation.planning import resource_roots
-
+        if preparation.plan is not None:
             retained.extend(
-                {"path": str(path), "reason": "--keep-data"}
-                for _, path in resource_roots(record.placement)
+                {"path": str(entry.path), "reason": "--keep-config"}
+                for entry in preparation.plan.inventory.retained
+                if entry.resource == "config"
             )
         if isinstance(record.active_runtime, EditableCheckout) and not any(
             entry.kind == "repository" for entry in preparation.entries

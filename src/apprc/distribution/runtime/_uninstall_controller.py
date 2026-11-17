@@ -11,7 +11,7 @@ import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from apprc.definition.config_filenames import (
     DEFAULT_APPRC_TOML_FILENAME,
@@ -156,118 +156,81 @@ def _support_inventory(
     *,
     complete: bool,
 ) -> tuple[tuple[InventoryEntry, ...], tuple[str, ...]]:
-    """Capture owned outputs; complete removal also rejects unknown files."""
-    outputs = record.owned_outputs
-    files: dict[Path, str] = {}
-    directories: set[Path] = set()
+    """Snapshot contents of the validated app-owned support container.
+
+    Authority and namespace locks retain their separately coordinated lifetime.
+    Known runtime slots are removed through their existing lease-aware path.
+    """
+    from apprc.user_files.installation.inventory import symlink_revision
+
+    entries: list[InventoryEntry] = []
     diagnostics: list[str] = []
     runtime_root = directory / "runtimes"
     known_slots = set(record.retiring_runtime_ids)
     if isinstance(record.active_runtime, RuntimeSlot):
         known_slots.add(record.active_runtime.slot_id)
-    if runtime_root.exists() or runtime_root.is_symlink():
-        if runtime_root.is_symlink() or not runtime_root.is_dir():
-            diagnostics.append(f"Saved runtime root is unsafe: {runtime_root}.")
-        else:
-            directories.add(runtime_root)
-    for output in outputs:
-        if output.digest is None:
-            if output.kind == "command":
-                diagnostics.append(
-                    f"Saved command ownership is malformed: {output.path}."
-                )
-            continue
-        if output.kind == "support":
-            relative = Path(output.path)
-            if (
-                relative.is_absolute()
-                or not relative.parts
-                or ".." in relative.parts
-            ):
-                diagnostics.append(
-                    f"Saved support ownership is malformed: {output.path}."
-                )
-                continue
-            path = directory.joinpath(*relative.parts)
-        elif output.kind == "command":
-            path = Path(output.path)
-            if (
-                not path.is_absolute()
-                or ".." in path.parts
-                or not path.is_relative_to(directory)
-            ):
-                continue
-        else:
-            continue
-        files[path] = output.digest
-        parent = path.parent
-        while parent != directory:
-            directories.add(parent)
-            parent = parent.parent
-    entries: list[InventoryEntry] = []
-    for path, digest in files.items():
-        if not path.exists() and not path.is_symlink():
-            continue
-        if (
-            path.is_symlink()
-            or not path.is_file()
-            or file_revision(path) != digest
-        ):
-            diagnostics.append(
-                f"Saved support output changed after installation: {path}."
-            )
-            continue
-        entries.append(InventoryEntry(path, "file", digest))
+    assert_no_links(directory)
     if not complete:
-        return tuple(entries), tuple(dict.fromkeys(diagnostics))
-    for path in directories:
-        if path.exists() or path.is_symlink():
-            if path.is_symlink() or not path.is_dir():
+        for output in record.owned_outputs:
+            path = (
+                directory / output.path
+                if output.kind == "support"
+                else Path(output.path)
+            )
+            if (
+                output.kind not in {"support", "command"}
+                or not path.is_relative_to(directory)
+                or output.digest is None
+            ):
+                continue
+            if not path.exists() and not path.is_symlink():
+                continue
+            assert_no_links(path)
+            if not path.is_file() or file_revision(path) != output.digest:
                 diagnostics.append(
-                    f"Saved support directory is unsafe: {path}."
+                    f"Recorded support file changed before partial removal: {path}."
                 )
             else:
-                entries.append(InventoryEntry(path, "directory", None))
+                entries.append(InventoryEntry(path, "file", output.digest))
+        return tuple(entries), tuple(diagnostics)
     for root_text, names, filenames in os.walk(directory, followlinks=False):
         root = Path(root_text)
-        if root == directory / "locks":
-            names.clear()
-            continue
-        if root == runtime_root:
-            for name in tuple(names):
-                path = root / name
-                try:
-                    slot_id = UUID(name)
-                except ValueError:
-                    slot_id = None
-                if slot_id not in known_slots or path.is_symlink():
-                    diagnostics.append(
-                        f"Unowned or linked managed runtime slot: {path}."
-                    )
-                names.remove(name)
-            for name in filenames:
-                diagnostics.append(
-                    f"Unowned file in managed runtime root: {root / name}."
-                )
-            continue
         for name in tuple(names):
             path = root / name
             if path == directory / "locks":
                 names.remove(name)
                 continue
-            if path.is_symlink() or path not in directories:
-                diagnostics.append(
-                    f"Unowned or linked installation directory: {path}."
+            if root == runtime_root and name in {
+                str(slot) for slot in known_slots
+            }:
+                assert_no_links(path)
+                names.remove(name)
+                continue
+            if path.is_symlink():
+                entries.append(
+                    InventoryEntry(path, "symlink", symlink_revision(path))
                 )
+                names.remove(name)
+            else:
+                assert_no_links(path)
+                entries.append(InventoryEntry(path, "directory", None))
         for name in filenames:
             path = root / name
-            if path != directory / "installation.json" and (
-                path.is_symlink() or path not in files
-            ):
-                diagnostics.append(
-                    f"Unowned or linked installation file: {path}."
+            if path == directory / "installation.json":
+                continue
+            if path.is_symlink():
+                entries.append(
+                    InventoryEntry(path, "symlink", symlink_revision(path))
                 )
-    return tuple(entries), tuple(dict.fromkeys(diagnostics))
+            elif path.is_file():
+                entries.append(
+                    InventoryEntry(path, "file", file_revision(path))
+                )
+            else:
+                diagnostics.append(
+                    f"Unsupported installation file type: {path}."
+                )
+    return tuple(entries), tuple(diagnostics)
 
 
 def _recorded_manager_executable(
@@ -487,7 +450,7 @@ def prepare_uninstall(
     complete: bool | None = None,
     forget_retained: bool = False,
     inventory: CleanupInventory | None = None,
-    keep_data: bool | None = None,
+    keep_config: bool | None = None,
     remove_repository: bool = False,
     manager_executable: Path | None = None,
 ) -> UninstallPreparation:
@@ -521,10 +484,6 @@ def prepare_uninstall(
         else ()
     )
     if remove_repository:
-        if keep_data:
-            raise InstallationError(
-                "--keep-data cannot be combined with --remove-repository."
-            )
         if (
             pending_operation is not None
             and pending_operation.kind == "uninstall"
@@ -549,24 +508,29 @@ def prepare_uninstall(
             record.operation is not None
             and record.operation.kind == "uninstall"
         ):
-            complete = (
-                record.operation.complete
-                if keep_data is None
-                else not keep_data
+            saved_keep_config = any(
+                entry.resource == "config"
+                for entry in record.operation.inventory.retained
             )
+            if (
+                keep_config is not None
+                and keep_config != saved_keep_config
+                and "config" in record.placement.capabilities
+            ):
+                raise InstallationError(
+                    "Config retention differs from the pending uninstall. Retry with its saved choices."
+                )
+            complete = record.operation.complete
             categories = record.operation.categories
             forget_retained = record.operation.forget_retained
         else:
-            complete = not bool(keep_data)
-            categories = (
-                (
-                    record.placement.capabilities.union(
-                        item.kind for item in record.placement.retired
-                    )
-                )
-                if complete
-                else frozenset()
+            complete = True
+            categories = record.placement.capabilities.union(
+                item.kind for item in record.placement.retired
             )
+            if keep_config:
+                categories = categories - {"config"}
+                forget_retained = True
     else:
         complete = bool(complete)
     try:
@@ -623,6 +587,34 @@ def prepare_uninstall(
                 selected_inventory = CleanupInventory()
             elif automatic:
                 selected_inventory = _tree_cleanup_inventory(inspection)
+                retained_config = tuple(
+                    entry
+                    for entry in selected_inventory.entries
+                    if entry.resource == "config" and keep_config
+                )
+                retained_paths = {entry.path for entry in retained_config}
+                if keep_config:
+                    retained_config += tuple(
+                        InventoryEntry(root, "directory", None, kind)
+                        for kind, root in resource_roots(record.placement)
+                        if kind == "config" and root not in retained_paths
+                    )
+                if repository is not None and any(
+                    entry.path == repository
+                    or entry.path.is_relative_to(repository)
+                    for entry in retained_config
+                ):
+                    raise InstallationError(
+                        "Cannot retain config inside a repository selected for removal."
+                    )
+                selected_inventory = CleanupInventory(
+                    tuple(
+                        entry
+                        for entry in selected_inventory.entries
+                        if entry not in retained_config
+                    ),
+                    retained_config,
+                )
             else:
                 selected_inventory = default_cleanup_inventory(
                     inspection,
@@ -656,7 +648,7 @@ def prepare_uninstall(
             InstallationDiagnostic(
                 "uninstall-support-inventory",
                 message,
-                "Repair or inspect changed owned program files before removal.",
+                "Inspect the named unsafe installation path before retrying removal.",
             )
             for message in support_errors
         )
@@ -846,6 +838,7 @@ def start_uninstall_handoff(
     *,
     original_pid: int | None = None,
     manager_executable: Path | None = None,
+    wait: bool = False,
 ) -> UninstallHandoff:
     """Launch an independent native or Python controller for the staged plan."""
     directory = plan.directory
@@ -943,6 +936,7 @@ def start_uninstall_handoff(
             "original_start": _handoff.process_start_token(pid),
             "recovery_directory": str(recovery_directory),
             "readiness_token": ready_token,
+            "wait": wait,
             "complete": staged.complete,
             "categories": sorted(staged.categories),
             "forget_retained": staged.forget_retained,

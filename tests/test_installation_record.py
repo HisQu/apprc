@@ -336,22 +336,36 @@ def test_symlink_inventory_requires_an_opaque_digest(
         InventoryEntry(tmp_path / "owned-link", "symlink", revision, "cache")
 
 
-def test_symlink_inventory_cannot_claim_installation_support(
+def test_support_symlink_inventory_requires_validated_installation_boundary(
     tmp_path: Path,
 ) -> None:
-    with pytest.raises(InstallationError, match="recorded resource category"):
-        InventoryEntry(tmp_path / "support-link", "symlink", "a" * 64)
-    content = json.loads(
-        encode_cleanup_inventory(
-            CleanupInventory(
-                (
-                    InventoryEntry(
-                        tmp_path / "owned-link", "symlink", "a" * 64, "cache"
-                    ),
-                )
-            )
-        )
+    from apprc.user_files.installation.planning import validate_cleanup
+
+    directory = tmp_path / "installation"
+    directory.mkdir()
+    support = InventoryEntry(directory / "support-link", "symlink", "a" * 64)
+    inventory = CleanupInventory((support,))
+    assert (
+        decode_cleanup_inventory(encode_cleanup_inventory(inventory))
+        == inventory
     )
-    content["entries"][0]["resource"] = None
-    with pytest.raises(InstallationError, match="recorded resource category"):
-        decode_cleanup_inventory(json.dumps(content).encode("utf-8"))
+    validate_cleanup(
+        inventory,
+        placement=InstallationPlacement(Layout.native()),
+        directory=directory,
+        categories=frozenset(),
+        complete=True,
+        forget_retained=False,
+    )
+    outside = CleanupInventory(
+        (InventoryEntry(tmp_path / "outside-link", "symlink", "a" * 64),)
+    )
+    with pytest.raises(InstallationError, match="external data"):
+        validate_cleanup(
+            outside,
+            placement=InstallationPlacement(Layout.native()),
+            directory=directory,
+            categories=frozenset(),
+            complete=True,
+            forget_retained=False,
+        )

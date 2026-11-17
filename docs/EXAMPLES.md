@@ -294,7 +294,7 @@ failure recovery.
 
 The [default removal example](../examples/example_apps/src/distribution_default/uninstall.py)
 delegates removal of the program and managed data. Obtain consent after
-reviewing its whole-directory targets; use `--keep-data` to preserve data.
+reviewing its whole-directory targets; use `--keep-config` to preserve configuration only.
 
 Applications declare optional importable `module:function` callbacks for
 initialization, cleanup and migration in `[tool.apprc.distribution.hooks]`. AppRC invokes
@@ -319,7 +319,7 @@ The [custom removal example](../examples/example_apps/src/distribution_custom/un
 keeps application-owned cleanup explicit. Cleanup must run while the recorded
 application environment is available and against the accepted operation context.
 A declared cleanup callback that cannot run blocks dependent data deletion.
-`--keep-data` skips data cleanup and preserves resources.
+`--keep-config` retains only the config directory; other managed data is removed.
 
 Keep ownership inventories, process quiescence and consent explicit when
 adapting these examples. Closing a screen is not process exit, and successful

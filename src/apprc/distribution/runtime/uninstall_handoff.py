@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal, TypedDict, TypeGuard
 from uuid import UUID
@@ -58,6 +58,7 @@ from apprc.user_files.installation.coordination import (
     finish_namespace_retirement,
     installation_lock,
     retire_held_operation_lock,
+    write_record,
 )
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.operations import (
@@ -70,7 +71,10 @@ from apprc.user_files.installation.planning import (
     resource_roots,
     validate_cleanup,
 )
-from apprc.user_files.installation.inventory import cleanup_entry_revision
+from apprc.user_files.installation.inventory import (
+    cleanup_entry_revision,
+    symlink_revision,
+)
 from apprc.user_files.app_home.ownership import inspect_ownership
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
@@ -92,6 +96,7 @@ class HandoffPlan(TypedDict):
     original_start: str
     readiness_token: str
     recovery_directory: str
+    wait: bool
     complete: bool
     categories: list[ResourceKind]
     forget_retained: bool
@@ -168,6 +173,7 @@ def _parse_plan(path: Path) -> HandoffPlan:
         "original_start",
         "readiness_token",
         "recovery_directory",
+        "wait",
         "complete",
         "categories",
         "forget_retained",
@@ -212,6 +218,7 @@ def _parse_plan(path: Path) -> HandoffPlan:
         or re.fullmatch(r"[0-9a-f]{32}", token) is None
         or not isinstance(recovery_directory, str)
         or Path(recovery_directory) != path.parent / "recovery"
+        or type(value["wait"]) is not bool
         or type(complete) is not bool
         or not isinstance(categories, list)
         or type(forget_retained) is not bool
@@ -266,6 +273,7 @@ def _parse_plan(path: Path) -> HandoffPlan:
         "original_start": original_start,
         "readiness_token": token,
         "recovery_directory": recovery_directory,
+        "wait": value["wait"],
         "complete": complete,
         "categories": category_values,
         "forget_retained": forget_retained,
@@ -469,10 +477,26 @@ def _backup_support(
     recovery_support = recovery / "support"
     recovery_support.mkdir(mode=0o700, exist_ok=True)
     manifest: list[dict[str, object]] = []
+    links: list[dict[str, object]] = []
     for entry in entries:
         if entry.resource is not None or not entry.path.is_relative_to(
             directory
         ):
+            continue
+        if entry.kind == "symlink":
+            relative = entry.path.relative_to(directory)
+            if symlink_revision(entry.path) != entry.revision:
+                raise InstallationError(
+                    "Support link changed before recovery staging."
+                )
+            links.append(
+                {
+                    "path": relative.as_posix(),
+                    "revision": entry.revision,
+                    "target": os.readlink(entry.path),
+                    "directory": entry.path.is_dir(),
+                }
+            )
             continue
         if entry.kind != "file":
             continue
@@ -505,6 +529,13 @@ def _backup_support(
                 "mode": entry.path.stat().st_mode & 0o777,
             }
         )
+    links_path = recovery / "support-links.json"
+    link_content = (json.dumps(links, sort_keys=True) + "\n").encode()
+    if links_path.exists():
+        if links_path.read_bytes() != link_content:
+            raise InstallationError("External support link backup changed.")
+    else:
+        write_bytes_atomic(links_path, link_content, private=True)
     manifest_path = recovery / "support-backup.json"
     content = (json.dumps(manifest, sort_keys=True) + "\n").encode("utf-8")
     if manifest_path.exists():
@@ -517,6 +548,55 @@ def _backup_support(
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
+
+
+def _restore_support_links(
+    recovery: Path, directory: Path, inventory: CleanupInventory
+) -> CleanupInventory:
+    """Restore deleted support links and refresh only their recorded identities."""
+    manifest = recovery / "support-links.json"
+    assert_no_links(manifest)
+    if not manifest.exists():
+        return inventory
+    links = json.loads(manifest.read_text())
+    if not isinstance(links, list):
+        raise InstallationError("Malformed support link backup.")
+    entries = {entry.path: entry for entry in inventory.entries}
+    restored: dict[Path, InventoryEntry] = {}
+    for item in links:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"path", "revision", "target", "directory"}
+            or not isinstance(item["path"], str)
+            or not isinstance(item["target"], str)
+            or type(item["directory"]) is not bool
+        ):
+            raise InstallationError("Malformed support link before-image.")
+        relative = relative_destination(item["path"])
+        path = directory / relative
+        entry = entries.get(path)
+        if (
+            entry is None
+            or entry.kind != "symlink"
+            or entry.revision != item["revision"]
+        ):
+            raise InstallationError(
+                "Support link backup differs from pending inventory."
+            )
+        assert_no_links(path.parent)
+        if path.exists() or path.is_symlink():
+            if symlink_revision(path) != entry.revision:
+                raise InstallationError(
+                    "Cannot restore over a changed support link."
+                )
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path.symlink_to(item["target"], target_is_directory=item["directory"])
+        restored[path] = replace(entry, revision=symlink_revision(path))
+    return CleanupInventory(
+        tuple(restored.get(entry.path, entry) for entry in inventory.entries),
+        inventory.retained,
+    )
 
 
 def execute_handoff(
@@ -546,17 +626,34 @@ def execute_handoff(
         )
     assert_no_links(recovery)
     inspection = inspect_installation(directory, app_id=value["app_id"])
+    completion = [False]
     if inspection.record is None:
-        _finalize_committed_handoff(
-            plan_file,
-            value,
-            recovery,
-            expected_app_id=(
-                expected_identity.app_id
+        try:
+            _finalize_committed_handoff(
+                plan_file,
+                value,
+                recovery,
+                expected_app_id=expected_identity.app_id
                 if expected_identity is not None
-                else value["app_id"]
-            ),
-        )
+                else value["app_id"],
+                completion=completion,
+            )
+        except BaseException as error:
+            print(
+                f"Uninstall finalization failed: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
+        else:
+            print("Uninstall completed.", file=sys.stderr, flush=True)
+        finally:
+            if value["wait"] and completion[0]:
+                from apprc.distribution.runtime._uninstall_terminal import (
+                    acknowledge,
+                )
+
+                acknowledge()
         return
     pending = _prepare_pending_handoff(
         plan_file,
@@ -565,7 +662,28 @@ def execute_handoff(
         inspection,
         expected_identity=expected_identity,
     )
-    _execute_pending_handoff(plan_file, value, recovery, pending)
+    try:
+        _execute_pending_handoff(
+            plan_file, value, recovery, pending, completion=completion
+        )
+    except BaseException as error:
+        print(f"Uninstall failed: {error}", file=sys.stderr, flush=True)
+        raise
+    else:
+        print("Uninstall completed.", file=sys.stderr, flush=True)
+        for entry in pending.plan.inventory.retained:
+            print(
+                f"Retained configuration: {entry.path}",
+                file=sys.stderr,
+                flush=True,
+            )
+    finally:
+        if value["wait"] and completion[0]:
+            from apprc.distribution.runtime._uninstall_terminal import (
+                acknowledge,
+            )
+
+            acknowledge()
 
 
 def _finalize_committed_handoff(
@@ -575,6 +693,7 @@ def _finalize_committed_handoff(
     *,
     expected_app_id: str,
     caller_exited: bool = False,
+    completion: list[bool] | None = None,
 ) -> None:
     """Finish retirement, waiting only for a separately launched recovery caller.
 
@@ -619,6 +738,8 @@ def _finalize_committed_handoff(
         _handoff.assert_outside_removal(path, roots)
     if not caller_exited:
         _wait_for_caller_exit(value)
+        if completion is not None:
+            completion[0] = True
     manager = (
         Path(value["manager_executable"])
         if value["manager_executable"] is not None
@@ -1108,6 +1229,8 @@ def _execute_pending_handoff(
     value: HandoffPlan,
     recovery: Path,
     pending: _PendingHandoff,
+    *,
+    completion: list[bool] | None = None,
 ) -> None:
     """Wait for the caller, then perform the pending operation through CAS steps."""
     plan = pending.plan
@@ -1120,6 +1243,8 @@ def _execute_pending_handoff(
     succeeded = False
     latest_revision = plan.expected_revision
     _wait_for_caller_exit(value)
+    if completion is not None:
+        completion[0] = True
     try:
         current = inspect_installation(directory, app_id=app_id)
         record = current.record
@@ -1313,6 +1438,22 @@ def _recover_pending_uninstall(
             )
         if not complete or OperationStep.DATA_REMOVED not in operation.steps:
             _restore_support(recovery, directory)
+            restored_inventory = _restore_support_links(
+                recovery, directory, inventory
+            )
+            if restored_inventory != inventory:
+                updated = replace(
+                    record,
+                    operation=replace(operation, inventory=restored_inventory),
+                )
+                write_record(directory, updated, expected_revision=revision)
+                revision = inspect_installation(
+                    directory, app_id=app_id
+                ).revision
+                if revision is None:
+                    raise InstallationError(
+                        "Restored support links lost authority revision."
+                    )
         for snapshot in registry_backup:
             _os_integration.restore_windows_registration(snapshot)
         fail_operation(

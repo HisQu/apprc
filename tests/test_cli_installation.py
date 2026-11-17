@@ -842,3 +842,65 @@ def test_editable_install_reports_outcome(tmp_path, monkeypatch, setup_fails):
     assert str(intended.runtime.project) in result.output
     if setup_fails:
         assert "config setup failed" in result.output
+
+
+@pytest.mark.parametrize("mode", ["interactive", "yes", "preview", "keep"])
+def test_uninstall_config_prompt_and_unattended_policy(
+    tmp_path, monkeypatch, mode
+):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from apprc.interfaces.cli import installation_command
+    from apprc.distribution.runtime import _uninstall_controller as controller
+
+    context, _commands = _pending_editable_context(tmp_path, monkeypatch)
+    record = context.inspection.record
+    assert record is not None and record.placement.config_dir is not None
+    assert (
+        record.operation is not None and record.operation.intended is not None
+    )
+    record = replace(
+        record,
+        status="ready",
+        operation=None,
+        active_runtime=record.operation.intended.runtime,
+    )
+    context = replace(
+        context,
+        inspection=replace(context.inspection, status="ready", record=record),
+    )
+    monkeypatch.setattr(installation_command, "_inspection", lambda _: context)
+    assert record.placement.config_dir is not None
+    record.placement.config_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        installation_command,
+        "sys",
+        SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: True)),
+    )
+    prompts = []
+
+    def confirm(message, **kwargs):
+        prompts.append(message)
+        return True
+
+    monkeypatch.setattr(typer, "confirm", confirm)
+
+    def prepare(directory, **kwargs):
+        assert kwargs["keep_config"] is (
+            True if mode in {"interactive", "keep"} else None
+        )
+        return controller.UninstallPreparation(
+            None, context.inspection, (), (), False
+        )
+
+    monkeypatch.setattr(controller, "prepare_uninstall", prepare)
+    args = ["app", "uninstall"]
+    args += {
+        "interactive": [],
+        "yes": ["--yes", "--wait"],
+        "preview": ["--dry-run"],
+        "keep": ["--keep-config"],
+    }[mode]
+    result = CliRunner().invoke(_app(args=args), args)
+    assert result.exit_code == (0 if mode == "preview" else 1), result.output
+    assert len(prompts) == (1 if mode == "interactive" else 0)

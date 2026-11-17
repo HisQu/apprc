@@ -666,8 +666,7 @@ run in the recorded application runtime and report unavailable code explicitly.
 Editable registration owns only AppRC resources and integrations. It uses the
 repository's existing `.venv`. Uninstall removes managed data while preserving
 that environment and checkout by default; `--remove-repository` explicitly
-includes the checkout and everything inside it. `--keep-data` preserves the
-managed data as well. If the environment breaks, the developer repairs it with
+includes the checkout and everything inside it. `--keep-config` preserves only the config directory, including settings and secrets; appdata, cache and state are removed. If the environment breaks, the developer repairs it with
 uv rather than a second AppRC dependency manager.
 
 Both workflows preserve the same [resource layouts](#layouts) and

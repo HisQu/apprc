@@ -1068,7 +1068,7 @@ committed installation remains installed when later cleanup fails.
 Application initialization callbacks own their data changes and compatibility.
 Installer rollback does not restore databases or external systems. Existing
 resources are preserved; a deliberate clean reinstall can use the application's
-normal uninstall policy, with `--keep-data` when retention is wanted.
+normal uninstall policy, with `--keep-config` when retention is wanted.
 
 Git and `uv sync --locked` remain responsible for developer updates. Source
 changes stay editable. If the environment breaks, restore it with uv before
@@ -1163,6 +1163,21 @@ old-record converter or permission to claim arbitrary database files.
 
 ## Remove a managed program
 
+Interactive uninstall asks whether to keep the whole config directory, defaulting
+to Yes, then shows the selected removal targets for final confirmation. Appdata,
+cache and state are removed. `--yes` skips all prompts and removes config too,
+unless `--keep-config` is explicitly selected. `--dry-run` never prompts.
+`--keep-data` has been replaced by `--keep-config`; it no longer means retain
+application data. Back up saved application data separately before removing it.
+
+Windows Settings invokes the same terminal uninstall flow with `--wait`, which
+keeps the final result visible until acknowledged. `--yes` suppresses this wait.
+
+The validated installation directory is app-owned, including unexpected and
+obsolete files inside it. Those contents appear in the uninstall preview; they
+do not require receipt migration or separate approval. Workspaces, external
+inputs and shared tools stay outside its removal boundary.
+
 Preview and then confirm removal of the program and its managed data:
 
 ```shell
@@ -1184,14 +1199,14 @@ removed. AppRC removes the enclosing single-root folder only when empty; extra
 files in that folder are preserved. The completion message identifies the
 editable installation that remains.
 
-To preserve configuration and data for a later reinstall, use:
+To preserve only configuration for a later reinstall, use:
 
 ```shell
-demo app uninstall --keep-data --dry-run
-demo app uninstall --keep-data
+demo app uninstall --keep-config --dry-run
+demo app uninstall --keep-config
 ```
 
-This retains reconnectable installation support. To also delete an editable
+This retains the config directory, including saved settings and secrets. Other managed resources and installation support are removed. To also delete an editable
 repository, explicitly select it:
 
 ```shell
@@ -1203,7 +1218,7 @@ The preview names the Git checkout containing the registered project. Removal
 includes local changes, ignored files and environments inside that checkout.
 External shared environments and Git metadata outside the checkout remain.
 `--remove-repository` is invalid for packaged installations and cannot be
-combined with `--keep-data`. Unattended confirmation additionally requires
+used when retained config is inside the selected repository. Unattended confirmation additionally requires
 `--yes`.
 
 Ordinary directory deletion needs no application callbacks. Optional application
@@ -1217,8 +1232,9 @@ scope. Preserve the reported external recovery information if a busy runtime,
 changed directory identity or failed cleanup prevents completion.
 
 > [!CAUTION]
-> Uninstall deletes configuration and application data by default. Back up work
-> outside the managed directories, or select `--keep-data`. The former
+> Unattended uninstall with `--yes` deletes configuration and application data.
+> Back up saved work outside the managed directories. `--keep-config` retains
+> configuration only; it does not preserve application databases. The former
 > `--complete`, `--category` and `--forget-retained` switches are removed.
 
 The removal helper runs outside its immediate deletion targets. Repository
@@ -1505,10 +1521,9 @@ authority with the new installer.
 
 1. With the old generation, record the enabled resource paths and finish any
    pending operation. Keep backups outside those managed roots.
-2. Use that generation's program-only removal command (the current equivalent
-   is [`app uninstall --keep-data`](#remove-a-managed-program)).
-   Confirm its preview preserves the resources you need; program-only removal
-   deliberately leaves reconnectable installation support behind.
+2. Back up the resources you need before using that generation's removal command.
+   Current [`app uninstall --keep-config`](#remove-a-managed-program) preserves
+   configuration only; appdata, cache, state and installation support are removed.
 3. Once removal is complete and all old consumers are stopped, move only the
    fixed [installation directory](References.md#installationmanager), including
    its old record and saved support, into a backup outside the managed roots.

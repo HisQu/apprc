@@ -7,6 +7,21 @@ import sys
 from pathlib import Path
 
 
+# > Load optional rendering before the finalizer deletes its staged modules.
+try:
+    from rich.console import Console
+    from rich.text import Text
+
+    if __package__:
+        from apprc.interfaces._terminal_styles import path_text
+    else:
+        from _terminal_styles import path_text  # type: ignore[reportMissingImports]
+except ImportError:
+    Console = None
+    Text = None
+    path_text = None
+
+
 def prepare() -> None:
     """Connect Windows-launched uninstall to a visible console when necessary."""
     if os.name != "nt":
@@ -55,22 +70,13 @@ def result_line(message: str, path: str | Path | None = None) -> None:
     :param message: Outcome or label, never parsed for paths.
     :param path: Structured path value, when available.
     """
-    try:
-        from rich.console import Console
-
-        if __package__:
-            from apprc.interfaces._terminal_styles import path_text
-        else:
-            from _terminal_styles import path_text  # type: ignore[reportMissingImports]
-    except ImportError:
+    if Console is None or Text is None or path_text is None:
         print(
             message + (f": {path}" if path is not None else ""),
             file=sys.stderr,
             flush=True,
         )
         return
-    from rich.text import Text
-
     line = Text(message)
     if path is not None:
         line.append(": ")

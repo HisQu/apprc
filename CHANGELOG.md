@@ -54,7 +54,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.36.1...HEAD
+[0.36.1]: https://github.com/HisQu/apprc/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/HisQu/apprc/compare/v0.35.1...v0.36.0
 [0.35.1]: https://github.com/HisQu/apprc/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/HisQu/apprc/compare/v0.34.0...v0.35.0
@@ -99,9 +100,17 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
-- Release publication continues after intentionally skipped CI while still requiring successful artifacts and honoring cancellation.
-
 ### 🔒 Security
+
+<br>
+
+## [0.36.1] - 2026-11-17
+
+### 🐛 Fixed
+
+- Keep result-window path colors after successful staging cleanup by loading the optional renderer before deleting its files.
+
+- Release publication continues after intentionally skipped CI while still requiring successful artifacts and honoring cancellation.
 
 <br>
 

@@ -40,11 +40,8 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import ResourceKind
 from apprc.distribution.runtime._os_integration import (
-    capture_windows_registration,
     command_is_owned,
     publish_global_command,
-    publish_windows_registration,
-    windows_registration_intent,
     restore_windows_registration,
     validate_command_directory,
     validate_global_command,
@@ -454,86 +451,6 @@ def _ensure_command_publication(
             "Recorded publication has no authority revision."
         )
     return publication, current.revision
-
-
-def _ensure_registration_intent(
-    manager: InstallationManager,
-    operation_id: UUID,
-    revision: str,
-    identity: InstallationIdentity,
-    command: Path,
-    prior_outputs: tuple[OwnedOutput, ...],
-) -> tuple[OwnedOutput | None, str]:
-    if os.name != "nt":
-        return None, revision
-    inspection = manager.inspect()
-    intent = windows_registration_intent(
-        manager.directory,
-        identity,
-        command,
-        maintenance_group_name=_MAINTENANCE_GROUP.get(),
-    )
-    record = inspection.record
-    operation = record.operation if record is not None else None
-    if operation is not None and operation.registration is not None:
-        if operation.registration != intent:
-            raise InstallationError(
-                "Pending Windows registration differs from the intended recipe."
-            )
-        if inspection.revision is None:
-            raise InstallationError(
-                "Pending registry intent has no authority revision."
-            )
-        return operation.registration, inspection.revision
-    import winreg
-
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            intent.path.removeprefix("HKCU\\"),
-            0,
-            winreg.KEY_QUERY_VALUE,
-        ) as key:
-            prior = any(
-                item.kind == "hkcu"
-                and item.path == intent.path
-                and item.values == intent.values
-                for item in prior_outputs
-            )
-            subkeys, count, _ = winreg.QueryInfoKey(key)
-            values = {
-                name: (value, kind)
-                for name, value, kind in (
-                    winreg.EnumValue(key, index) for index in range(count)
-                )
-            }
-            if (
-                not prior
-                or subkeys
-                or set(values) != set(dict(intent.values))
-                or any(
-                    values[name] != (value, winreg.REG_SZ)
-                    for name, value in intent.values
-                )
-            ):
-                raise InstallationError(
-                    "Refusing to claim an unowned Windows uninstall key."
-                )
-    except FileNotFoundError:
-        pass
-    from apprc.user_files.installation.operations import record_registration
-
-    updated = record_registration(
-        manager.directory,
-        operation_id=operation_id,
-        expected_revision=revision,
-        registration=intent,
-    )
-    if updated.revision is None:
-        raise InstallationError(
-            "Recorded registry intent has no authority revision."
-        )
-    return intent, updated.revision
 
 
 def _cleanup_publication_images(
@@ -1368,7 +1285,13 @@ def _install_managed_candidate(
             environment=manager.environment,
             manager_executable=manager_executable,
         )
-        content = manager_executable.read_bytes()
+        from apprc.distribution.runtime._windows_version import (
+            versioned_executable,
+        )
+
+        content = versioned_executable(
+            manager_executable.read_bytes(), observed.version or ""
+        )
         publication_specs = (
             (stable, content, None),
             *(
@@ -1399,28 +1322,6 @@ def _install_managed_candidate(
             outputs.append(
                 publish_global_command(item.path, source, previous=authority)
             )
-        registration, revision = _ensure_registration_intent(
-            manager,
-            plan.operation_id,
-            revision,
-            plan.target.identity,
-            stable,
-            prior_outputs,
-        )
-        if registration is not None:
-            registry = capture_windows_registration(registration)
-        windows_output = publish_windows_registration(
-            directory,
-            plan.target.identity,
-            stable,
-            previous=(
-                *prior_outputs,
-                *((registration,) if registration is not None else ()),
-            ),
-            maintenance_group_name=_MAINTENANCE_GROUP.get(),
-        )
-        if windows_output is not None:
-            outputs.append(windows_output)
         paths = {item.path for item in outputs}
         outputs.extend(item for item in prior_outputs if item.path not in paths)
         for step in (
@@ -1435,6 +1336,13 @@ def _install_managed_candidate(
             expected_revision=revision,
             observed=observed,
             owned_outputs=tuple(outputs),
+        )
+        from apprc.distribution.runtime._windows_registration import (
+            publish_registration,
+        )
+
+        result = publish_registration(
+            result, observed.version or "", stable, _MAINTENANCE_GROUP.get()
         )
         return _finish_installation(manager, result)
     except BaseException as error:
@@ -2045,11 +1953,23 @@ def register_editable_application(
                 manager, operation_id, revision, OperationStep.RESOURCES_READY
             )
             revision = current.revision or ""
+            from apprc.distribution.runtime._windows_version import (
+                versioned_executable,
+            )
+
             command = runtime_command(manager.directory, runtime, command_name)
             publication_specs = (
                 ((global_command, None, str(command)),)
                 if os.name != "nt"
-                else ((global_command, command.read_bytes(), None),)
+                else (
+                    (
+                        global_command,
+                        versioned_executable(
+                            command.read_bytes(), str(observations["version"])
+                        ),
+                        None,
+                    ),
+                )
             )
             pending_publication, revision = _ensure_command_publication(
                 manager, operation_id, revision, publication_specs
@@ -2095,6 +2015,16 @@ def register_editable_application(
                 expected_revision=revision,
                 observed=observed,
                 owned_outputs=tuple(outputs),
+            )
+            from apprc.distribution.runtime._windows_registration import (
+                publish_registration,
+            )
+
+            result = publish_registration(
+                result,
+                str(observations["version"]),
+                global_command,
+                _MAINTENANCE_GROUP.get(),
             )
             return _finish_installation(manager, result)
         except BaseException as error:

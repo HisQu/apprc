@@ -81,6 +81,10 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Windows installations attempt to display the application version in the global
+  executable and in Installed apps. Editable checkouts receive an uninstall
+  entry too; optional metadata failures warn without failing installation.
+
 <br>
 
 ### 🛠️ Changed

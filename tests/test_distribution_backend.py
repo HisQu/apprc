@@ -772,3 +772,121 @@ def test_windows_command_replacement_denial_explains_running_processes(
     with pytest.raises(PermissionError) as captured:
         _os_integration.publish_global_command(destination, source)
     assert "running application processes" in " ".join(captured.value.__notes__)
+
+
+@pytest.mark.parametrize("failure", [None, 1, 2, 4])
+def test_optional_app_list_update_recovers_partial_writes(
+    tmp_path, monkeypatch, windows_registry, failure, caplog
+):
+    from apprc.distribution.runtime import _windows_registration as metadata
+    from apprc.user_files.installation.discovery import inspect_installation
+    import os
+
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
+    runtime = EditableCheckout(
+        tmp_path / "checkout", tmp_path / "checkout" / ".venv"
+    )
+    record = InstallationRecord(
+        3,
+        identity,
+        "fixture",
+        uuid4(),
+        "1",
+        InstallationPlacement(Layout.native()),
+        "ready",
+        active_runtime=runtime,
+    )
+    write_record(tmp_path, record, expected_revision=None)
+    monkeypatch.setattr(
+        metadata,
+        "os",
+        SimpleNamespace(
+            name="nt", fsync=os.fsync, fdopen=os.fdopen, replace=os.replace
+        ),
+    )
+    before = inspect_installation(tmp_path, app_id="fixture")
+    windows_registry.fail_after = failure
+    result = metadata.publish_registration(
+        before, "1.2.3", tmp_path / "fixture.exe", "app"
+    )
+    assert result.status == "ready"
+    if failure:
+        assert "installation succeeded" in caplog.text
+        windows_registry.fail_after = None
+        result = metadata.publish_registration(
+            inspect_installation(tmp_path, app_id="fixture"),
+            "1.2.4",
+            tmp_path / "fixture.exe",
+            "app",
+        )
+    assert result.record is not None
+    output = next(
+        item for item in result.record.owned_outputs if item.kind == "hkcu"
+    )
+    assert dict(output.values)["DisplayVersion"] == (
+        "1.2.4" if failure else "1.2.3"
+    )
+    assert not any(
+        item.path == ".windows-registration.json"
+        for item in result.record.owned_outputs
+    )
+
+
+@pytest.mark.parametrize("written", [0, 1, 2])
+def test_uninstall_removes_journal_owned_partial_entry(
+    tmp_path, monkeypatch, windows_registry, written
+):
+    import os
+    from apprc.distribution.runtime import (
+        _windows_registration as metadata,
+        uninstall_handoff,
+    )
+    from apprc.user_files.installation.discovery import inspect_installation
+
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
+    record = InstallationRecord(
+        3,
+        identity,
+        "fixture",
+        uuid4(),
+        "1",
+        InstallationPlacement(Layout.native()),
+        "ready",
+        active_runtime=EditableCheckout(
+            tmp_path / "checkout", tmp_path / "checkout" / ".venv"
+        ),
+    )
+    write_record(tmp_path, record, expected_revision=None)
+    monkeypatch.setattr(
+        metadata,
+        "os",
+        SimpleNamespace(
+            name="nt", fsync=os.fsync, fdopen=os.fdopen, replace=os.replace
+        ),
+    )
+    if written:
+        windows_registry.fail_after = written
+    else:
+
+        def fail(*args):
+            raise OSError("failed before first value")
+
+        monkeypatch.setattr(windows_registry, "SetValueEx", fail)
+    result = metadata.publish_registration(
+        inspect_installation(tmp_path, app_id="fixture"),
+        "1.2.3",
+        tmp_path / "fixture.exe",
+        "settings",
+    )
+    assert result.record is not None
+    monkeypatch.setattr(uninstall_handoff, "os", SimpleNamespace(name="nt"))
+    snapshots = []
+    uninstall_handoff._remove_registry_outputs(
+        result.record, tmp_path, snapshots
+    )
+    assert not windows_registry.keys
+    assert len(snapshots) == 1

@@ -28,3 +28,12 @@ def test_acknowledgement_does_not_read_redirected_input(monkeypatch):
 
     monkeypatch.setattr(terminal.sys, "stdin", Input())
     terminal.acknowledge()
+
+
+def test_result_path_is_literal_and_no_color(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("NO_COLOR", "1")
+    path = tmp_path / "[red]settings"
+    terminal.result_line("Retained configuration", path)
+    result = capsys.readouterr().err
+    assert str(path) in result
+    assert "\x1b[" not in result

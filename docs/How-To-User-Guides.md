@@ -1164,14 +1164,18 @@ old-record converter or permission to claim arbitrary database files.
 ## Remove a managed program
 
 Interactive uninstall asks whether to keep the whole config directory, defaulting
-to Yes, then shows the selected removal targets for final confirmation. Appdata,
-cache and state are removed. `--yes` skips all prompts and removes config too,
+to Yes, then shows a **Delete / Keep** tree for final confirmation. The prompt
+names the application and confirms only items under **Delete**. Appdata, cache
+and state are removed. `--yes` skips all prompts and removes config too,
 unless `--keep-config` is explicitly selected. `--dry-run` never prompts.
 `--keep-data` has been replaced by `--keep-config`; it no longer means retain
 application data. Back up saved application data separately before removing it.
 
 Windows Settings invokes the same terminal uninstall flow with `--wait`, which
 keeps the final result visible until acknowledged. `--yes` suppresses this wait.
+Known paths use cyan in interactive output; Delete and Keep labels remain clear
+when color is unavailable. A completed removal can warn if temporary cleanup
+files remain; this does not mean the app is still installed.
 
 The validated installation directory is app-owned, including unexpected and
 obsolete files inside it. Those contents appear in the uninstall preview; they

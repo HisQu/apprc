@@ -996,7 +996,7 @@ def start_uninstall_handoff(
         _assert_handoff_inputs_outside_removal(handoff_inputs, removal_roots)
         process: subprocess.Popen[str] = subprocess.Popen(
             command,
-            cwd=staging,
+            cwd=temp_parent,
             env=environment,
             text=True,
             stdin=subprocess.PIPE,

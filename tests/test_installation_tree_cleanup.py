@@ -263,6 +263,12 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
         "_wait_for_caller_exit",
         lambda payload: waits.append(payload["operation_id"]),
     )
+    launches = []
+    monkeypatch.setattr(
+        uninstall_handoff,
+        "_launch_repository_finalizer",
+        lambda *args: launches.append(args),
+    )
     uninstall_handoff._finalize_committed_handoff(
         staging / "handoff.json",
         value,
@@ -271,11 +277,12 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
         caller_exited=caller_exited,
     )
     assert len(waits) == (0 if caller_exited else 1)
-    assert not staging.exists()
+    assert staging.exists()
+    assert len(launches) == 1
     reminder = (
         "Any retained editable checkout and development environment remain."
     )
-    assert (reminder in capsys.readouterr().err) is (not caller_exited)
+    assert reminder not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -496,3 +503,73 @@ def test_pending_uninstall_rejects_new_config_retention_choice(tmp_path):
     with pytest.raises(InstallationError, match="retention differs"):
         prepare_uninstall(directory, keep_config=True)
     assert settings.read_text() == "preserve until confirmed removal"
+
+
+def test_external_finalizer_waits_for_owner_and_cleans_staging(
+    tmp_path: Path,
+) -> None:
+    import subprocess
+    import sys
+    from uuid import uuid4
+    from apprc.distribution.runtime import _process_waiter
+    from apprc.distribution.runtime.uninstall_handoff import (
+        _stage_repository_finalizer,
+    )
+    from tests.support_installation import owned_child_process
+
+    staging = tmp_path / "staging"
+    recovery = staging / "recovery"
+    staging.mkdir(mode=0o700)
+    recovery.mkdir(mode=0o700)
+    leaf = _stage_repository_finalizer(staging)
+    directory = tmp_path / "removed-installation"
+    proof = recovery / "finalization.json"
+    proof.write_text(
+        json.dumps(
+            {
+                "directory": str(directory),
+                "app_id": "fixture",
+                "generation_id": str(uuid4()),
+                "support": [],
+            }
+        )
+    )
+    proof.chmod(0o600)
+    with owned_child_process() as owner:
+        finalizer = subprocess.Popen(
+            [
+                sys.executable,
+                "-S",
+                str(leaf),
+                "--plan",
+                str(proof),
+                "--directory",
+                str(directory),
+                "--cleanup-staging",
+                "--parent",
+                str(owner.pid),
+                "--parent-token",
+                _process_waiter.process_start_token(owner.pid),
+            ],
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            with pytest.raises(subprocess.TimeoutExpired):
+                finalizer.communicate(timeout=0.2)
+            assert staging.exists()
+            assert owner.stdin is not None
+            owner.stdin.write("exit\n")
+            owner.stdin.flush()
+            owner.wait(timeout=5)
+            out, err = finalizer.communicate(timeout=10)
+            assert finalizer.returncode == 0, out + err
+            assert "Uninstall completed" in err
+            assert not staging.exists()
+            assert tmp_path.is_dir()
+        finally:
+            if finalizer.poll() is None:
+                finalizer.kill()
+                finalizer.wait(timeout=5)

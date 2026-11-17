@@ -816,6 +816,7 @@ def test_native_default_uninstall_runs_cleanup_and_removes_managed_data(
     assert not provider.exists()
     assert not unrelated.exists()
     assert not (commands / str(spec.metadata.command_name)).exists()
+    assert not tuple(Path(environment["TMPDIR"]).glob("apprc-uninstall-*"))
 
 
 def test_failed_editable_switch_restores_real_global_command_and_authority(

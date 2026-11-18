@@ -18,11 +18,15 @@ from apprc.definition.installation import (
     InstallationRecord,
     InventoryEntry,
     ProjectSnapshot,
+    PublicationImage,
+    PublicationOutput,
     RuntimeSelection,
     RuntimeSlot,
 )
 from apprc.definition.paths import Layout
 from apprc.user_files.installation.codec import (
+    _decode,
+    _encode,
     decode_cleanup_inventory,
     decode_record,
     encode_cleanup_inventory,
@@ -67,6 +71,29 @@ def test_authority_round_trip_preserves_independent_resources(
     assert encode_record(restored) == content
     assert restored.placement.appdata_dir is None
     assert restored.placement.cache_dir == record.placement.cache_dir
+
+
+@pytest.mark.parametrize("update_user_path", [False, True])
+def test_publication_path_intent_preserves_historical_schema(
+    tmp_path, update_user_path
+):
+    publication = PublicationOutput(
+        tmp_path / "fixture.exe",
+        None,
+        PublicationImage("a" * 64, content=".publication-fixture"),
+        update_user_path=update_user_path,
+    )
+    encoded = _encode(publication)
+    assert isinstance(encoded, dict)
+    assert ("update_user_path" in encoded) is update_user_path
+    assert _decode(encoded, PublicationOutput, "publication") == publication
+    for invalid in (False, 1, "true", None):
+        with pytest.raises(InstallationError):
+            _decode(
+                dict(encoded, update_user_path=invalid),
+                PublicationOutput,
+                "publication",
+            )
 
 
 @pytest.mark.parametrize("schema_version", [1, 2, 4])

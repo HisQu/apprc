@@ -1093,6 +1093,18 @@ The registered global `demo` command uses that repository environment even when
 another environment is active. Its command directory must already be on PATH;
 `--command-directory PATH` can select another safe existing directory without
 editing shell profiles. Unknown command collisions are errors, not replacements.
+
+Windows managed setup also publishes a global command by default. It reuses
+the existing app-owned per-user command directory on PATH when possible, or
+uses the shared uv user bin. After a successful install, setup adds the
+shared directory to user PATH if needed. Open a new PowerShell window when
+prompted. Setup prints the full executable path if PATH could not be updated.
+Uninstall keeps the shared PATH entry.
+
+When double-clicking setup, read the result before pressing Enter. On failure,
+the result can include a local diagnostic log path. Running setup in an
+existing terminal lets you read the failure and check its exit code there.
+
 At the end, AppRC offers `config setup` only when active, editable user settings
 are required, have no fallback, and remain missing after configuration resolution.
 Workspace-only and already supplied settings do not trigger the offer.

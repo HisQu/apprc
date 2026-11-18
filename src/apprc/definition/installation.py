@@ -498,9 +498,16 @@ class PublicationOutput:
     path: Path
     previous: PublicationImage | None
     intended: PublicationImage
+    update_user_path: bool = False
 
     def __post_init__(self) -> None:
         OwnedOutput("command", str(self.path), self.intended.digest)
+        if type(self.update_user_path) is not bool or (
+            self.update_user_path and self.intended.link_target is not None
+        ):
+            raise InstallationError(
+                "User PATH intent requires a native command."
+            )
 
 
 @dataclass(frozen=True, slots=True)

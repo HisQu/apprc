@@ -141,3 +141,70 @@ def test_candidate_rebuild_budget(
                 builds == 0
             )
     assert counts == {"build": builds, "probe": probes}
+
+
+@pytest.mark.parametrize("rebuild", [False, True])
+def test_managed_source_is_created_through_private_staging(
+    tmp_path, monkeypatch, rebuild
+):
+    from zipfile import ZipFile
+
+    from apprc.distribution.runtime import acquisition
+
+    directory = tmp_path / "installation"
+    acquisition.create_private_directory_if_missing(directory)
+    slot_id = uuid4()
+    slot = directory / "runtimes" / str(slot_id)
+    slot.mkdir(parents=True)
+    source_root = slot / "source"
+    if rebuild:
+        source_root.mkdir()
+        (source_root / "retired").write_text("previous candidate")
+    archive = slot / "project.zip"
+    lock = b"version = 1\n"
+    with ZipFile(archive, "w") as snapshot:
+        snapshot.writestr("pyproject.toml", "[project]\nname = 'fixture'\n")
+        snapshot.writestr("uv.lock", lock)
+    runtime = RuntimeSlot(
+        slot_id,
+        ProjectSnapshot(
+            hashlib.sha256(archive.read_bytes()).hexdigest(),
+            hashlib.sha256(lock).hexdigest(),
+            "c" * 40,
+        ),
+        RuntimeSelection("3.14"),
+    )
+    real_create = acquisition.create_private_directory_if_missing
+    applied = set()
+
+    def create(path: Path) -> None:
+        was_missing = not path.exists()
+        real_create(path)
+        if was_missing:
+            applied.add(path)
+
+    monkeypatch.setattr(
+        acquisition, "create_private_directory_if_missing", create
+    )
+    monkeypatch.setattr(
+        acquisition,
+        "_path_permissions_are_private",
+        lambda path: path in applied,
+    )
+    monkeypatch.setattr(
+        installation, "sync_runtime_slot", lambda *a, **kw: None
+    )
+    installation._rebuild_candidate_runtime(
+        slot,
+        archive,
+        directory,
+        InstallationIdentity(
+            "fixture", "fixture", "fixture", None, ("fixture",)
+        ),
+        runtime,
+        tmp_path / "uv",
+        {},
+    )
+    assert applied == {source_root}
+    assert (source_root / "uv.lock").read_bytes() == lock
+    assert not (source_root / "retired").exists()

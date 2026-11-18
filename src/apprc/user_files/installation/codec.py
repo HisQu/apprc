@@ -20,6 +20,7 @@ from apprc.definition.installation import (
     InstallationError,
     InstallationRecord,
     OperationContext,
+    PublicationOutput,
 )
 
 
@@ -89,12 +90,21 @@ def _decode(value: object, annotation: object, location: str) -> object:
     elif isinstance(annotation, type) and dataclasses.is_dataclass(annotation):
         if isinstance(value, dict):
             hints = get_type_hints(annotation)
-            if set(value) != set(hints):
+            fields = dict(value)
+            if annotation is PublicationOutput:
+                if "update_user_path" in fields:
+                    if fields["update_user_path"] is not True:
+                        raise InstallationError(
+                            f"Invalid user PATH intent at {location}."
+                        )
+                else:
+                    fields["update_user_path"] = False
+            if set(fields) != set(hints):
                 raise InstallationError(
                     f"Missing or unknown fields at {location}."
                 )
             decoded_fields = {
-                name: _decode(value[name], field_type, f"{location}.{name}")
+                name: _decode(fields[name], field_type, f"{location}.{name}")
                 for name, field_type in hints.items()
             }
             try:
@@ -111,6 +121,11 @@ def _encode(value: object) -> object:
         return {
             field.name: _encode(getattr(value, field.name))
             for field in dataclasses.fields(value)
+            if not (
+                isinstance(value, PublicationOutput)
+                and field.name == "update_user_path"
+                and not value.update_user_path
+            )
         }
     if isinstance(value, (Path, UUID, Enum)):
         return str(value)

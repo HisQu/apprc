@@ -133,6 +133,20 @@ def _path_entries(environment: Mapping[str, str]) -> tuple[Path, ...]:
     )
 
 
+def _default_command_directory(
+    uv: Path, environment: Mapping[str, str]
+) -> Path:
+    """Resolve the shared user bin the same way for both install modes."""
+    result = subprocess.run(
+        [str(uv), "tool", "dir", "--bin", "--no-config"],
+        env=dict(environment),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(result.stdout.strip())
+
+
 def _command_directory(
     uv: Path,
     selected: Path | None,
@@ -140,14 +154,7 @@ def _command_directory(
     forbidden: tuple[Path, ...],
 ) -> Path:
     if selected is None:
-        result = subprocess.run(
-            [str(uv), "tool", "dir", "--bin", "--no-config"],
-            env=dict(environment),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        selected = Path(result.stdout.strip())
+        selected = _default_command_directory(uv, environment)
     validate_command_directory(
         selected,
         forbidden=forbidden,
@@ -313,6 +320,8 @@ def _record_command_publication(
     operation_id: UUID,
     revision: str,
     outputs: tuple[tuple[Path, bytes | None, str | None], ...],
+    *,
+    user_path_command: Path | None = None,
 ) -> tuple[PublicationOutput, ...]:
     directory = manager.directory
     publication: list[PublicationOutput] = []
@@ -350,7 +359,14 @@ def _record_command_publication(
                     raise InstallationError(
                         "Unowned publication recovery path already exists."
                     )
-        publication.append(PublicationOutput(path, previous, intended))
+        publication.append(
+            PublicationOutput(
+                path,
+                previous,
+                intended,
+                update_user_path=path == user_path_command,
+            )
+        )
         retained.append((previous, previous_bytes, intended, intended_bytes))
     recorded = tuple(publication)
     result = record_publication(
@@ -403,6 +419,8 @@ def _ensure_command_publication(
     operation_id: UUID,
     revision: str,
     outputs: tuple[tuple[Path, bytes | None, str | None], ...],
+    *,
+    user_path_command: Path | None = None,
 ) -> tuple[tuple[PublicationOutput, ...], str]:
     existing = _existing_publication(manager)
     if existing:
@@ -444,7 +462,11 @@ def _ensure_command_publication(
 
         return existing, current.revision
     publication = _record_command_publication(
-        manager, operation_id, revision, outputs
+        manager,
+        operation_id,
+        revision,
+        outputs,
+        user_path_command=user_path_command,
     )
     current = manager.inspect()
     if current.revision is None:
@@ -1245,6 +1267,7 @@ def _install_managed_candidate(
     uv: Path,
     archive: Path | None,
     commands: tuple[tuple[Path, str | None], ...],
+    user_path_command: Path | None = None,
 ) -> InstallationInspection:
     """Prepare and activate one managed candidate under its lifecycle lock.
 
@@ -1259,6 +1282,7 @@ def _install_managed_candidate(
     :param uv: Manager-owned runtime preparation executable.
     :param archive: Setup snapshot, or ``None`` to recover the repair snapshot.
     :param commands: Global command destinations and optional link targets.
+    :param user_path_command: Automatic Windows command whose directory may be added to user PATH.
     :return: Activated installation, including deferred housekeeping.
     """
     directory = manager.directory
@@ -1325,7 +1349,11 @@ def _install_managed_candidate(
             ),
         )
         publication, revision = _ensure_command_publication(
-            manager, plan.operation_id, revision, publication_specs
+            manager,
+            plan.operation_id,
+            revision,
+            publication_specs,
+            user_path_command=user_path_command,
         )
         authority = (
             *prior_outputs,
@@ -1440,7 +1468,8 @@ def _repair_managed_application(
             plan = manager.plan_repair(
                 record.identity, runtime, record.placement
             )
-        return _install_managed_candidate(
+        pending_publication = _existing_publication(manager)
+        result = _install_managed_candidate(
             manager,
             plan,
             prior,
@@ -1450,10 +1479,19 @@ def _repair_managed_application(
             archive=None,
             commands=tuple(
                 (item.path, item.intended.link_target)
-                for item in _existing_publication(manager)
+                for item in pending_publication
                 if item.path != stable
             ),
         )
+        from apprc.distribution.runtime import _windows_command_path
+
+        if _windows_command_path.enabled():
+            for item in pending_publication:
+                if item.path != stable and item.update_user_path:
+                    _report_windows_command_path(
+                        manager, result, item.path, manager.environment
+                    )
+        return result
 
 
 def _rebuild_candidate_runtime(
@@ -1482,7 +1520,6 @@ def _rebuild_candidate_runtime(
                         "Candidate runtime path is not a directory."
                     )
                 shutil.rmtree(target)
-        source_root.mkdir(mode=0o700)
         materialize_project_snapshot(archive, source_root, runtime.source)
         report("detail", "Synchronizing dependencies with uv...")
         with claim.authorize_bridge():
@@ -1658,6 +1695,76 @@ def _prepare_candidate(
     return observed, current.revision or ""
 
 
+def _report_windows_command_path(
+    manager: InstallationManager,
+    inspection: InstallationInspection,
+    command: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Expose an owned command only after its installation has activated."""
+    from apprc.distribution.runtime import _windows_command_path
+
+    record = inspection.record
+    if (
+        inspection.status != "ready"
+        or record is None
+        or record.operation is not None
+    ):
+        return
+    try:
+        current = manager.inspect()
+        if (
+            current.status != "ready"
+            or current.revision != inspection.revision
+            or current.record != record
+        ):
+            raise InstallationError(
+                "Installation authority changed before updating user PATH."
+            )
+        assert_no_links(command)
+        if not _windows_command_path.is_user_directory(
+            command.parent, environment
+        ):
+            raise InstallationError(
+                "The published command is outside the current user's directories."
+            )
+        if not command.is_file() or not command_is_owned(
+            command, record.owned_outputs, ut.sha256_file(command)
+        ):
+            raise InstallationError(
+                "The published command could not be verified."
+            )
+        if not _windows_command_path.ensure_user_path(
+            command.parent, environment
+        ):
+            if not _windows_command_path.is_on_current_path(
+                command.parent, environment
+            ):
+                report(
+                    "detail",
+                    "Open a new PowerShell window to use the global command.",
+                )
+            return
+    except Exception as error:
+        warn(
+            LOG,
+            "Unable to update the user PATH; run the installed command by its full path",
+            error,
+            path=command,
+        )
+        return
+    report("result", "User PATH", "UPDATED", command.parent)
+    try:
+        _windows_command_path.notify_path_change()
+    except OSError as error:
+        warn(
+            LOG,
+            "User PATH was saved but Windows could not refresh existing shells",
+            error,
+        )
+    report("detail", "Open a new PowerShell window to use the global command.")
+
+
 def install_application(
     manager: InstallationManager,
     identity: InstallationIdentity,
@@ -1717,23 +1824,65 @@ def install_application(
             pending_publication
         )
         _check_owned_command(stable, (*prior_outputs, *publication_authority))
-        global_directory: Path | None = None
+        from apprc.distribution.runtime import _windows_command_path
+
+        forbidden = (directory, runtime_prefix(directory, runtime))
+        if previous is not None and isinstance(
+            previous.active_runtime, EditableCheckout
+        ):
+            checkout = previous.active_runtime
+            forbidden += (
+                checkout.project,
+                checkout.environment,
+                checkout.environment.parent,
+            )
         global_command: Path | None = None
+        update_user_path = False
         if command_directory is not None:
-            global_directory = _command_directory(
-                uv,
-                command_directory,
-                environment,
-                (directory, runtime_prefix(directory, runtime)),
+            global_command = _command_directory(
+                uv, command_directory, environment, forbidden
+            ) / _command_filename(command_name)
+        elif pending_publication:
+            if len(pending_publication) > 1:
+                global_command = pending_publication[1].path
+        elif _windows_command_path.enabled():
+            name = _command_filename(command_name)
+            candidates = (
+                Path(item.path).parent
+                for item in prior_outputs
+                if item.kind == "command"
+                and Path(item.path).name.casefold() == name.casefold()
+                and Path(item.path) != stable
             )
-            global_command = global_directory / _command_filename(command_name)
-            validate_global_command(
-                global_command,
-                previous=(*prior_outputs, *publication_authority),
+            global_directory = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if _windows_command_path.is_user_directory(
+                        candidate, environment
+                    )
+                    and _windows_command_path.is_on_path(candidate, environment)
+                ),
+                None,
             )
-        if global_command is None and len(pending_publication) > 1:
-            global_command = pending_publication[1].path
-            global_directory = global_command.parent
+            if global_directory is None:
+                global_directory = _default_command_directory(uv, environment)
+            _windows_command_path.prepare_shared_bin(
+                global_directory, environment, forbidden=forbidden
+            )
+            validate_command_directory(
+                global_directory,
+                forbidden=forbidden,
+                path_entries=(global_directory,),
+            )
+            global_command = global_directory / name
+            update_user_path = True
+        if pending_publication and command_directory is None:
+            update_user_path = any(
+                item.path == global_command and item.update_user_path
+                for item in pending_publication
+            )
+        if global_command is not None:
             validate_global_command(
                 global_command,
                 previous=(*prior_outputs, *publication_authority),
@@ -1765,7 +1914,7 @@ def install_application(
             plan = manager.plan_install(
                 identity, runtime, placement, command_name=command_name
             )
-        return _install_managed_candidate(
+        result = _install_managed_candidate(
             manager,
             plan,
             prior,
@@ -1774,11 +1923,24 @@ def install_application(
             uv=uv,
             archive=project_archive,
             commands=(
-                (global_command, str(stable) if os.name != "nt" else None),
+                (
+                    global_command,
+                    None if _windows_command_path.enabled() else str(stable),
+                ),
             )
             if global_command is not None
             else (),
+            user_path_command=global_command if update_user_path else None,
         )
+        if (
+            _windows_command_path.enabled()
+            and update_user_path
+            and global_command is not None
+        ):
+            _report_windows_command_path(
+                manager, result, global_command, environment
+            )
+        return result
 
 
 def _editable_command_directory(

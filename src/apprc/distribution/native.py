@@ -482,6 +482,24 @@ class NativeFrontendBuilder:
                 "sys.path.insert(0, str(executable))\n"
                 f"runpy.run_module({entrypoint!r}, init_globals={{'_APPRC_ARCHIVE_SHA256': {archive_digest!r}, '_APPRC_ARCHIVE_SIZE': {len(archive_bytes)}}}, run_name='__main__', alter_sys=True)\n"
             )
+            if target == "x86_64-pc-windows-msvc":
+                import inspect
+                from textwrap import indent
+
+                from apprc.distribution.runtime import _setup_terminal
+
+                stub = stub.replace(
+                    "'_APPRC_ARCHIVE_SIZE': ",
+                    "'_APPRC_SETUP_LAUNCH': _setup_launch, '_APPRC_ARCHIVE_SIZE': ",
+                    1,
+                )
+                stub = (
+                    inspect.getsource(_setup_terminal)
+                    + "\n\n_setup_launch = {}\n"
+                    + "def _load_native_product():\n"
+                    + indent(stub, "    ")
+                    + "run_setup_loader(_load_native_product, _setup_launch)\n"
+                )
             with _create_file(inputs / "loader.py") as output:
                 output.write(stub.encode())
             with _create_file(inputs / "requirements.txt") as output:

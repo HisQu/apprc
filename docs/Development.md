@@ -15,6 +15,7 @@
 - [Build and release AppRC](#build-and-release-apprc)
   - [Build the three distributions](#build-the-three-distributions)
   - [Native application frontends](#native-application-frontends)
+  - [Verify an application distribution](#verify-an-application-distribution)
   - [Release procedure](#release-procedure)
 
 <br>
@@ -350,6 +351,25 @@ Keep complete application sources in `examples`; link to those sources from
 Examples. The HTML `example-file` comments in guides associate code blocks with
 files for execution tests and are hidden in rendered Markdown.
 
+### Render Mermaid diagrams locally
+
+Give each published Mermaid figure a descriptive `accTitle` and nearby text
+that explains its relationships. To check a changed document, render the fenced
+blocks with Mermaid CLI and inspect the SVGs in the temporary output directory.
+The renderer requires Node.js and Chromium.
+
+```shell
+render_dir=$(mktemp -d)
+npx --yes --package @mermaid-js/mermaid-cli@12.2.0 mmdc \
+  -i docs/Explanations.md -o "$render_dir/Explanations.md"
+```
+
+Run the same command for each changed page with a diagram. Check that every
+diagram renders, labels fit, and the arrows match the adjacent prose and CLI
+behavior. Mermaid source stays in Markdown. Keep the rendered files temporary.
+The root and PyPI READMEs use the existing graphical abstract and link to the
+Mermaid-bearing docs.
+
 ## Actions artifact diagnostic
 
 The separate [Diagnostics workflow](../.github/workflows/diagnostics.yml)
@@ -402,10 +422,15 @@ generated SVG, caption, and affected prose/examples together. Do not leave a
 stale picture or remove the picture instead of maintaining it. Diagram scripts
 are canonical; generated SVGs and package READMEs must not be hand-edited.
 
-Regenerate the overview alone, then both package descriptions:
+If the graphical abstract changes, regenerate its SVG:
 
 ```shell
 .venv/bin/python docs/assets/apprc_abstract_configuration_overview.py
+```
+
+For any root README change, regenerate both package descriptions:
+
+```shell
 .venv/bin/python src/apprc_dev/packaging/pypi_readme.py
 .venv/bin/python src/apprc_dev/packaging/terminal_metadata.py
 ```
@@ -514,10 +539,10 @@ execution evidence.
 
 Final native outputs are `dist/<app-id>-setup-linux-x86_64`,
 `dist/<app-id>-setup-windows-x86_64.exe` and `dist/SHA256SUMS`. Optional
-[one-line install scripts (OLIS)](References.md#one-line-install-script-reference)
+[One-line installer (OLI) scripts](References.md#one-line-install-script-reference)
 also go in `dist/`. Intermediates, source archives, reports and Cargo
-workspaces belong in ignored `.cache/apprc/`. The host application owns the
-decision to make an OLIS available at a public URL.
+workspaces belong in ignored `.cache/apprc/`. The host application publishes
+its release assets and chooses where to host the OLI scripts.
 
 The installed stable command is the same prebuilt manager executable. Its
 maintenance implementation does not import application dependencies; normal
@@ -588,6 +613,30 @@ Verify that the bare command and explicit default command start the same
 action, then check help, version where available, and an unrelated subcommand.
 For a Windows installer build, verify double-clicking the installed command
 and any requested shortcut from Windows itself.
+
+## Verify an application distribution
+
+With authoring enabled, the application exposes `dist build` and `dist check`
+in its checkout. With installation management it also exposes `dist test`.
+Use the [authoring and validation procedure](How-To-User-Guides.md#prepare-a-release-package)
+for runnable invocations.
+
+```mermaid
+flowchart TD
+    accTitle: Build, check, test, and Source Build responsibilities
+    Commit["Committed checkout"] --> Build["dist build creates release artifacts"]
+    Build --> Check["dist check verifies integrity and freshness"]
+    Check --> SB["Source Build runs the verified local setup"]
+    Check --> Managed["dist test --managed runs a release installation lifecycle"]
+    Existing["Current checkout environment"] --> Editable["dist test runs editable registration by default"]
+```
+
+Use `--target-current/-t` with build or check to require the current target.
+A Source Build can reuse the local setup. The guided test performs real
+installation and removal, so use an isolated test account or application
+identity. Test a genuine update by supplying a distinct older executable and
+its matching manifest with `--update-from`. Record native Windows observations
+separately from cross-compilation results and fixture checks.
 
 ## Release procedure
 

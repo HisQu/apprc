@@ -45,6 +45,26 @@ registry.
 | [User preferences and workspaces](#user-preferences-and-workspaces) | Config | User dotenv and registry-backed `Workspaces()` | Users share preferences and select named working directories. |
 | [Parent-owned dependency settings](#parent-owned-dependency-settings) | Parent's chosen paths | Imported config binding | The host owns dependency field names and values. |
 
+### What the example profiles write
+
+The profiles below show how the same SDK can operate with no managed files,
+one resource, or saved preferences plus named workspaces. The files appear
+when an operation initializes or saves them.
+
+```mermaid
+flowchart LR
+    accTitle: Persistent files created by representative example profiles
+    Process["process-env"] --> None["No managed files"]
+    Cache["cache-only"] --> CacheDir["Owned cache directory"]
+    Preferences["user-dotenv"] --> Dotenv["Config directory with apprc.user.env"]
+    Combined["user-dotenv-with-workspace"] --> Dotenv
+    Combined --> Registry["Named registry in config"]
+    Registry --> Workspace["Workspace files at the selected root"]
+```
+
+See the [capability model](Explanations.md#optional-capabilities) for the
+declarations these profiles share.
+
 ## Run the example applications
 
 From an AppRC checkout, install the core, terminal distribution, and examples:
@@ -53,16 +73,45 @@ From an AppRC checkout, install the core, terminal distribution, and examples:
 python -m pip install -e . -e src/apprc_dev/packaging/terminal -e examples/example_apps
 ```
 
-`apprc-examples-lab NAME` opens an isolated shell for one example. The lab sets
-its environment and creates its own temporary root. Example commands use nested
-`app paths` and `app doctor`, supported category operations, and workspace
-commands. There is no resource-init or purge CLI alias. Keep demonstration data
-inside the lab root because paths explicitly chosen elsewhere remain after the
-lab exits.
+Start with a settings-only profile or inspect a profile that writes config.
+The lab opens an isolated shell and provides a temporary application root:
 
-The [example package README](../examples/example_apps/README.md) describes the
-lab and smoke runner. Complete source code remains in `examples`; the guides
-below explain the decisions each setup demonstrates.
+```shell
+apprc-examples-lab process-env
+```
+
+Inside the lab, run the application's `--help` or `run` command. To explore
+paths and persistence, exit that lab and start `apprc-examples-lab user-dotenv`.
+In the new shell, try:
+
+```shell
+apprc-user-dotenv app paths
+apprc-user-dotenv config setup
+apprc-user-dotenv app doctor
+```
+
+The lab removes its temporary root when the shell exits. Paths you explicitly
+choose outside that root remain. To exercise all eight profiles without the
+interactive shell, run the automated smoke runner:
+
+```shell
+apprc-examples-run-all
+```
+
+| Lab name | Complete source | Focus |
+| --- | --- | --- |
+| `process-env` | [Process environment](../examples/example_apps/src/process_env/README.md) | Python defaults and process environment. |
+| `user-dotenv` | [User dotenv](../examples/example_apps/src/user_dotenv/README.md) | Saved preferences. |
+| `workspace` | [Workspace](../examples/example_apps/src/workspace/README.md) | Registry and workspace-local settings. |
+| `cache-only` | [Cache only](../examples/example_apps/src/cache_only/README.md) | A single independent resource. |
+| `user-dotenv-with-workspace` | [User dotenv with workspace](../examples/example_apps/src/user_dotenv_with_workspace/README.md) | Both user and workspace write scopes. |
+| `explicit-env-precedence` | [Explicit environment precedence](../examples/example_apps/src/explicit_env_precedence/README.md) | Explicit dotenv files and process values. |
+| `cli-runtime` | [CLI runtime](../examples/example_apps/src/cli_runtime/README.md) | Host-owned CLI preparation. |
+| `library-client` | [Library client](../examples/example_apps/src/library_client/README.md) | Importable client with saved preferences. |
+
+The [example package README](../examples/example_apps/README.md) describes
+the lab and the scope of its smoke checks. For guided installation of an
+actual application use its checkout's [distribution test](How-To-User-Guides.md#validate-installation-on-your-machine).
 
 <br>
 

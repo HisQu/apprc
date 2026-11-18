@@ -12,6 +12,7 @@
   - [User dotenv](#user-dotenv)
   - [Secret companions](#secret-companions)
   - [Application paths](#application-paths)
+  - [Optional capabilities](#optional-capabilities)
   - [Workspaces](#workspaces)
   - [Layouts](#layouts)
   - [Installation](#installation)
@@ -26,10 +27,16 @@
   - [Imported dependency settings](#imported-dependency-settings)
   - [Copies, overrides, and reloads](#copies-overrides-and-reloads)
   - [Installed packages and installer builds](#installed-packages-and-installer-builds)
+- [How application installation works](#how-application-installation-works)
+  - [Four installation routes](#four-installation-routes)
+  - [Who prepares and runs the application](#who-prepares-and-runs-the-application)
+  - [Activation, repair, and rollback](#activation-repair-and-rollback)
 
 This page explains typed settings, independent application paths, optional
 workspaces, configuration tools, and application-owned maintenance operations.
 A small application can use settings alone or declare one path such as cache.
+The final chapter explains how a host application can then reuse those same
+declarations when it publishes an installer.
 
 
 <br>
@@ -201,6 +208,21 @@ for interpolation and missing files.
 
 ## Provenance
 
+The resolver combines inputs in priority order, and the built settings retain
+the origin of the effective value. This example assumes the usual precedence
+and no constructor override.
+
+```mermaid
+flowchart LR
+    accTitle: Configuration resolution and provenance
+    Default["Python timeout default: 30"] --> Resolve["Resolve layers"]
+    Saved["User dotenv: 20"] --> Resolve
+    Env["Process environment: 10"] --> Resolve
+    Resolve --> Build["Build typed settings"]
+    Build --> Value["timeout = 10"]
+    Build --> Origin["Origin: process environment"]
+```
+
 Provenance is the record of where a field's current value came from. It answers
 "Why is the timeout 10?" by identifying the process environment as the source,
 instead of making the user search every dotenv file.
@@ -297,6 +319,42 @@ providers are needed only for supported app-specific backup, restore, prune,
 clear, or reset operations. AppRC does not expose resource initialization or
 generic purge as CLI commands; Python `ensure_path` and the maintenance planning
 and apply APIs remain available.
+## Optional capabilities
+
+Start with typed settings. Declare each managed resource you need. Persisting
+preferences and registering named workspaces both use the config resource.
+A direct workspace can open a user-owned directory without a registry.
+
+```mermaid
+flowchart LR
+    accTitle: Optional capabilities and their prerequisites
+    App["AppRC declaration"] --> Settings["Typed settings"]
+    App --> Paths["Paths"]
+    App --> Direct["Direct workspace"]
+    Paths --> Config["config=True"]
+    Paths --> Other["Independent appdata, cache, and state flags"]
+    Config --> User["UserDotenv can save preferences"]
+    Config --> Names["Workspaces can store a named registry"]
+```
+
+When an enabled feature initializes its files, they live with the resource that
+owns them. Workspace registry entries point to the user's workspace directories.
+Installation has its own authority even for applications with no managed paths.
+
+```mermaid
+flowchart TD
+    accTitle: Feature-dependent data locations
+    Paths["Enabled Paths categories"] --> Config["Config directory, if enabled"]
+    Paths --> Other["Appdata, cache, and state, each optional"]
+    Config --> Preferences["User dotenv and optional secret companion"]
+    Config --> Registry["Named workspace registry, if enabled"]
+    Registry --> Root["User-owned workspace directory"]
+    Root --> Workspace["Workspace dotenv and project files"]
+```
+
+See the [example profiles](EXAMPLES.md#choose-a-setup) for concrete
+combinations and the files they produce.
+
 ## Workspaces
 
 `Workspaces(selector_env_key=None, registry=True)` declares optional selection
@@ -355,6 +413,24 @@ installation placement outranks the source declaration and native fallback.
 default selection. Invocation overrides do not rewrite the saved record. See the
 complete [bootstrap reference](References.md#layout-bootstrap).
 
+**How AppRC selects a Directory layout**
+
+```mermaid
+flowchart TD
+    accTitle: Directory layout selection and source
+    Start["Resolve layout"] --> Invocation{"Explicit invocation Layout?"}
+    Invocation -->|Yes| Chosen["Use it and record the source"]
+    Invocation -->|No| Layer{"Winning raw layer has a layout or root?"}
+    Layer -->|Yes| Pair["Interpret that layer's layout and root together"]
+    Pair --> Chosen
+    Layer -->|No| Saved{"Saved installation authority?"}
+    Saved -->|Valid placement| Chosen
+    Saved -->|Invalid| Recover["Report the authority error"]
+    Saved -->|Absent| Default["Use the declaration or OS-native default"]
+    Default --> Chosen
+```
+
+
 ## Installation
 
 Installation metadata preserves the choices needed to reconnect application
@@ -389,6 +465,21 @@ continues to identify resource ownership; it is not another receipt or locator.
 Installation is not a `Paths` boolean and does not enable appdata. An application
 can declare only cache, or no managed resources at all, while using installation
 support.
+
+**Fixed authority and independently placed resources**
+
+```mermaid
+flowchart LR
+    accTitle: Fixed installation authority and application resources
+    Address["Fixed native installation directory"] --> Record["installation.json"]
+    Record --> Runtime["Active runtime or editable checkout reference"]
+    Record --> Placement["Saved resource placement"]
+    Placement --> Native["OS-native Directory layout"]
+    Placement --> Root["Single-root Directory layout"]
+    Native --> Enabled["Enabled config, appdata, cache, and state"]
+    Root --> Enabled
+```
+
 
 `MyRC.installation().inspect()` reads this address without resolving business
 settings or creating files. A missing record means an unmanaged installation:
@@ -429,12 +520,10 @@ does not automatically move arbitrary databases or project data. Linux's old
 native appdata parent needs an explicit ownership-preserving migration before
 using the new `appdata/` child beside `installation/`.
 
-Program-only uninstall retains all resource categories and reconnectable
-installation support, including cache and state. Complete removal requires an
-exact preview and consent. Unknown content remains protected; incomplete cleanup
-retains recovery authority unless the user explicitly chooses to leave named
-resources unmanaged. Workspaces, editable checkouts, shared uv and shared Python
-are never implicit removal targets.
+The [uninstall guide](How-To-User-Guides.md#remove-a-managed-program)
+defines the CLI's removal and retention choices. The
+[installation reference](References.md#installationmanager) describes the
+lower-level program-only removal contract and the resulting authority.
 
 Install, repair and removal serialize through the installation operation lock.
 Resource and shared-workspace writes keep their stable sibling locks, so two
@@ -454,10 +543,9 @@ operation dispatch.
 In the CLI, these operations appear under the nested `app` maintenance group:
 `app data backup/restore`, `app cache prune/clear`, and `app state prune/reset`.
 Each command exists only when that provider operation is supported. Installation
-management commands are also opt-in; they require
-`installation_management=True`, and `app install` additionally requires an
-explicit `installer_entrypoint` callable. No generic resource initialization or
-purge CLI alias is provided.
+management enables repair, uninstall, migration, and editable registration.
+The [CLI reference](References.md#terminal-commands) describes when installation
+can also call a native installer.
 
 Python purge planning lists exact managed files and empty directories, tracks a
 revision, and refuses unknown or unowned contents. Apply rechecks markers,
@@ -505,9 +593,10 @@ The `app` group is always mounted and contains `paths` and `doctor`. The
 `config setup [--adopt] [--yes/-y]` initializes only user configuration, reusing
 config-only initialization and user-dotenv setup. The app group exposes
 `app data backup/restore`, `app cache prune/clear`, and `app state prune/reset`
-only for supported provider operations. Installation management commands are
-also opt-in; they require `installation_management=True`, and `app install`
-additionally requires an explicit `installer_entrypoint` callable.
+only for supported provider operations. Set `installation_management=True`
+to enable repair, uninstall, migration, and editable registration. A
+distribution-enabled checkout can also use its authoring backend for a Source
+Build. An explicit `installer_entrypoint` takes precedence for that route.
 
 A host may provide `launcher_spec` and `launcher_handlers` to add root `launch`,
 which opens the existing Textual management launcher. It is not the host's
@@ -656,41 +745,102 @@ final executables and `SHA256SUMS` to ignored `dist/`, with intermediates under
 `.cache/apprc/`. They do not generate installer programs in the source tree.
 Buildben can seed this structure, but AppRC does not require Buildben.
 
-A one-line install command fetches a one-line install script (OLIS) from a URL
-supplied by the application. AppRC generates both OLIS files during a configured
-distribution build. `RELEASE_PUBLIC` selects the OLIS templates at build time.
-Each OLIS then downloads, verifies, and runs the native setup executable for its
-platform.
+A release package contains the platform executables and the checksums used to
+verify them. Publication makes the executable available as an RBE. If configured,
+the build also generates the One-line installer (OLI) scripts for the publisher
+to host. See the [distribution reference](References.md#distribution-generation)
+and [authoring guide](How-To-User-Guides.md#prepare-a-release-package).
+
+<br>
+
+# How application installation works
+
+## Four installation routes
+
+Start with the asset or checkout available to you. Three routes run a
+native setup and produce a release installation. The Editable Source Checkout
+(eSC) route instead registers an existing project and environment.
 
 ```mermaid
 flowchart TD
-    A["x dist build"] --> B{"RELEASE_PUBLIC"}
-    B -->|true| C["Public OLIS templates"]
-    B -->|false| D["Private OLIS templates"]
-    C --> E["dist/"]
-    D --> E
-    A --> N["Native setup executables"]
-    N --> E
-    E --> F["install_from_github.sh"]
-    E --> G["install_from_github.ps1"]
-    F --> H["Download, verify, and run the native setup executable"]
-    G --> H
-    H --> I["AppRC installation"]
+    accTitle: Four installation routes, two installation modes, and two Directory layouts
+    OLI["One-line installer (OLI)"] -->|Verifies and runs| RBE["Released Binary Executable (RBE)"]
+    RBE --> Runtime["AppRC installation runtime"]
+    SB["Source Build (SB)"] --> Local["Local executable"]
+    Local --> Runtime
+    Runtime --> Release["Release installation"]
+    ESC["Editable Source Checkout (eSC)"] --> Register["Register existing checkout and .venv"]
+    Register --> Editable["Editable installation"]
+    Release --> Placement["Saved resource placement"]
+    Editable --> Placement
+    Placement --> Native["OS-native Directory layout"]
+    Placement --> Root["Single-root Directory layout"]
 ```
 
-Managed releases own their runtime slots. A replacement is prepared and checked
-before activation; a runtime lease prevents collection while an application
-process still uses it. The stable native command stays outside these disposable
-environments, so installation-level diagnosis, repair and program removal do not
-require application imports. Application validators and resource-provider hooks
-run in the recorded application runtime and report unavailable code explicitly.
+The One-line installer uses the application's latest published release.
+Running the Released Binary Executable directly reaches the same runtime.
+Source Build starts with an authored checkout and hands off to a verified
+local executable. Use the [installation guide](How-To-User-Guides.md#install-and-recover-applications)
+for the steps and the [terminology reference](References.md#installation-terminology)
+for the exact distinction between route, installed result, and layout.
 
-Editable registration owns only AppRC resources and integrations. It uses the
-repository's existing `.venv`. Uninstall removes managed data while preserving
-that environment and checkout by default; `--remove-repository` explicitly
-includes the checkout and everything inside it. `--keep-config` preserves only the config directory, including settings and secrets; appdata, cache and state are removed. If the environment breaks, the developer repairs it with
-uv rather than a second AppRC dependency manager.
+## Who prepares and runs the application
 
-Both workflows preserve the same [resource layouts](#layouts) and
-ownership-aware cleanup. Python wheels and sdists remain normal packaging
-formats, but are not a parallel AppRC managed-installation backend.
+The publisher prepares the snapshot and executable. PyApp bootstraps the
+AppRC installation runtime. That runtime uses uv to sync the selected app
+environment, records the installation, and prepares the stable command.
+Application hooks run in the application environment when the lifecycle needs
+them.
+
+```mermaid
+flowchart TD
+    accTitle: Components of a release installation
+    Publisher["Application publisher"] --> Setup["Native setup with a locked snapshot"]
+    Setup --> Bootstrap["PyApp bootstrap"]
+    Bootstrap --> Runtime["AppRC installation runtime"]
+    Runtime --> UV["uv sync of the application environment"]
+    UV --> Slot["Validated runtime slot"]
+    Runtime --> Authority["Activate slot in the installation record"]
+    Slot --> Authority
+    Authority --> Command["Stable installed command"]
+    Command -->|Normal app commands| Slot
+    Command -->|Core repair and uninstall| Runtime
+```
+
+The stable command stays outside replaceable environments, so core diagnosis,
+repair, and removal can start independently. Ordinary commands run in the active
+slot. A zero-argument invocation runs the action chosen by the application's
+entry point. The optional Textual launcher is a separate app capability.
+[Default action and shortcut authoring](Development.md#choose-a-default-action-for-an-installed-command)
+
+Editable registration records a reference to the existing checkout environment.
+Ordinary commands and app-dependent helpers need that environment to work.
+Use Git and uv to update or repair it.
+
+## Activation, repair, and rollback
+
+An update prepares a new slot from the newer installer. Repair builds a
+replacement using the previously recorded archive and placement. The command
+continues to use active slot A while AppRC validates candidate B. Activation
+commits the new selection. If an old application process still holds a lease
+on A, AppRC defers deletion of that slot.
+
+```mermaid
+flowchart TD
+    accTitle: Preparing, activating, and retiring a replacement runtime
+    Active["Record selects active slot A"] --> Candidate["Prepare candidate B for update or repair"]
+    Candidate --> Validate{"Does B validate?"}
+    Validate -->|No| Rollback["Restore AppRC changes or preserve recovery state"]
+    Validate -->|Yes| Commit["Commit B as active"]
+    Commit --> Lease{"Is A still in use?"}
+    Lease -->|Yes| Defer["Defer retirement of A"]
+    Lease -->|No| Cleanup["Remove owned slot A"]
+    Defer -->|When released| Cleanup
+```
+
+The installation record is authoritative throughout. A pre-activation failure
+can roll back AppRC changes or leave resumable checkpoints. A cleanup error
+after activation leaves B selected and is reported separately. Application
+callbacks own database compatibility and external side effects. Use the
+[recovery procedure](How-To-User-Guides.md#inspect-or-repair-installation)
+and [record reference](References.md#installationmanager) for exact behavior.

@@ -24,9 +24,16 @@
   - [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
   - [Save and repair secret settings](#save-and-repair-secret-settings)
   - [Add a Gradio settings page](#add-a-gradio-settings-page)
+- [Prepare a release package](#prepare-a-release-package)
   - [Build a Windows installer](#build-a-windows-installer)
-- [Install and recover managed applications](#install-and-recover-managed-applications)
+  - [Validate installation on your machine](#validate-installation-on-your-machine)
+  - [Generate one-line install scripts](#generate-one-line-install-scripts)
+- [Install and recover applications](#install-and-recover-applications)
+  - [Run a published installer](#run-a-published-installer)
   - [Install from a checkout](#install-from-a-checkout)
+  - [Install from a Source Build](#install-from-a-source-build)
+  - [Run the installed application](#run-the-installed-application)
+  - [Update an application](#update-an-application)
   - [Keep or switch the saved layout](#keep-or-switch-the-saved-layout)
   - [Inspect or repair installation](#inspect-or-repair-installation)
   - [Remove a managed program](#remove-a-managed-program)
@@ -660,10 +667,10 @@ interactive preference prompts. Add `--adopt` only to claim a nonempty unowned
 config directory you control. The edit is saved in
 `demo-config/config/apprc.user.env`; `run` then prints `20`.
 
-`AppRCRootGroup` opts in to four root-help panels, in this order: `Options`,
-`Commands`, `AppRC: Runtime Options`, and `AppRC: Commands`. Empty panels are
-omitted; ordinary Typer roots remain supported, and nested help uses normal
-Typer formatting. AppRC's seven runtime options are repeatable ordered
+`AppRCRootGroup` groups root help under `Commands`, `Options`,
+`AppRC: Commands`, `AppRC: Runtime Options`, and `Help & Completion`, in
+that order. AppRC omits empty panels. Ordinary Typer roots
+remain supported, and nested help uses normal Typer formatting. AppRC's seven runtime options are repeatable ordered
 `--env-file`, `--env-file-overrides-os-environ`/`-o`,
 `--skip-dotenv-layers`/`-s`, `--workspace`, `--layout`, `--app-root`, and
 `--log-level`. `-o` changes explicit-file versus OS-environment priority;
@@ -675,9 +682,9 @@ declarations. `config` and `workspace` depend on their declarations. Set
 `maintenance_group_name="app"` to choose the maintenance group's name (the
 default shown here), and `maintenance_help_panel="AppRC: Commands"` to choose
 its root-help panel. `app repair`, `app uninstall`, and `app migrate` require
-`installation_management=True`; `app install` additionally requires an explicit
-callable `installer_entrypoint`. There is no inferred installer or compatibility
-alias for the old command paths.
+`installation_management=True`, which also enables `app install -e`.
+For a Source Build, enable distribution authoring in the checkout or supply an
+explicit `installer_entrypoint`. See the [command reference](References.md#terminal-commands).
 
 The returned group mapping uses actual mounted paths: `config`, `workspace`,
 `app`, and, when nonempty, `app.data`, `app.cache`, and `app.state`. A renamed
@@ -944,6 +951,10 @@ application-specific validation after the write locks have been released.
 Other sections keep the standard editor controls and source visibility.
 
 
+<br>
+
+# Prepare a release package
+
 ## Build a Windows installer
 
 Use the same authored project-snapshot/native build as for Linux. Declare
@@ -956,7 +967,24 @@ With the existing authoring dependencies and cross-compilation toolchain
 available, the application runs `just make-artifacts`. Its ignored `dist/`
 contains Windows and Linux setup executables plus `SHA256SUMS`; intermediates
 stay in `.cache/apprc/`. The Windows setup installs the same stable native command
-used for diagnosis, repair and uninstall—no separate PowerShell/CMD launcher.
+used for diagnosis, repair and uninstall.
+
+The manifest covers the native executables produced by the build. AppRC embeds
+the locked source snapshot and its digests in each executable so the installer
+can verify the inputs it uses to prepare the application runtime.
+
+**Release package inputs and outputs**
+
+```mermaid
+flowchart LR
+    accTitle: Release package inputs and outputs
+    Git["Committed project tree"] --> Snapshot["Project snapshot"]
+    Lock["uv.lock and prebuilt assets from the tree"] --> Snapshot
+    Snapshot --> Built["Platform setup executables in dist/"]
+    Built --> Checksums["SHA256SUMS"]
+    Built --> Release["Published release assets"]
+    Checksums --> Release
+```
 
 If the application declares an [authoring backend](References.md#distribution-generation),
 run `uv run --locked <app> dist build` and `uv run --locked <app> dist check`
@@ -979,25 +1007,13 @@ this is not an offline installer guarantee.
 > deferred. Never launch native Windows test executables from WSL; follow the
 > separately authorized native validation procedure.
 
-<br>
+## Validate installation on your machine
 
-# Install and recover managed applications
-
-These guides cover managed native releases and lightweight editable registration.
-Examples use `demo` as the primary command; substitute the application's actual
-command and paths. Both workflows retain the same
-[OS-specific resource layouts](Explanations.md#installation), independently of
-their program environments.
-
-> [!IMPORTANT]
-> uv prepares a developer environment or synchronizes a managed runtime.
-> AppRC does not implement dependency resolution. Private Git dependencies may
-> require Git, credentials and network access on the recipient.
-
-### Validate installation on your machine
-
-Run the guided validation from the opted-in checkout's existing environment.
-Choose editable registration, managed installation, or a genuine managed update:
+Run the guided validation from the distribution-enabled checkout's existing
+environment. Editable registration is the default. Select `--managed/-m` to
+test a release installation, or supply an older setup with `--update-from/-u`
+to test an update. `--update-from` implies `--managed` and cannot be combined
+with `--editable/-e`.
 
 ```shell
 uv run --locked <app> dist test -e
@@ -1009,7 +1025,8 @@ For Windows, use the old `<app-id>-setup-windows-x86_64.exe` and run the guide
 under native Windows. Place the old release's `SHA256SUMS` beside that file.
 Build and check the current artifact with `dist build -t` and `dist check -t`
 before managed validation. Save your work and stop application consumers before
-starting; the guide performs real installation and uninstallation on this account.
+starting. The guide performs real installation and uninstallation on this
+account.
 
 If an installation already exists, review its displayed state and the normal
 uninstall preview. Confirm only if you accept removal of the listed application
@@ -1027,7 +1044,7 @@ profile flags and update checks.
 
 
 
-### Generate one-line install scripts
+## Generate one-line install scripts
 
 From a checkout that provides `dist build`, pass the release repository and
 access mode to the build. For example, with an application command named `demo`:
@@ -1043,15 +1060,99 @@ executables and `SHA256SUMS`. Use `-o` as shorthand or export
 A configured build writes `install_from_github.sh` and
 `install_from_github.ps1` to `dist/`.
 
-Host each OLIS at a URL you control, then substitute that URL into the
-one-line install command in its header. The Linux OLIS requires Bash and
-`sha256sum`. The Windows OLIS uses PowerShell. For a public release the Linux
-OLIS uses `curl` and the Windows OLIS uses `Invoke-WebRequest`. For a private
-release the recipient needs the GitHub CLI and an active `gh auth login` with
-access to the release. Use a trusted OLIS URL because the one-line install
-command executes the downloaded script before it checks the setup.
+If neither repository setting is supplied, AppRC builds the executables and
+reports that OLI generation was skipped. Host each script at a URL you control
+and substitute that URL into the command template in its header. Publish the
+checksummed native executables and `SHA256SUMS` to the configured GitHub
+release repository. See the
+[script and build settings](References.md#one-line-install-script-reference)
+for the public and private prerequisites.
+
+<br>
+
+# Install and recover applications
+
+<a id="install-and-recover-managed-applications"></a>
+
+Use the application’s own command and release instructions. The examples use
+`demo` as the command. See the [route and layout definitions](References.md#installation-terminology)
+to choose the workflow that matches your starting point.
+
+## Run a published installer
+
+If the publisher provides a **One-line installer (OLI)**, copy the command
+from the app’s trusted installation page. It fetches the app’s OLI script and
+runs it in the current shell. The script finds the platform executable and
+`SHA256SUMS` in the app’s latest published GitHub release, verifies the
+executable, and then starts it. It uses the published assets even when the
+application has newer changes on `main`.
+
+**What the One-line installer runs**
+
+```mermaid
+flowchart TD
+    accTitle: One-line installer verification and launch
+    Command["Publisher's one-line command"] --> OLI["Fetch and run the OLI script"]
+    OLI --> Release["Download the platform RBE and SHA256SUMS"]
+    Release --> Verify{"Does the checksum match?"}
+    Verify -->|Yes| Setup["Run the verified RBE"]
+    Verify -->|No| Stop["Report failure and remove temporary downloads"]
+    Setup --> Result["Return setup's result and remove temporary downloads"]
+```
+
+To run a **Released Binary Executable (RBE)** directly, download the binary
+for your platform and the matching `SHA256SUMS` from the same release.
+For Linux, verify the local executable before making it runnable:
+
+```shell
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+Continue only if the output reports `demo-setup-linux-x86_64: OK`:
+
+```shell
+chmod +x demo-setup-linux-x86_64
+./demo-setup-linux-x86_64
+```
+
+On Windows, run these commands in PowerShell from the download directory:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\demo-setup-windows-x86_64.exe
+Get-Content .\SHA256SUMS | Select-String -SimpleMatch 'demo-setup-windows-x86_64.exe'
+```
+
+Compare the two hashes for that filename. If they match, double-click the
+verified setup or run it from the same PowerShell session:
+
+```powershell
+& ".\demo-setup-windows-x86_64.exe"
+```
+
+Setup uses the snapshot inside the executable to prepare a private locked
+runtime. Dependency acquisition can require network access and credentials.
+Read the final result and any **Next step** the application supplies.
+Double-clicked Windows setup keeps the result visible until you press Enter.
+On failure, read the reported diagnostic log path if shown. Running setup
+from an existing terminal also lets you inspect its exit code.
 
 ## Install from a checkout
+
+An **Editable Source Checkout (eSC)** reuses your project and its existing
+environment. AppRC prepares the registration and integrations after uv prepares
+the environment.
+
+**Editable registration from a checkout**
+
+```mermaid
+flowchart LR
+    accTitle: Editable registration from a checkout
+    Checkout["Application checkout"] --> Sync["uv sync --locked"]
+    Sync --> Venv["Existing .venv"]
+    Venv --> Register["App command: app install -e"]
+    Register --> Record["Record checkout, environment, and resource placement"]
+    Register --> Command["Publish the application command"]
+```
 
 From the checkout, prepare the environment:
 
@@ -1093,9 +1194,9 @@ tell whether the app itself was installed.
 
 On Windows, successful installation also attempts to set the global executable's
 product version and add an entry to Windows Settings → Installed apps. Editable
-checkouts appear there too. Selecting Uninstall uses the existing confirmation
-flow: the checkout and `.venv` remain by default, while managed configuration
-and data are removed. Run `app install -e` again after updating the app to refresh
+checkouts appear there too. Selecting Uninstall follows the
+[removal and retention guide](#remove-a-managed-program). Run `app install -e`
+again after updating the app to refresh
 Windows' displayed version; `uv sync` alone does not refresh it.
 
 Version display is optional. A metadata failure produces a warning and leaves
@@ -1120,27 +1221,6 @@ another environment is active. Its command directory must already be on PATH;
 `--command-directory PATH` can select another safe existing directory without
 editing shell profiles. Unknown command collisions are errors, not replacements.
 
-Windows managed setup also publishes a global command by default. It reuses
-the existing app-owned per-user command directory on PATH when possible, or
-uses the shared uv user bin. After a successful install, setup adds the
-shared directory to user PATH if needed. Open a new PowerShell window when
-prompted. Setup prints the full executable path if PATH could not be updated.
-Uninstall keeps the shared PATH entry.
-
-When double-clicking setup, read the result before pressing Enter. On failure,
-the result can include a local diagnostic log path. Running setup in an
-existing terminal lets you read the failure and check its exit code there.
-
-A fresh interactive managed install can ask **Add Desktop shortcut? [y/N]**
-when a desktop directory is available. Use `--desktop` to request the shortcut
-explicitly. Apps that supply a next step display it below the successful
-installation summary, including when optional configuration is skipped.
-
-Applications can provide an icon for newly created shortcuts. Windows Installed
-apps uses the configured Windows icon on install, update, or repair. Existing
-shortcuts keep their appearance. AppRC keeps the icon files those shortcuts may
-still use until uninstall. [Icon configuration](References.md#distribution-generation)
-
 At the end, AppRC offers `config setup` only when active, editable user settings
 are required, have no fallback, and remain missing after configuration resolution.
 Workspace-only and already supplied settings do not trigger the offer.
@@ -1153,8 +1233,7 @@ leaves no installation record. The checkout and its environment remain owned
 by the developer. Retry the same command after correcting the reported cause.
 Stable coordination locks and otherwise empty owned directories containing
 only those locks may remain; they do not register an installation.
-An existing interrupted registration resumes its exact recorded checkout and
-placement rather than selecting different resource paths.
+An interrupted registration resumes with its recorded checkout and placement.
 
 If rollback encounters changed files, nonempty new resources, or another
 restoration failure, AppRC preserves incomplete recovery authority and reports
@@ -1164,7 +1243,7 @@ committed installation remains installed when later cleanup fails.
 Application initialization callbacks own their data changes and compatibility.
 Installer rollback does not restore databases or external systems. Existing
 resources are preserved; a deliberate clean reinstall can use the application's
-normal uninstall policy, with `--keep-config` when retention is wanted.
+[normal uninstall procedure](#remove-a-managed-program).
 
 Git and `uv sync --locked` remain responsible for developer updates. Source
 changes stay editable. If the environment breaks, restore it with uv before
@@ -1185,18 +1264,71 @@ environment and actual interpreter prefix. Compare those paths before changing
 or reinstalling an environment; activating a shell environment does not change
 the interpreter already selected by `uv run`.
 
-For a managed release, verify the downloaded `SHA256SUMS`, then run its setup:
+## Install from a Source Build
+
+Use a **Source Build (SB)** when the app enables distribution authoring in its
+checkout. Prepare the environment with the application's development
+instructions and run its command through that environment:
 
 ```shell
-chmod +x demo-setup-linux-x86_64
-./demo-setup-linux-x86_64
+uv run --locked demo app install
 ```
 
-On Windows run `demo-setup-windows-x86_64.exe` on Windows itself. Setup contains
-the complete prebuilt project snapshot, prepares a private locked runtime slot
-and installs the stable native command. It does not build frontends on the
-recipient. Update by running newer setup; remote-main/version, wheel and package
-index source selectors are not supported.
+AppRC verifies the current-platform setup in `dist/` and runs it. If the
+setup is missing or stale, the command can offer to build it from committed
+source. You can also build and check it explicitly:
+
+```shell
+uv run --locked demo dist build -t
+uv run --locked demo dist check -t
+uv run --locked demo app install
+```
+
+A build on its own creates the release package. The last command makes the
+release installation. If integrity checking fails, inspect the old files and
+their manifest before rebuilding.
+
+## Run the installed application
+
+Follow the application's **Next step** if setup shows one. Run its published
+command in a terminal, or open an installed shortcut. With no arguments, the
+command runs the application's default action. With arguments, it dispatches
+to the requested subcommand. A Windows shortcut may open the app-owned default
+action or the optional Textual launcher, depending on the publisher's setup.
+
+On Windows, native setup publishes a global command by default. After a
+successful install it adds the shared per-user command directory to user PATH
+when needed. Open a new PowerShell session if PATH changed, then check the
+command location:
+
+```powershell
+Get-Command demo
+```
+
+If the report says PATH could not be updated, use the reported full command
+path. For a Linux release installation, run the stable command at the path
+shown by setup or pass `--command-directory` to setup with an existing
+directory on PATH to publish it there. A fresh interactive release installation can offer **Add Desktop
+shortcut? [y/N]** when a desktop directory is available. Run Windows setup with
+`--desktop` or `--start-menu` to request the corresponding shortcut. The
+application can supply an icon for shortcuts and for Windows Installed apps.
+Owned shortcuts and their supporting icons participate in the normal
+[uninstall inventory](#remove-a-managed-program). Existing shortcuts keep
+their appearance when another icon is configured on a later update.
+
+## Update an application
+
+For a release installation, stop the app and run a newer verified setup. The
+[published OLI](#run-a-published-installer) runs setup from the latest release
+and can also update an existing installation. Setup keeps the saved resource
+placement and validates the replacement runtime before switching the command
+to it. Follow any compatibility instructions from the application publisher.
+
+For an editable installation, update the checkout with Git and synchronize
+its environment with `uv sync --locked`. Run `demo app install -e` again to
+refresh installed command metadata such as the version shown by Windows.
+See [inspection and repair](#inspect-or-repair-installation) if the existing
+runtime has stopped working.
 
 ## Keep or switch the saved layout
 
@@ -1272,48 +1404,58 @@ old-record converter or permission to claim arbitrary database files.
 
 ## Remove a managed program
 
-Interactive uninstall asks whether to keep the whole config directory, defaulting
-to Yes, then shows a filesystem tree with **Delete / Keep** labels for final confirmation. The prompt
-names the application and confirms only items marked **Delete**. Appdata, cache
-and state are removed. `--yes` skips all prompts and removes config too,
-unless `--keep-config` is explicitly selected. `--dry-run` never prompts.
-`--keep-data` has been replaced by `--keep-config`; it no longer means retain
-application data. Back up saved application data separately before removing it.
-
-Windows Settings invokes the same cleanup flow with `--wait`, which
-keeps the final result visible until acknowledged. `--yes` suppresses this wait.
-Interactive Windows uninstall shows cleanup and its final result in a separate
-window. The original PowerShell prompt remains usable. After the result, press
-Enter in the cleanup window to close it; `--yes` skips that acknowledgement.
-Known paths use cyan in interactive output; Delete and Keep labels remain clear
-when color is unavailable. A completed removal can warn if temporary cleanup
-files remain; this does not mean the app is still installed.
-
-The validated installation directory is app-owned, including unexpected and
-obsolete files inside it. Those contents appear in the uninstall preview; they
-do not require receipt migration or separate approval. Workspaces, external
-inputs and shared tools stay outside its removal boundary.
-
-Preview and then confirm removal of the program and its managed data:
+Stop the application, including any running servers. Review the removal
+inventory before confirming:
 
 ```shell
 demo app uninstall --dry-run
 demo app uninstall
 ```
 
-Uninstall removes owned runtime slots, commands, shortcuts, configuration,
-appdata, cache, state and installation support. The preview identifies each
-managed directory as a whole-directory target: its contents are included,
-even when individual files were created by the application or added manually.
-AppRC validates directory ownership and removes contained symbolic links without
-following their targets. External workspaces, shared tools and unrelated
-commands are separate from these targets.
+The dry run prints **Delete** and **Keep** targets without prompting or
+deleting anything. A normal interactive uninstall offers to keep an existing
+configuration directory, with **Yes** as the default. It then previews the
+selected targets and asks for final confirmation, defaulting to **No**. Use
+`--keep-config` to keep configuration without the first question.
+
+**CLI uninstall choices**
+
+```mermaid
+flowchart TD
+    accTitle: CLI uninstall choices and configuration retention
+    Start["app uninstall"] --> Dry{"--dry-run supplied?"}
+    Dry -->|Yes| PreviewOnly["Preview and exit"]
+    Dry -->|No| Config{"How is configuration handled?"}
+    Config -->|"--keep-config"| Keep["Preserve configuration"]
+    Config -->|"Interactive with existing config, no --yes"| Ask{"Keep it? Default Yes"}
+    Config -->|"--yes or no retention choice"| Delete["Include config in removal"]
+    Ask -->|Yes| Keep
+    Ask -->|No| Delete
+    Keep --> Review["Show removal inventory"]
+    Delete --> Review
+    Review --> Proceed{"Valid plan and consent?"}
+    Proceed -->|"Blocked, declined, or unattended without --yes"| Stop["Exit without removal"]
+    Proceed -->|"--yes or interactive confirmation"| Remove["Remove program and selected directories"]
+```
+
+Unattended uninstall requires `--yes`. It includes configuration in the
+removal unless you also pass `--keep-config`. The retention flag preserves
+only configuration, including settings and secrets. Appdata, such as databases
+inside its directory, is still removed along with declared cache and state.
+Back up anything you need outside the listed removal targets first.
+
+The inventory also covers owned runtime slots, global commands, shortcuts,
+OS registration, and installation support. Each managed directory marked
+**Delete** is removed with all its contents, including unexpected or obsolete
+files. AppRC validates boundaries and ownership, and removes contained symbolic
+links without following them. External workspaces, other external inputs,
+shared tools, and unrelated commands stay outside these targets.
 
 An editable uninstall preserves the repository and its development environment
 by default. Managed single-root subdirectories inside the repository are still
 removed. AppRC removes the enclosing single-root folder only when empty; extra
 files in that folder are preserved. The completion message identifies the
-editable installation that remains.
+preserved checkout and environment.
 
 To preserve only configuration for a later reinstall, use:
 
@@ -1322,8 +1464,7 @@ demo app uninstall --keep-config --dry-run
 demo app uninstall --keep-config
 ```
 
-This retains the config directory, including saved settings and secrets. Other managed resources and installation support are removed. To also delete an editable
-repository, explicitly select it:
+To also delete an editable repository, explicitly select it:
 
 ```shell
 demo app uninstall --remove-repository --dry-run
@@ -1333,9 +1474,8 @@ demo app uninstall --remove-repository
 The preview names the Git checkout containing the registered project. Removal
 includes local changes, ignored files and environments inside that checkout.
 External shared environments and Git metadata outside the checkout remain.
-`--remove-repository` is invalid for packaged installations and cannot be
-used when retained config is inside the selected repository. Unattended confirmation additionally requires
-`--yes`.
+`--remove-repository` applies to editable installations. AppRC rejects it if
+the selected repository contains configuration you chose to retain.
 
 Ordinary directory deletion needs no application callbacks. Optional application
 cleanup, such as stopping owned services, runs before deletion; a declared
@@ -1347,11 +1487,15 @@ operation without changing its options; a retry never expands its recorded
 scope. Preserve the reported external recovery information if a busy runtime,
 changed directory identity or failed cleanup prevents completion.
 
-> [!CAUTION]
-> Unattended uninstall with `--yes` deletes configuration and application data.
-> Back up saved work outside the managed directories. `--keep-config` retains
-> configuration only; it does not preserve application databases. The former
-> `--complete`, `--category` and `--forget-retained` switches are removed.
+Windows Settings invokes uninstall with `--wait`. Interactive cleanup
+shows its result in a separate window while the original PowerShell prompt
+remains usable. When the result appears, press Enter in the cleanup window to
+close it. `--yes` skips acknowledgement. A completed removal can report a
+warning and the path of leftover temporary staging files.
+
+Scripts migrating from older releases should use the options in current
+`app uninstall --help`. The earlier `--keep-data`, `--complete`, `--category`,
+and `--forget-retained` options have been removed.
 
 The removal helper runs outside its immediate deletion targets. Repository
 removal is deferred to external finalization after the uninstall processes have

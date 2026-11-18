@@ -18,6 +18,7 @@ from apprc.definition.installation import (
     InstallationIdentity,
     OwnedOutput,
 )
+from apprc.distribution.runtime._install_progress import report
 from apprc.user_files.app_home.locations import assert_no_links
 
 
@@ -566,6 +567,7 @@ def publish_shortcuts(
                     raise InstallationError(
                         f"Refusing to replace an unowned shortcut: {destination}."
                     )
+                report("result", "Shortcut", "EXISTING", destination)
                 continue
             descriptor, temporary_name = tempfile.mkstemp(
                 prefix=f".{destination.name}.",

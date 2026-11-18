@@ -26,6 +26,19 @@ class InstallProgress:
 _reporter: ContextVar[Callable[[InstallProgress], None] | None] = ContextVar(
     "apprc_install_progress", default=None
 )
+installation_color: ContextVar[bool | None] = ContextVar(
+    "apprc_install_color", default=None
+)
+
+
+@contextmanager
+def installation_color_override(color: bool | None) -> Iterator[None]:
+    """Carry Click's explicit color choice through an argument-only delegate."""
+    token = installation_color.set(color)
+    try:
+        yield
+    finally:
+        installation_color.reset(token)
 
 
 @contextmanager

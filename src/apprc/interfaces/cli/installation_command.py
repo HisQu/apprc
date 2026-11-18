@@ -193,7 +193,13 @@ def mount_installation_group(
                 for token in ctx.meta["apprc.installation.arguments"]
                 if token != "--"
             )
-            raise typer.Exit(code=installer_entrypoint(arguments))
+            from apprc.distribution.runtime._install_progress import (
+                installation_color_override,
+            )
+
+            with installation_color_override(ctx.color):
+                status = installer_entrypoint(arguments)
+            raise typer.Exit(code=status)
 
     @child.command("migrate")
     def migrate(

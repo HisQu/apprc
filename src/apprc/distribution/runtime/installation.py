@@ -2271,8 +2271,6 @@ def publish_optional_shortcuts(
             )
             for output in created:
                 report("result", "Shortcut", "PUBLISHED", output.path)
-            if not created and (start_menu or desktop):
-                report("result", "Requested shortcuts", "EXISTING")
             return result
         except Exception as error:
             from apprc.distribution.runtime._os_integration import (

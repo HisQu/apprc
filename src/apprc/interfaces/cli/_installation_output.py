@@ -10,7 +10,10 @@ from collections.abc import Mapping
 import typer
 
 from apprc.definition.installation import EditableCheckout
-from apprc.distribution.runtime._install_progress import InstallProgress
+from apprc.distribution.runtime._install_progress import (
+    InstallProgress,
+    installation_color,
+)
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -33,7 +36,7 @@ def installation_console(
     from rich.console import Console
 
     stream = typer.get_text_stream("stderr" if error else "stdout")
-    override = ctx.color if ctx is not None else None
+    override = ctx.color if ctx is not None else installation_color.get()
     color = (
         stream.isatty() if override is None else override
     ) and "NO_COLOR" not in os.environ

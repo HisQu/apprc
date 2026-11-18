@@ -298,6 +298,10 @@ build platform-specific setup executables from complete, prebuilt project
 snapshots. Final artifacts belong in ignored `dist/`; build intermediates stay
 in `.cache/apprc/`, never in application source directories.
 
+Native builds can also generate [one-line install scripts (OLIS)](docs/How-To-User-Guides.md#generate-one-line-install-scripts).
+An OLIS downloads and verifies the native setup executable from a GitHub
+Release, then runs it.
+
 Applications with an opted-in [authoring backend](docs/References.md#distribution-generation)
 provide `dist build` and `dist check` from their editable checkout environment.
 With `AppRCRootGroup`, root help lists `dist` under **AppRC: Commands**.

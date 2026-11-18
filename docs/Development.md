@@ -512,11 +512,12 @@ default. A Windows PE build or an automated registry test is not native
 execution evidence.
 
 
-Final application outputs are `dist/<app-id>-setup-linux-x86_64`,
-`dist/<app-id>-setup-windows-x86_64.exe` and `dist/SHA256SUMS`. Intermediates,
-source archives, reports and Cargo workspaces belong in ignored `.cache/apprc/`.
-No private dependency wheels, standalone installer programs, duplicated native
-launchers or generated shell/CMD/PowerShell support are published.
+Final native outputs are `dist/<app-id>-setup-linux-x86_64`,
+`dist/<app-id>-setup-windows-x86_64.exe` and `dist/SHA256SUMS`. Optional
+[one-line install scripts (OLIS)](References.md#one-line-install-script-reference)
+also go in `dist/`. Intermediates, source archives, reports and Cargo
+workspaces belong in ignored `.cache/apprc/`. The host application owns the
+decision to make an OLIS available at a public URL.
 
 The installed stable command is the same prebuilt manager executable. Its
 maintenance implementation does not import application dependencies; normal

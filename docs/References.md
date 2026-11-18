@@ -256,7 +256,7 @@ runtime overrides, compile private dependency wheels or maintain a wheelhouse.
 | `read_project_metadata(project_root)` | Packaging, import, app and console-command identities remain distinct. |
 | `inspect_capabilities(apprc)` | Declared filesystem capabilities without resolving business settings. |
 | `build_project_snapshot(spec, *, revision, destination, prepare=None)` | `PreparedProject(archive, source)` from one committed Git tree and optional authored preparation of its private staging copy. |
-| `build_native_distribution(spec, project, *, uv, workspace, targets=..., extras=(), environment=None)` | Native setup artifacts and their checksum file. |
+| `build_native_distribution(spec, project, *, uv, workspace, targets=..., extras=(), environment=None)` | Native setup artifacts and their checksum file. A configured build also emits the two OLIS files. |
 | `check_native_distribution(root, *, app_id, targets, revision)` | Check the integrity of the published set and the completeness and committed revision of the requested targets. Returns the verified setup paths in target order. |
 | `NativeFrontendBuilder.build(*, target, destination, runtime_archive, entrypoint)` | Compile the verified ordinary-module archive without executing the produced binary. |
 
@@ -284,6 +284,28 @@ setups. Managed installations and regular wheel installs do not mount `dist`.
 In an opted-in checkout with installation management, `app install` uses a
 verified current-platform setup and can offer to build a missing or stale one.
 An explicit `installer_entrypoint` continues to take precedence.
+
+
+### One-line install script reference
+
+| Term | Meaning |
+| --- | --- |
+| One-line install command | The terminal command a recipient copies and pastes. |
+| One-line install script (OLIS) | The `.sh` or `.ps1` fetched by that command. It downloads, verifies and runs the native setup executable. |
+| OLIS template | One of the four Linux and Windows public or private source templates supplied by `apprc-core`. |
+| Native setup executable | The PyApp binary that performs the installation. |
+
+| Build setting | Effect |
+| --- | --- |
+| `RELEASE_REPOSITORY` | GitHub release repository in `OWNER/REPO` form. Without it, native setup executables still build and OLIS generation is skipped with a warning. |
+| `RELEASE_PUBLIC` | `true` selects the public templates. `false`, an empty value, or an unset value selects the private templates. Invalid settings warn without failing the native build. |
+
+The build reads these settings from its authoring environment. A configured
+build produces both `dist/install_from_github.sh` and
+`dist/install_from_github.ps1`, including when `-t` compiles a single target.
+Their contents are independent of the application version. `SHA256SUMS` lists
+the native setup executables. Publishing OLIS at a public URL belongs to the
+host application.
 
 Snapshot preparation retains the complete workspace, local member source,
 `pyproject.toml`, `uv.lock` and build inputs. uv selects the installed package and

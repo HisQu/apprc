@@ -656,6 +656,28 @@ final executables and `SHA256SUMS` to ignored `dist/`, with intermediates under
 `.cache/apprc/`. They do not generate installer programs in the source tree.
 Buildben can seed this structure, but AppRC does not require Buildben.
 
+A one-line install command fetches a one-line install script (OLIS) from a URL
+supplied by the application. AppRC generates both OLIS files during a configured
+distribution build. `RELEASE_PUBLIC` selects the OLIS templates at build time.
+Each OLIS then downloads, verifies, and runs the native setup executable for its
+platform.
+
+```mermaid
+flowchart TD
+    A["x dist build"] --> B{"RELEASE_PUBLIC"}
+    B -->|true| C["Public OLIS templates"]
+    B -->|false| D["Private OLIS templates"]
+    C --> E["dist/"]
+    D --> E
+    A --> N["Native setup executables"]
+    N --> E
+    E --> F["install_from_github.sh"]
+    E --> G["install_from_github.ps1"]
+    F --> H["Download, verify, and run the native setup executable"]
+    G --> H
+    H --> I["AppRC installation"]
+```
+
 Managed releases own their runtime slots. A replacement is prepared and checked
 before activation; a runtime lease prevents collection while an application
 process still uses it. The stable native command stays outside these disposable

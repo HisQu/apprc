@@ -1026,6 +1026,29 @@ reported recovery instructions if a step fails. See the
 profile flags and update checks.
 
 
+
+### Generate one-line install scripts
+
+From a checkout that provides `dist build`, pass the release repository and
+access mode to the build. For example, with an application command named `demo`:
+
+```bash
+RELEASE_PUBLIC=true RELEASE_REPOSITORY=OWNER/REPO uv run --locked demo dist build
+```
+
+Replace `OWNER/REPO` with the GitHub repository that holds the native setup
+executables and `SHA256SUMS`. Set `RELEASE_PUBLIC=false` for a private release.
+A configured build writes `install_from_github.sh` and
+`install_from_github.ps1` to `dist/`.
+
+Host each OLIS at a URL you control, then substitute that URL into the
+one-line install command in its header. The Linux OLIS requires Bash and
+`sha256sum`. The Windows OLIS uses PowerShell. For a public release the Linux
+OLIS uses `curl` and the Windows OLIS uses `Invoke-WebRequest`. For a private
+release the recipient needs the GitHub CLI and an active `gh auth login` with
+access to the release. Use a trusted OLIS URL because the one-line install
+command executes the downloaded script before it checks the setup.
+
 ## Install from a checkout
 
 From the checkout, prepare the environment:

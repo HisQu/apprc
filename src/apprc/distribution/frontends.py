@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import io
+import logging
 import os
 import re
 import shutil
@@ -39,6 +40,9 @@ from apprc.distribution.native import (
 from apprc.distribution.project import PreparedProject
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
 from apprc.user_files.app_home.locations import assert_no_links
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -570,6 +574,53 @@ def _publish(
     return Artifact(PurePosixPath("dist/SHA256SUMS"), checksums, False, root)
 
 
+def _write_olis(
+    dist: Path, app_id: str, environment: Mapping[str, str]
+) -> None:
+    """Render the two one-line install scripts for a successful native build.
+
+    :param dist: Output directory already created by native publication.
+    :param app_id: Validated application ID used in native setup filenames.
+    :param environment: Authoring settings used only to select and render OLIS.
+    """
+    try:
+        repository = environment.get("RELEASE_REPOSITORY", "")
+        if not repository:
+            raise ValueError(
+                "Export RELEASE_REPOSITORY=OWNER/REPO to generate OLIS."
+            )
+        if not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+", repository
+        ) or repository.rsplit("/", 1)[1] in {".", ".."}:
+            raise ValueError("RELEASE_REPOSITORY must be a GitHub OWNER/REPO.")
+        visibility = environment.get("RELEASE_PUBLIC", "") or "false"
+        if visibility not in {"true", "false"}:
+            raise ValueError("RELEASE_PUBLIC must be true or false.")
+        mode = "public" if visibility == "true" else "private"
+        templates = files("apprc.distribution").joinpath("_templates")
+        outputs = []
+        for extension, setup_suffix in (
+            ("sh", "linux-x86_64"),
+            ("ps1", "windows-x86_64.exe"),
+        ):
+            content = templates.joinpath(
+                f"github_{mode}.{extension}"
+            ).read_text(encoding="utf-8")
+            content = content.replace("@@REPOSITORY@@", repository).replace(
+                "@@SETUP@@", f"{app_id}-setup-{setup_suffix}"
+            )
+            output = dist / f"install_from_github.{extension}"
+            assert_no_links(output)
+            outputs.append((output, content.encode("utf-8")))
+        for output, content in outputs:
+            _write_atomic(output, content, executable=output.suffix == ".sh")
+    except (OSError, ValueError) as error:
+        logger.warning(
+            "Native build succeeded. OLIS files may be missing or stale: %s",
+            error,
+        )
+
+
 def build_native_distribution(
     spec: DistributionSpec,
     project: PreparedProject,
@@ -583,7 +634,7 @@ def build_native_distribution(
     extras: Sequence[str] = (),
     environment: Mapping[str, str] | None = None,
 ) -> NativeDistribution:
-    """Build one reusable SDK manager and publish only canonical setup outputs."""
+    """Publish native setups and optionally generate one-line install scripts."""
     if not targets or len(set(targets)) != len(targets):
         raise ValueError("Native builds require unique requested targets.")
     if any(
@@ -665,5 +716,10 @@ def build_native_distribution(
             artifact.report,
         )
         for name, artifact in zip(artifact_names, artifacts, strict=True)
+    )
+    _write_olis(
+        dist,
+        spec.metadata.identity.app_id,
+        os.environ if environment is None else environment,
     )
     return NativeDistribution(published_artifacts, checksums)

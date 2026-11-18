@@ -958,6 +958,14 @@ contains Windows and Linux setup executables plus `SHA256SUMS`; intermediates
 stay in `.cache/apprc/`. The Windows setup installs the same stable native command
 used for diagnosis, repair and uninstall—no separate PowerShell/CMD launcher.
 
+If the application declares an [authoring backend](References.md#distribution-generation),
+run `uv run --locked <app> dist build` and `uv run --locked <app> dist check`
+from the checkout. Add `-t` for just the current platform. With installation
+management enabled, `uv run --locked <app> app install` verifies and runs the
+current-platform setup. Builds use the committed tree, so commit changes you
+want to include before building. If a setup and its manifest disagree, inspect
+or move the old artifact set out of `dist/` before rebuilding.
+
 For a hybrid application, build static frontend assets on the private authoring
 copy and include them in Python package data before snapshotting. Do not bundle
 a custom wheelhouse or require Bun/React build tools on the recipient. Normal uv

@@ -111,6 +111,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 ## P2 / E2 [Bug risk] - *Metadata-only version commands resolve appdata ownership*
 - **Area:** `src/apprc/interfaces/cli/runtime.py`, `src/apprc/interfaces/cli/context.py`, and `src/apprc/user_files/installation/validation.py`.
 - **Observed while:** Running an installed application's metadata-only `version` command with AppRC 0.34.0.
+- **Recheck:** PersoDB's eager `--version` and `-V` bypass runtime preparation. Its existing regression passed with invalid settings and with and without unknown appdata. The original failure did not reproduce on these routes. AppRC's runtime-skip policy still resolves paths for host commands that use the prepared path context.
 - **Why not fixed now:** The SDK release is already published. Changing CLI preparation needs a focused regression and an explicitly scoped maintenance change; existing application data must remain untouched.
 - **Evidence:** The command raised `InstallationError: Nonempty native appdata container requires project-owned migration or adoption.` The same installed version query succeeded with an explicit fresh single-root layout.
 - **Context:** CLI preparation resolves application paths before returning package metadata, so unrelated existing appdata can prevent a version query. The appdata ownership guard itself must remain strict.

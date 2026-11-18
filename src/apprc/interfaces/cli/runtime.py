@@ -85,18 +85,21 @@ _HELP_OPTIONS = frozenset(("--help", "-h"))
 class CliRuntimeSession(Generic[StateT]):
     """Prepared AppRC CLI context plus app-owned runtime state.
 
-    :param apprc_context: AppRC resolution context stored on Typer metadata.
+    :param apprc_context: AppRC resolution context, absent for authoring commands.
     :param state: Application runtime state, or ``None`` when resolution was
         intentionally skipped.
     """
 
-    apprc_context: CliRuntimeContext[Any] | InstallationCommandContext
+    apprc_context: CliRuntimeContext[Any] | InstallationCommandContext | None
     state: StateT | None = None
 
     @property
     def runtime_setup_skipped(self) -> bool:
         """Return whether app runtime state was intentionally not built."""
-        return self.apprc_context.runtime_setup_skipped
+        return (
+            self.apprc_context is None
+            or self.apprc_context.runtime_setup_skipped
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,6 +457,20 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :param options: CLI option object carrying AppRC-compatible fields.
         :return: Prepared session metadata and optional app state.
         """
+        if ctx.invoked_subcommand == "dist" and isinstance(
+            ctx.command, TyperGroup
+        ):
+            from apprc.interfaces.cli._distribution_command import (
+                distribution_group,
+            )
+
+            group = ctx.command.get_command(ctx, "dist")
+            callback = group.callback if group is not None else None
+            if (
+                callback is not None
+                and inspect.unwrap(callback) is distribution_group
+            ):
+                return CliRuntimeSession(apprc_context=None)
         if ctx.resilient_parsing:
             context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
@@ -556,7 +573,43 @@ class CliRuntime(Generic[OptionsT, StateT]):
         if launcher_handlers is not None and launcher_spec is None:
             raise ValueError("launcher_handlers requires launcher_spec.")
 
+        from apprc.interfaces.cli._distribution_command import (
+            build_authoring_group,
+            discover_checkout_authoring,
+        )
+
         staging = typer.Typer()
+        authoring = (
+            discover_checkout_authoring(
+                self.apprc.schema.command_name, self.apprc.schema.app_id
+            )
+            if self.native_binding is None
+            else None
+        )
+        if (
+            authoring is not None
+            and installer_entrypoint is None
+            and installation_management
+        ):
+
+            def install_checkout(arguments: Sequence[str]) -> int:
+                tokens = self.current_args()
+                suffix = args_after_cli_command(
+                    self.maintenance_group_name,
+                    tokens=tokens,
+                    cli_value_options=self.cli_value_options,
+                )
+                root_arguments = (
+                    tokens[: len(tokens) - len(suffix) - 1]
+                    if suffix is not None
+                    else ()
+                )
+                return authoring.install(
+                    arguments, root_arguments=root_arguments
+                )
+
+            installer_entrypoint = install_checkout
+
         mounted = mount_maintenance_groups(
             staging,
             self.apprc,
@@ -599,6 +652,13 @@ class CliRuntime(Generic[OptionsT, StateT]):
             self._mount_launcher(
                 staging, launcher_spec, launcher_handlers or {}
             )
+
+        if authoring is not None:
+            dist_app = build_authoring_group(authoring)
+            staging.add_typer(
+                dist_app, name="dist", rich_help_panel="AppRC: Development"
+            )
+            mounted["dist"] = dist_app
 
         entries = _registered_typer_names(staging)
         _ensure_unique_names(entries)

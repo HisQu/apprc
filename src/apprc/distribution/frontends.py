@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import io
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path, PurePosixPath
-
+from zipfile import BadZipFile, ZipFile
 
 from apprc.definition.installation import RuntimeSelection
 from apprc.distribution._archives import _deterministic_zip
@@ -23,6 +25,7 @@ from apprc.distribution.models import (
     Artifact,
     DistributionSpec,
     NativeBinding,
+    decode_native_binding,
     encode_native_binding,
 )
 from apprc.distribution.native import (
@@ -31,6 +34,7 @@ from apprc.distribution.native import (
     NativeArtifact,
     NativeFrontendBuilder,
     NativeTarget,
+    _artifact_info,
 )
 from apprc.distribution.project import PreparedProject
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
@@ -234,12 +238,12 @@ def _sdk_archive(
 def _parse_previous_checksums(
     path: Path, dist: Path, *, app_id: str
 ) -> dict[str, str]:
-    if not path.exists():
-        return {}
     assert_no_links(path)
     result: dict[str, str] = {}
-    lines = path.read_text(encoding="ascii").splitlines()
-    if not lines:
+    lines = (
+        path.read_text(encoding="ascii").splitlines() if path.exists() else []
+    )
+    if path.exists() and not lines:
         raise ValueError(
             "Existing SHA256SUMS is empty; refusing output replacement."
         )
@@ -264,7 +268,139 @@ def _parse_previous_checksums(
         ):
             raise ValueError(f"Existing checksum does not authenticate {name}.")
         result[name] = digest
+    for name in allowed - result.keys():
+        output = dist / name
+        assert_no_links(output)
+        if output.exists():
+            raise FileExistsError(
+                "Refusing to replace unauthenticated native output "
+                f"(no checksum manifest entry): {output}"
+            )
     return result
+
+
+class MissingNativeArtifact(ValueError):
+    """A requested setup has never been published in this output set."""
+
+
+class StaleNativeArtifact(ValueError):
+    """An authenticated requested setup contains another source revision."""
+
+
+def check_native_distribution(
+    root: Path,
+    *,
+    app_id: str,
+    targets: Sequence[NativeTarget],
+    revision: str,
+) -> tuple[Path, ...]:
+    """Inspect published native assets without executing or changing them.
+
+    :param root: Authored project root containing the canonical dist directory.
+    :param app_id: Expected application identity.
+    :param targets: Targets required to be complete and fresh.
+    :param revision: Full committed source revision expected in requested assets.
+    :return: Checked requested setup paths, in requested target order.
+    """
+    names: dict[NativeTarget, str] = {
+        "x86_64-unknown-linux-gnu": f"{app_id}-setup-linux-x86_64",
+        "x86_64-pc-windows-msvc": f"{app_id}-setup-windows-x86_64.exe",
+    }
+    if (
+        not targets
+        or len(set(targets)) != len(targets)
+        or any(target not in names for target in targets)
+    ):
+        raise ValueError("Native checks require unique supported targets.")
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", app_id) is None:
+        raise ValueError("Invalid native application identity.")
+    if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision) is None:
+        raise ValueError("Native freshness requires a full source commit ID.")
+    dist = root / "dist"
+    assert_no_links(dist)
+    entries = _parse_previous_checksums(
+        dist / "SHA256SUMS", dist, app_id=app_id
+    )
+    bindings: dict[str, NativeBinding] = {}
+    for target, name in names.items():
+        if name not in entries:
+            continue
+        path = dist / name
+        _artifact_info(path, target)
+        try:
+            with ZipFile(path) as archive:
+                if len(archive.namelist()) != len(set(archive.namelist())):
+                    raise ValueError("Native archive has duplicate entries.")
+                binding = decode_native_binding(archive.read("binding.json"))
+                project = archive.read("project.zip")
+            if binding.identity.app_id != app_id:
+                raise ValueError(
+                    "Native artifact belongs to another application."
+                )
+            if hashlib.sha256(project).hexdigest() != binding.source.digest:
+                raise ValueError("Native project archive SHA-256 differs.")
+            with ZipFile(io.BytesIO(project)) as snapshot:
+                if len(snapshot.namelist()) != len(set(snapshot.namelist())):
+                    raise ValueError("Project archive has duplicate entries.")
+                relative = PurePosixPath(binding.source.project_path)
+                metadata = tomllib.loads(
+                    snapshot.read(str(relative / "pyproject.toml")).decode(
+                        "utf-8"
+                    )
+                )
+                lock = next(
+                    (
+                        str(parent / "uv.lock")
+                        for parent in (relative, *relative.parents)
+                        if str(parent / "uv.lock") in snapshot.namelist()
+                    ),
+                    None,
+                )
+                if (
+                    lock is None
+                    or hashlib.sha256(snapshot.read(lock)).hexdigest()
+                    != binding.source.lock_digest
+                ):
+                    raise ValueError("Native project lock SHA-256 differs.")
+                declaration = metadata.get("project", {})
+                if declaration.get("version") != binding.version:
+                    raise ValueError(
+                        "Native binding and project versions differ."
+                    )
+                project_name = declaration.get("name", "")
+                if (
+                    not isinstance(project_name, str)
+                    or re.sub(r"[-_.]+", "-", project_name).lower()
+                    != binding.identity.distribution
+                ):
+                    raise ValueError(
+                        "Native binding and project distribution differ."
+                    )
+                if binding.command_name not in declaration.get("scripts", {}):
+                    raise ValueError(
+                        "Native command is absent from the project."
+                    )
+            bindings[name] = binding
+        except (BadZipFile, KeyError, UnicodeError) as error:
+            raise ValueError(
+                f"Invalid native artifact {path}: {error}"
+            ) from error
+    # > Validate every existing asset before allowing a missing/stale rebuild.
+    missing = [
+        names[target] for target in targets if names[target] not in entries
+    ]
+    if missing:
+        raise MissingNativeArtifact(
+            "Missing native setup: " + ", ".join(missing)
+        )
+    stale = [
+        names[target]
+        for target in targets
+        if bindings[names[target]].source.commit != revision
+    ]
+    if stale:
+        raise StaleNativeArtifact("Stale native setup: " + ", ".join(stale))
+    return tuple(dist / names[target] for target in targets)
 
 
 def _write_atomic(

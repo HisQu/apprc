@@ -329,7 +329,8 @@ def finalize_repository(proof: Path, parent: int, token: str) -> None:
             except OSError as error:
                 if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
                     raise
-    print(f"Repository removed: {repository}", file=sys.stderr, flush=True)
+    terminal = _load_peer("_uninstall_terminal")
+    terminal.result_line("Repository removed", repository, style="success")
     cleanup_staging(proof.parent.parent)
 
 

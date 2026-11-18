@@ -1042,6 +1042,8 @@ def test_real_workspace_member_registration_uses_project_hooks(
 def test_editable_repository_removal_survives_its_environment(
     tmp_path: Path, native_product: NativeProduct
 ) -> None:
+    from apprc.interfaces._terminal_console import color_environment
+
     project_root, uv, _setup, _checksums, spec, _project = native_product
     checkout = tmp_path / "disposable-checkout"
     run(
@@ -1098,9 +1100,11 @@ def test_editable_repository_removal_survives_its_environment(
         for entry in json.loads(preview.stdout)["entries"]
     )
     assert checkout.is_dir()
+    result_environment = color_environment(environment, True)
+    result_environment.pop("NO_COLOR", None)
     removal = run(
         [str(command), "app", "uninstall", "--remove-repository", "--yes"],
-        environment=environment,
+        environment=result_environment,
         cwd=tmp_path,
         check=False,
     )
@@ -1108,7 +1112,8 @@ def test_editable_repository_removal_survives_its_environment(
     assert not checkout.exists(), removal.stderr
     assert not command.exists() and not command.is_symlink()
     assert external.read_text() == "preserve"
-    assert "Repository removed:" in removal.stderr
+    assert "\x1b[32mRepository removed" in removal.stderr
+    assert f"\x1b[36m{checkout}" in removal.stderr
 
 
 @pytest.mark.parametrize(

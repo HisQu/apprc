@@ -94,9 +94,19 @@ class RuntimeConfigCommands(ConfigCommandBase):
         if not plan.keys:
             typer.echo("No secret assignments need migration.")
             return
-        typer.echo(
-            f"Move {', '.join(plan.keys)} from {plan.ordinary_path.name} "
-            f"to {plan.secret_path.name}?"
+        from rich.text import Text
+
+        from apprc.interfaces._terminal_console import cli_console
+        from apprc.interfaces._terminal_styles import path_text
+
+        cli_console(ctx).print(
+            Text.assemble(
+                f"Move {', '.join(plan.keys)} from ",
+                path_text(plan.ordinary_path.name),
+                " to ",
+                path_text(plan.secret_path.name),
+                "?",
+            )
         )
         if not assume_yes and not typer.confirm("Apply this secret migration?"):
             typer.echo("No files were changed.")
@@ -131,9 +141,19 @@ class RuntimeConfigCommands(ConfigCommandBase):
             if os.name == "nt"
             else "the current user"
         )
-        typer.echo(
-            f"Update safety permissions for {status.path.parent} and "
-            f"{status.path.name}. Allow access only to {allowed_principals}."
+        from rich.text import Text
+
+        from apprc.interfaces._terminal_console import cli_console
+        from apprc.interfaces._terminal_styles import path_text
+
+        cli_console(ctx).print(
+            Text.assemble(
+                "Update safety permissions for ",
+                path_text(status.path.parent),
+                " and ",
+                path_text(status.path.name),
+                f". Allow access only to {allowed_principals}.",
+            )
         )
         if not assume_yes and not typer.confirm(
             "Apply this permission repair?"

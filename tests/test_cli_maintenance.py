@@ -516,3 +516,51 @@ def test_cache_preview_and_results_follow_the_output_mode(
     assert f"Skipped: {skipped}" in attempted.stdout
     assert "complete." not in attempted.stdout
     assert not target.exists() and skipped.is_file()
+
+
+def test_workspace_terminal_report_preserves_json_and_redirected_registry_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    declaration = rc.AppRC(
+        app_id="workspace-report",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "app"),
+        workspaces=rc.Workspaces(),
+    )
+    manager = declaration.workspaces(environment={})
+    live_root = tmp_path / "[selected]"
+    archived_root = tmp_path / "[archived]"
+    archive = tmp_path / "[archive].apprc.tar.xz"
+    manager.register_workspace("current", live_root)
+    manager.register_workspace("previous", archived_root)
+    manager.archive_workspace("previous", archive)
+    manager.select_workspace("current")
+    registry_path = manager.registry_path()
+    before = registry_path.read_bytes()
+    app = typer.Typer(context_settings={"color": True})
+    rc.cli.mount_app_cli(app, declaration)
+    runner = CliRunner()
+    redirected = runner.invoke(app, ["workspace", "list"])
+    assert redirected.exit_code == 0, redirected.output
+    payload = json.loads(redirected.stdout)
+    stdout = typer.get_text_stream
+
+    def terminal_stream(name):
+        stream = stdout(name)
+        if name == "stdout":
+            monkeypatch.setattr(stream, "isatty", lambda: True)
+        return stream
+
+    monkeypatch.setattr(typer, "get_text_stream", terminal_stream)
+    explicit = runner.invoke(app, ["workspace", "list", "--json"], color=True)
+    assert explicit.exit_code == 0, explicit.output
+    assert json.loads(explicit.stdout) == payload
+    assert "\x1b[" not in explicit.stdout
+    report = runner.invoke(app, ["workspace", "list"], color=True)
+    assert report.exit_code == 0, report.output
+    assert "Workspaces" in report.stdout and "(selected)" in report.stdout
+    for path in (registry_path, live_root, archive, archived_root):
+        assert f"\x1b[36m{path}" in report.stdout
+    assert registry_path.read_bytes() == before
+    assert live_root.is_dir() and archived_root.is_dir() and archive.is_file()

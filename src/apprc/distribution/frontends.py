@@ -235,9 +235,8 @@ def _sdk_archive(
     return _deterministic_zip(entries.items())
 
 
-def _parse_previous_checksums(
-    path: Path, dist: Path, *, app_id: str
-) -> dict[str, str]:
+def _read_native_checksums(path: Path, *, app_id: str) -> dict[str, str]:
+    """Parse a native manifest independently of local target completeness."""
     assert_no_links(path)
     result: dict[str, str] = {}
     lines = (
@@ -260,6 +259,15 @@ def _parse_previous_checksums(
         digest, name = match.groups()
         if name not in allowed:
             raise ValueError("Existing SHA256SUMS contains an unknown output.")
+        result[name] = digest
+    return result
+
+
+def _parse_previous_checksums(
+    path: Path, dist: Path, *, app_id: str
+) -> dict[str, str]:
+    result = _read_native_checksums(path, app_id=app_id)
+    for name, digest in result.items():
         output = dist / name
         assert_no_links(output)
         if (
@@ -267,7 +275,10 @@ def _parse_previous_checksums(
             or hashlib.sha256(output.read_bytes()).hexdigest() != digest
         ):
             raise ValueError(f"Existing checksum does not authenticate {name}.")
-        result[name] = digest
+    allowed = {
+        f"{app_id}-setup-linux-x86_64",
+        f"{app_id}-setup-windows-x86_64.exe",
+    }
     for name in allowed - result.keys():
         output = dist / name
         assert_no_links(output)
@@ -285,6 +296,97 @@ class MissingNativeArtifact(ValueError):
 
 class StaleNativeArtifact(ValueError):
     """An authenticated requested setup contains another source revision."""
+
+
+def _inspect_native_setup(
+    path: Path, *, app_id: str, target: NativeTarget
+) -> NativeBinding:
+    """Inspect a setup's executable and embedded project without executing it.
+
+    :param path: Native setup executable, including its appended SDK archive.
+    :param app_id: Expected application identity.
+    :param target: Expected executable format and architecture.
+    :return: Decoded binding after embedded project integrity checks.
+    """
+    assert_no_links(path)
+    _artifact_info(path, target)
+    try:
+        with ZipFile(path) as archive:
+            if len(archive.namelist()) != len(set(archive.namelist())):
+                raise ValueError("Native archive has duplicate entries.")
+            binding = decode_native_binding(archive.read("binding.json"))
+            project = archive.read("project.zip")
+        if binding.identity.app_id != app_id:
+            raise ValueError("Native artifact belongs to another application.")
+        if hashlib.sha256(project).hexdigest() != binding.source.digest:
+            raise ValueError("Native project archive SHA-256 differs.")
+        with ZipFile(io.BytesIO(project)) as snapshot:
+            if len(snapshot.namelist()) != len(set(snapshot.namelist())):
+                raise ValueError("Project archive has duplicate entries.")
+            relative = PurePosixPath(binding.source.project_path)
+            metadata = tomllib.loads(
+                snapshot.read(str(relative / "pyproject.toml")).decode("utf-8")
+            )
+            lock = next(
+                (
+                    str(parent / "uv.lock")
+                    for parent in (relative, *relative.parents)
+                    if str(parent / "uv.lock") in snapshot.namelist()
+                ),
+                None,
+            )
+            if (
+                lock is None
+                or hashlib.sha256(snapshot.read(lock)).hexdigest()
+                != binding.source.lock_digest
+            ):
+                raise ValueError("Native project lock SHA-256 differs.")
+            declaration = metadata.get("project", {})
+            if declaration.get("version") != binding.version:
+                raise ValueError("Native binding and project versions differ.")
+            project_name = declaration.get("name", "")
+            if (
+                not isinstance(project_name, str)
+                or re.sub(r"[-_.]+", "-", project_name).lower()
+                != binding.identity.distribution
+            ):
+                raise ValueError(
+                    "Native binding and project distribution differ."
+                )
+            if binding.command_name not in declaration.get("scripts", {}):
+                raise ValueError("Native command is absent from the project.")
+        return binding
+    except (BadZipFile, KeyError, UnicodeError) as error:
+        raise ValueError(f"Invalid native artifact {path}: {error}") from error
+
+
+def _check_old_setup(
+    path: Path, *, app_id: str, target: NativeTarget
+) -> NativeBinding:
+    """Authenticate one downloaded old setup while allowing other targets absent.
+
+    :param path: Canonically named old setup beside its release SHA256SUMS.
+    :param app_id: Expected application identity.
+    :param target: Expected native target for this machine.
+    :return: Checked binding used to compare old and current source versions.
+    """
+    if target not in ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"):
+        raise ValueError("Unsupported native setup target.")
+    expected = (
+        f"{app_id}-setup-windows-x86_64.exe"
+        if target == "x86_64-pc-windows-msvc"
+        else f"{app_id}-setup-linux-x86_64"
+    )
+    if path.name != expected:
+        raise ValueError(f"Expected canonical old setup filename {expected}.")
+    assert_no_links(path)
+    entries = _read_native_checksums(path.parent / "SHA256SUMS", app_id=app_id)
+    if (
+        expected not in entries
+        or hashlib.sha256(path.read_bytes()).hexdigest() != entries[expected]
+    ):
+        raise ValueError(f"Existing checksum does not authenticate {path}.")
+    return _inspect_native_setup(path, app_id=app_id, target=target)
 
 
 def check_native_distribution(
@@ -326,65 +428,9 @@ def check_native_distribution(
         if name not in entries:
             continue
         path = dist / name
-        _artifact_info(path, target)
-        try:
-            with ZipFile(path) as archive:
-                if len(archive.namelist()) != len(set(archive.namelist())):
-                    raise ValueError("Native archive has duplicate entries.")
-                binding = decode_native_binding(archive.read("binding.json"))
-                project = archive.read("project.zip")
-            if binding.identity.app_id != app_id:
-                raise ValueError(
-                    "Native artifact belongs to another application."
-                )
-            if hashlib.sha256(project).hexdigest() != binding.source.digest:
-                raise ValueError("Native project archive SHA-256 differs.")
-            with ZipFile(io.BytesIO(project)) as snapshot:
-                if len(snapshot.namelist()) != len(set(snapshot.namelist())):
-                    raise ValueError("Project archive has duplicate entries.")
-                relative = PurePosixPath(binding.source.project_path)
-                metadata = tomllib.loads(
-                    snapshot.read(str(relative / "pyproject.toml")).decode(
-                        "utf-8"
-                    )
-                )
-                lock = next(
-                    (
-                        str(parent / "uv.lock")
-                        for parent in (relative, *relative.parents)
-                        if str(parent / "uv.lock") in snapshot.namelist()
-                    ),
-                    None,
-                )
-                if (
-                    lock is None
-                    or hashlib.sha256(snapshot.read(lock)).hexdigest()
-                    != binding.source.lock_digest
-                ):
-                    raise ValueError("Native project lock SHA-256 differs.")
-                declaration = metadata.get("project", {})
-                if declaration.get("version") != binding.version:
-                    raise ValueError(
-                        "Native binding and project versions differ."
-                    )
-                project_name = declaration.get("name", "")
-                if (
-                    not isinstance(project_name, str)
-                    or re.sub(r"[-_.]+", "-", project_name).lower()
-                    != binding.identity.distribution
-                ):
-                    raise ValueError(
-                        "Native binding and project distribution differ."
-                    )
-                if binding.command_name not in declaration.get("scripts", {}):
-                    raise ValueError(
-                        "Native command is absent from the project."
-                    )
-            bindings[name] = binding
-        except (BadZipFile, KeyError, UnicodeError) as error:
-            raise ValueError(
-                f"Invalid native artifact {path}: {error}"
-            ) from error
+        bindings[name] = _inspect_native_setup(
+            path, app_id=app_id, target=target
+        )
     # > Validate every existing asset before allowing a missing/stale rebuild.
     missing = [
         names[target] for target in targets if names[target] not in entries

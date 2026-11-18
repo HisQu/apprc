@@ -654,7 +654,12 @@ class CliRuntime(Generic[OptionsT, StateT]):
             )
 
         if authoring is not None:
-            dist_app = build_authoring_group(authoring)
+            dist_app = build_authoring_group(
+                authoring,
+                self.apprc,
+                self.maintenance_group_name,
+                installation_management=installation_management,
+            )
             staging.add_typer(
                 dist_app, name="dist", rich_help_panel="AppRC: Development"
             )

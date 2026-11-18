@@ -993,6 +993,38 @@ their program environments.
 > AppRC does not implement dependency resolution. Private Git dependencies may
 > require Git, credentials and network access on the recipient.
 
+### Validate installation on your machine
+
+Run the guided validation from the opted-in checkout's existing environment.
+Choose editable registration, managed installation, or a genuine managed update:
+
+```shell
+uv run --locked <app> dist test -e
+uv run --locked <app> dist test -m
+uv run --locked <app> dist test -m -u /absolute/path/to/old/<app-id>-setup-linux-x86_64
+```
+
+For Windows, use the old `<app-id>-setup-windows-x86_64.exe` and run the guide
+under native Windows. Place the old release's `SHA256SUMS` beside that file.
+Build and check the current artifact with `dist build -t` and `dist check -t`
+before managed validation. Save your work and stop application consumers before
+starting; the guide performs real installation and uninstallation on this account.
+
+If an installation already exists, review its displayed state and the normal
+uninstall preview. Confirm only if you accept removal of the listed application
+data. Declining exits. The guide then runs the selected lifecycle, asks for
+manual launch and platform observations, and records the outcome under
+`.cache/apprc/dist-test/`. Editable removal keeps the checkout and `.venv`.
+Review any retained configuration before starting another full lifecycle.
+
+`uv run --locked <app> dist test -m -y` runs unattended automated checks only
+when preflight permits them. A pre-existing personal installation stops this
+invocation. Human observations remain NOT VERIFIED in its report. Follow any
+reported recovery instructions if a step fails. See the
+[guided validation contract](References.md#guided-installation-validation) for
+profile flags and update checks.
+
+
 ## Install from a checkout
 
 From the checkout, prepare the environment:

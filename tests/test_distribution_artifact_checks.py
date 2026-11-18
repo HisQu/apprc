@@ -20,6 +20,7 @@ from apprc.definition.paths import Layout
 from apprc.distribution.frontends import (
     MissingNativeArtifact,
     StaleNativeArtifact,
+    _check_old_setup,
     _parse_previous_checksums,
     check_native_distribution,
 )
@@ -172,3 +173,43 @@ def test_publisher_rejects_unlisted_other_target(tmp_path: Path) -> None:
         _parse_previous_checksums(
             linux.parent / "SHA256SUMS", linux.parent, app_id="fixture"
         )
+
+
+def test_old_download_allows_missing_other_platform(tmp_path: Path) -> None:
+    old = _setup(tmp_path, LINUX, commit="b" * 40)
+    windows = _setup(tmp_path, WINDOWS)
+    windows.unlink()
+    binding = _check_old_setup(old, app_id="fixture", target=LINUX)
+    assert binding.source.commit == "b" * 40
+    with pytest.raises(ValueError, match="does not authenticate"):
+        check_native_distribution(
+            tmp_path, app_id="fixture", targets=(LINUX,), revision=COMMIT
+        )
+
+
+@pytest.mark.parametrize(
+    "damage", ["checksum", "duplicate", "unknown", "no-manifest"]
+)
+def test_old_download_rejects_invalid_manifest(
+    tmp_path: Path, damage: str
+) -> None:
+    old = _setup(tmp_path, LINUX)
+    manifest = old.parent / "SHA256SUMS"
+    if damage == "checksum":
+        old.write_bytes(b"changed")
+    elif damage == "duplicate":
+        manifest.write_text(manifest.read_text() * 2)
+    elif damage == "unknown":
+        manifest.write_text(
+            manifest.read_text() + "0" * 64 + "  unrelated.exe\n"
+        )
+    else:
+        manifest.unlink()
+    with pytest.raises(ValueError):
+        _check_old_setup(old, app_id="fixture", target=LINUX)
+
+
+def test_old_download_rejects_wrong_target(tmp_path: Path) -> None:
+    old = _setup(tmp_path, LINUX)
+    with pytest.raises(ValueError, match="canonical"):
+        _check_old_setup(old, app_id="fixture", target=WINDOWS)

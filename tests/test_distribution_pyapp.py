@@ -251,6 +251,14 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         "FIXTURE_SENTINEL": "captured-environment",
     }
     inspected = _inspect(manager, conflicting, outside)
+    assert (
+        run(
+            [str(manager), "update-marker"],
+            environment=conflicting,
+            cwd=outside,
+        ).stdout.strip()
+        == "Original fixture version"
+    )
     active_a = first["active_runtime"]
     assert inspected["marker"] == "committed-source"
     assert inspected["distribution"] == spec.metadata.identity.distribution
@@ -457,6 +465,14 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
             project_root.parent / "fixture-b" / "uv.lock"
         ).read_bytes() == before_b_lock
         after_b = _inspect(manager, conflicting, outside)
+        assert (
+            run(
+                [str(manager), "update-marker"],
+                environment=conflicting,
+                cwd=outside,
+            ).stdout.strip()
+            == "Updated version! Uninstall me when finished!"
+        )
         active_b = updated["active_runtime"]
         assert after_b["distribution"] == spec.metadata.identity.distribution
         assert after_b["version"] == active_b["version"] == "2.0.0"

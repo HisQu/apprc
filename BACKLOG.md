@@ -74,7 +74,8 @@ Treat this as the parking lot for actionable problems discovered while working b
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
 2. [2026-11-18](#2026-11-18)
-   1. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
+   1. [P3 / E3 \[Bug risk\] - *Offer a desktop shortcut after interactive setup*](#p3--e3-bug-risk---offer-a-desktop-shortcut-after-interactive-setup)
+   2. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
 3. [2026-11-16](#2026-11-16)
    1. [P1 / E1 \[Bug risk\] - *Uninstall cleanup can race with new resource leases*](#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
    2. [P2 / E2 \[Bug risk\] - *Literal secret interpolation needs an explicit contract*](#p2--e2-bug-risk---literal-secret-interpolation-needs-an-explicit-contract)
@@ -87,6 +88,16 @@ Treat this as the parking lot for actionable problems discovered while working b
 <br>
 
 # 2026-11-18
+
+## P3 / E3 [Bug risk] - *Offer a desktop shortcut after interactive setup*
+- **Area:** `src/apprc/distribution/runtime/_manager.py` and `src/apprc/distribution/runtime/_os_integration.py`.
+- **Observed while:** Assessing an optional desktop shortcut prompt at the end of managed installation.
+- **Why not fixed now:** The prompt is a follow-up. Native Windows behavior of the existing writer is unverified.
+- **Evidence:** The Windows writer passes a temporary path ending in `.apprc-tmp` to `WScript.Shell.CreateShortcut`. Microsoft's examples use `.lnk` for application shortcuts. [Microsoft shortcut examples](https://learn.microsoft.com/en-us/troubleshoot/windows-client/admin-development/create-desktop-shortcut-with-wsh)
+- **Context:** Managed setup already accepts `--desktop` and records ownership for uninstall. The prompt can use the same publication path.
+- **Suggested next step:** Verify the `.lnk` creation path and offer `Create a desktop shortcut? [y/N]` after a successful fresh interactive install. Preserve explicit `--desktop` and skip the prompt during updates and unattended installs. See the [deferred native installation checks](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred).
+
+<br>
 
 ## P3 / E3 [Tooling] - *Hosted distribution CLI tests depend on terminal formatting*
 - **Area:** `tests/test_cli_distribution.py`
@@ -149,5 +160,6 @@ Treat this as the parking lot for actionable problems discovered while working b
   regression covering fresh extraction and rebuild. Native Windows verification
   of the rebuilt installer remains manual and deferred.
 - **Suggested next step:** Leave the native jobs disabled while this work is deferred. Revisit when Windows/macOS validation is explicitly back in scope, starting with the recorded installation/ACL and standalone dependency failures, then path/interpreter and secret/UI workflows. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
+- **Related:** The [desktop shortcut follow-up](#p3--e3-bug-risk---offer-a-desktop-shortcut-after-interactive-setup) covers the optional post-install prompt and Windows shortcut writer.
 
 <br>

@@ -24,6 +24,7 @@ from apprc.interfaces.cli._editable_checkout import (
 
 if TYPE_CHECKING:
     from apprc.distribution.native import NativeTarget
+    from apprc.public.app_rc import AppRC
 
 _TARGETS: tuple[NativeTarget, ...] = (
     "x86_64-unknown-linux-gnu",
@@ -215,7 +216,13 @@ def distribution_group() -> None:
     """Build and verify native setups from the development checkout."""
 
 
-def build_authoring_group(authoring: CheckoutAuthoring) -> typer.Typer:
+def build_authoring_group(
+    authoring: CheckoutAuthoring,
+    apprc: AppRC,
+    maintenance_group: str,
+    *,
+    installation_management: bool,
+) -> typer.Typer:
     """Create shared build and check commands without importing the backend."""
     app = typer.Typer(no_args_is_help=True)
     app.callback()(distribution_group)
@@ -282,4 +289,69 @@ def build_authoring_group(authoring: CheckoutAuthoring) -> typer.Typer:
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             raise ClickException(str(exc)) from exc
 
+    def test(
+        ctx: typer.Context,
+        editable: Annotated[
+            bool,
+            typer.Option(
+                "--editable",
+                "-e",
+                help="Test editable registration (the default).",
+            ),
+        ] = False,
+        managed: Annotated[
+            bool,
+            typer.Option(
+                "--managed", "-m", help="Test a managed native installation."
+            ),
+        ] = False,
+        update_from: Annotated[
+            Path | None,
+            typer.Option(
+                "--update-from",
+                "-u",
+                help="Install this older native setup before testing the update.",
+                exists=True,
+                dir_okay=False,
+            ),
+        ] = None,
+        assume_yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes",
+                "-y",
+                help="Run unattended. Refuses a pre-existing installation.",
+            ),
+        ] = False,
+    ) -> None:
+        """Guide installation, verification, and uninstallation on this machine."""
+        if editable and (managed or update_from is not None):
+            raise typer.BadParameter(
+                "--editable cannot be combined with --managed or --update-from."
+            )
+        try:
+            from apprc.interfaces.cli._distribution_test import (
+                run_distribution_test,
+            )
+        except ImportError as exc:
+            raise ClickException(
+                f"Cannot load guided distribution testing: {exc}.\n"
+                "Set up this checkout with `uv sync --locked --all-groups`."
+            ) from exc
+
+        command = apprc.schema.command_name
+        assert command is not None
+        run_distribution_test(
+            ctx,
+            authoring,
+            apprc,
+            maintenance_group,
+            command,
+            managed=managed or update_from is not None,
+            update_from=update_from,
+            assume_yes=assume_yes,
+        )
+
+    if installation_management:
+        app.command()(test)
     return app

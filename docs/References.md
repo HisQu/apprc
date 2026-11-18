@@ -403,6 +403,43 @@ interaction with `--yes`. Ordinary `config setup` keeps explicit initialization
 and prompting. Native setup installs its embedded
 release; updates use newer setup, not `--main`, `--version` or wheel/index input.
 
+### Guided installation validation
+
+Opted-in editable checkouts also expose `dist test`. The runner uses the
+checkout's existing Python environment and launches installers and published
+commands in child processes. Native managed profiles support Linux x86-64 and
+Windows x86-64; run Windows validation in native Windows.
+
+| Invocation | Profile |
+| --- | --- |
+| `<app> dist test` or `<app> dist test -e` | Register and verify the editable checkout, then uninstall the registration. |
+| `<app> dist test -m` | Install the checked current-platform setup, verify it, then uninstall. |
+| `<app> dist test -m -u OLD_SETUP` | Install the supplied older setup, update to the checked current setup, verify the update, then uninstall. |
+| `<app> dist test -m -y` | Run automated managed checks without prompts; human observations remain NOT VERIFIED. |
+
+`--editable/-e` and `--managed/-m` are mutually exclusive. `--update-from/-u`
+implies managed mode and requires a distinct older payload for the same
+application and native target. Keep its canonical setup filename and sibling
+`SHA256SUMS`; the manifest must contain valid, unique entries for known native
+outputs. The other platform's executable may be absent from this downloaded
+old release. Current `dist/` validation retains its stricter integrity rules.
+
+Before changing an existing personal installation, interactive testing displays
+its state and offers the normal AppRC uninstall preview and confirmation.
+Declining exits the test. `--yes/-y` rejects a pre-existing personal installation.
+Ownership checks continue to govern every installation and removal. Editable
+cleanup preserves the checkout and its `.venv`. Retained configuration can
+require manual preparation before another full lifecycle run. Windows removal
+may continue through a handoff; the runner waits for its recorded completion.
+
+Reports are written below ignored `.cache/apprc/dist-test/`. They distinguish
+automated results from manual Pass/Fail/Skip observations and unattended
+NOT VERIFIED results. Genuine updates verify the installed source/version,
+active runtime, published command, and preserved configuration/data sentinel.
+The maintained synthetic A/B fixture additionally checks that version B's
+installed application prints `Updated version! Uninstall me when finished!`.
+The fixture marker belongs exclusively to test code.
+
 <br>
 
 # Value sources and files

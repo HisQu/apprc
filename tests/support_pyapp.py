@@ -475,6 +475,8 @@ def native_product(
         " native = state.resolved.build(NativeConfig)\n"
         " return {'native': {'label': native.label}}\n"
         "runtime = CliRuntime(APP_RC, runtime_payload=runtime_payload)\n"
+        "@cli.command()\n"
+        "def update_marker(): print('Original fixture version')\n"
         "@cli.callback()\n"
         "def callback(ctx: typer.Context):\n"
         " runtime.prepare(ctx, CliRuntimeOptions())\n"
@@ -635,6 +637,14 @@ def native_product(
     project_metadata.write_text(
         project_metadata.read_text(encoding="utf-8").replace(
             "version = '1.0.0'", "version = '2.0.0'"
+        ),
+        encoding="utf-8",
+    )
+    fixture_app_b = project_b / "fixture_app.py"
+    fixture_app_b.write_text(
+        fixture_app_b.read_text(encoding="utf-8").replace(
+            "Original fixture version",
+            "Updated version! Uninstall me when finished!",
         ),
         encoding="utf-8",
     )

@@ -94,7 +94,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 - **Observed while:** Adding the desktop shortcut prompt to managed setup.
 - **Why not fixed now:** Native Windows execution is unavailable in the current environment.
 - **Evidence:** AppRC stages a new `.lnk` before publishing it. The automated test uses a stand-in for Windows Script Host.
-- **Suggested next step:** On native Windows, accept the shortcut on a fresh install, launch it, and verify uninstall removes the owned file. See the [deferred native installation checks](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred).
+- **Suggested next step:** On native Windows, verify shortcut creation, launch, and cleanup for managed and editable installs. Check the icon in Windows Installed apps and the separate classic-console uninstall window. See the [deferred native installation checks](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred).
 
 <br>
 

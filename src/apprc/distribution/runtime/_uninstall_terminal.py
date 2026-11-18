@@ -16,6 +16,8 @@ try:
 except ImportError:
     write_line = None
 
+RESULT_ICON_FILENAME = "uninstall.ico"
+
 
 def prepare() -> None:
     """Connect Windows-launched uninstall to a visible console when necessary."""
@@ -34,13 +36,67 @@ def prepare() -> None:
         sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
 
 
-def prepare_result_window() -> None:
+def apply_result_icon(icon: Path) -> None:
+    """Set the icon of a visible Windows console owned by the result session."""
+    if (
+        os.name != "nt"
+        or os.environ.get("_APPRC_UNINSTALL_RESULT_WINDOW") != "1"
+    ):
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        if not icon.is_file():
+            return
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        user = ctypes.WinDLL("user32", use_last_error=True)
+        kernel.GetConsoleWindow.restype = wintypes.HWND
+        user.IsWindowVisible.argtypes = [wintypes.HWND]
+        window = kernel.GetConsoleWindow()
+        if not window or not user.IsWindowVisible(window):
+            return
+        user.LoadImageW.argtypes = [
+            wintypes.HINSTANCE,
+            wintypes.LPCWSTR,
+            wintypes.UINT,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
+        user.LoadImageW.restype = wintypes.HANDLE
+        # > IMAGE_ICON with a default-sized image loaded from the staged file.
+        handle = user.LoadImageW(None, str(icon), 1, 0, 0, 0x10 | 0x40)
+        if not handle:
+            return
+        user.SendMessageTimeoutW.argtypes = [
+            wintypes.HWND,
+            wintypes.UINT,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+            wintypes.UINT,
+            wintypes.UINT,
+            ctypes.POINTER(ctypes.c_size_t),
+        ]
+        result = ctypes.c_size_t()
+        for size in (0, 1):
+            # > WM_SETICON for the small and large window icon.
+            user.SendMessageTimeoutW(
+                window, 0x80, size, handle, 0x2, 250, ctypes.byref(result)
+            )
+    except OSError:
+        return
+
+
+def prepare_result_window(icon: Path | None = None) -> None:
     """Attach only result output to the new console, preserving control pipes."""
     if (
         os.name == "nt"
         and os.environ.get("_APPRC_UNINSTALL_RESULT_WINDOW") == "1"
     ):
         sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+        if icon is not None:
+            apply_result_icon(icon)
 
 
 def acknowledge() -> None:

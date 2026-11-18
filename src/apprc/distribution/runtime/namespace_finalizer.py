@@ -162,6 +162,10 @@ def main() -> None:
     ):
         parser.error("--parent and --parent-token are required")
     terminal = _load_peer("_uninstall_terminal") if external else None
+    if terminal is not None:
+        terminal.apply_result_icon(
+            Path(__file__).with_name(terminal.RESULT_ICON_FILENAME)
+        )
     try:
         if arguments.repository_plan is not None:
             finalize_repository(

@@ -819,8 +819,19 @@ def test_editable_install_reports_rollback_notes_and_guidance_once(
     assert str(error).count("install -e` from the checkout.") == 1
 
 
-@pytest.mark.parametrize("setup_fails", [False, True])
-def test_editable_install_reports_outcome(tmp_path, monkeypatch, setup_fails):
+@pytest.mark.parametrize(
+    ("setup_fails", "shortcut_mode"),
+    [
+        (True, "fresh"),
+        (False, "fresh"),
+        (False, "existing"),
+        (False, "explicit"),
+        (False, "unattended"),
+    ],
+)
+def test_editable_install_reports_outcome(
+    tmp_path, monkeypatch, setup_fails, shortcut_mode
+):
     from dataclasses import replace
     import subprocess
 
@@ -849,6 +860,30 @@ def test_editable_install_reports_outcome(tmp_path, monkeypatch, setup_fails):
     monkeypatch.setattr(
         installation_command, "_register_editable", lambda *a, **k: ready
     )
+    if shortcut_mode in {"fresh", "unattended"}:
+        context = replace(
+            context,
+            inspection=replace(
+                context.inspection, status="missing", record=None
+            ),
+        )
+        monkeypatch.setattr(
+            installation_command, "_inspection", lambda _: context
+        )
+    prompts = []
+    shortcuts = []
+
+    def confirm(identity, *, assume_yes):
+        prompts.append(assume_yes)
+        return not assume_yes
+
+    def publish(manager, destination, identity, **options):
+        assert options["desktop"]
+        shortcuts.append(destination)
+        return ready
+
+    monkeypatch.setattr(installation, "confirm_desktop_shortcut", confirm)
+    monkeypatch.setattr(installation, "publish_optional_shortcuts", publish)
 
     def setup(*args, **kwargs):
         if setup_fails:
@@ -857,12 +892,26 @@ def test_editable_install_reports_outcome(tmp_path, monkeypatch, setup_fails):
 
     monkeypatch.setattr(installation, "offer_configuration_setup", setup)
     args = ["app", "install", "-e"]
+    if shortcut_mode == "explicit":
+        args.extend(("--desktop", "--yes"))
+    elif shortcut_mode == "unattended":
+        args.append("--yes")
     result = CliRunner().invoke(_app(args=args), args, terminal_width=1000)
     assert result.exit_code == (1 if setup_fails else 0), result.output
     assert "1. Reusing Runtime" in result.output
     assert result.output.rstrip().endswith("editable installation complete.")
     if setup_fails:
         assert "config setup failed" in result.output
+    assert prompts == (
+        [shortcut_mode == "unattended"]
+        if not setup_fails and shortcut_mode in {"fresh", "unattended"}
+        else []
+    )
+    assert shortcuts == (
+        [command]
+        if not setup_fails and shortcut_mode in {"fresh", "explicit"}
+        else []
+    )
 
 
 @pytest.mark.parametrize("mode", ["interactive", "yes", "preview", "keep"])

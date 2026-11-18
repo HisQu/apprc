@@ -362,11 +362,12 @@ double-clicked setup displays its result before asking you to press Enter.
 
 ## Run the application
 
-Use the published command in a terminal or open a shortcut if you asked setup
-to make one. If setup changed user PATH, open a new terminal before using the
-command. A bare command runs the action chosen by the application. For
-example, it may start a local server and open its browser UI. Follow the
-[launch guide](docs/How-To-User-Guides.md#run-the-installed-application)
+Use the published command in a terminal or open an installed shortcut.
+Setup can create a desktop shortcut, and editable registration also accepts
+`<app> app install -e --desktop`. If setup changed user PATH, open a new
+terminal before using the command. A bare command runs the action chosen by
+the application. For example, it may start a local server and open its
+browser UI. See the [launch guide](docs/How-To-User-Guides.md#run-the-installed-application)
 for command publication and shortcuts.
 
 <br>

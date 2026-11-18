@@ -1300,8 +1300,8 @@ action or the optional Textual launcher, depending on the publisher's setup.
 
 On Windows, native setup publishes a global command by default. After a
 successful install it adds the shared per-user command directory to user PATH
-when needed. Open a new PowerShell session if PATH changed, then check the
-command location:
+when needed. Uninstall keeps that shared PATH entry. Open a new PowerShell
+session if PATH changed, then check the command location:
 
 ```powershell
 Get-Command demo
@@ -1310,13 +1310,20 @@ Get-Command demo
 If the report says PATH could not be updated, use the reported full command
 path. For a Linux release installation, run the stable command at the path
 shown by setup or pass `--command-directory` to setup with an existing
-directory on PATH to publish it there. A fresh interactive release installation can offer **Add Desktop
-shortcut? [y/N]** when a desktop directory is available. Run Windows setup with
-`--desktop` or `--start-menu` to request the corresponding shortcut. The
-application can supply an icon for shortcuts and for Windows Installed apps.
-Owned shortcuts and their supporting icons participate in the normal
-[uninstall inventory](#remove-a-managed-program). Existing shortcuts keep
-their appearance when another icon is configured on a later update.
+directory on PATH to publish it there.
+
+On Linux or Windows, a fresh interactive release or editable installation can
+ask **Add Desktop shortcut? [y/N]** when a desktop directory is available.
+To request it explicitly, pass `--desktop` to setup or run
+`demo app install -e --desktop` from the checkout's environment. Windows setup
+also accepts `--start-menu`. An editable shortcut runs the app's default
+action. A release shortcut follows the launch choice made by the publisher.
+
+The application can supply an icon for shortcuts and for Windows Installed
+apps. Existing shortcuts keep their appearance when an update configures a
+different icon. AppRC keeps any icon files those shortcuts still use until
+uninstall removes the owned integrations. See the
+[icon options](References.md#distribution-generation).
 
 ## Update an application
 
@@ -1492,8 +1499,10 @@ changed directory identity or failed cleanup prevents completion.
 Windows Settings invokes uninstall with `--wait`. Interactive cleanup
 shows its result in a separate window while the original PowerShell prompt
 remains usable. When the result appears, press Enter in the cleanup window to
-close it. `--yes` skips acknowledgement. A completed removal can report a
-warning and the path of leftover temporary staging files.
+close it. `--yes` skips acknowledgement. The separate classic-console window
+can use the installed app's icon. Windows Terminal uses its profile icon.
+A completed removal can report a warning and the path of leftover temporary
+staging files.
 
 Scripts migrating from older releases should use the options in current
 `app uninstall --help`. The earlier `--keep-data`, `--complete`, `--category`,

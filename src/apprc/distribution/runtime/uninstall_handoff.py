@@ -1362,11 +1362,14 @@ def _wait_for_caller_exit(value: HandoffPlan) -> None:
         value["original_pid"], value["original_start"]
     )
     from apprc.distribution.runtime._uninstall_terminal import (
+        RESULT_ICON_FILENAME,
         prepare_result_window,
     )
 
     # > Validation failures must remain on the caller's foreground error stream.
-    prepare_result_window()
+    prepare_result_window(
+        Path(value["recovery_directory"]).with_name(RESULT_ICON_FILENAME)
+    )
     print(f"APPRC-UNINSTALL-READY:{value['readiness_token']}", flush=True)
     if waiter[0] == "already-exited":
         return

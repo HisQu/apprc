@@ -2251,12 +2251,16 @@ def register_editable_application(
             from apprc.distribution.runtime._windows_registration import (
                 publish_registration,
             )
+            from apprc.distribution.runtime._icons import ready_icon
 
+            result, icon, icon_resolved = ready_icon(result, publish=True)
             result = publish_registration(
                 result,
                 str(observations["version"]),
                 global_command,
                 _MAINTENANCE_GROUP.get(),
+                icon=icon,
+                preserve_icon=not icon_resolved,
             )
             return _finish_installation(manager, result)
         except BaseException as error:
@@ -2380,6 +2384,30 @@ def offer_configuration_setup(
     return True
 
 
+def confirm_desktop_shortcut(
+    identity: InstallationIdentity, *, assume_yes: bool
+) -> bool:
+    """Offer an optional desktop shortcut only in an interactive desktop session."""
+    if (
+        assume_yes
+        or sys.platform not in {"linux", "win32"}
+        or sys.stdin is None
+        or not sys.stdin.isatty()
+    ):
+        return False
+    import typer
+    from apprc.distribution.runtime._os_integration import (
+        desktop_shortcut_available,
+    )
+
+    if not desktop_shortcut_available(identity):
+        return False
+    try:
+        return typer.confirm("Add Desktop shortcut?", default=False)
+    except typer.Abort:
+        return False
+
+
 def publish_optional_shortcuts(
     manager: InstallationManager,
     command: Path,
@@ -2406,6 +2434,10 @@ def publish_optional_shortcuts(
             or record.status != "ready"
             or inspection.revision is None
             or record.identity != identity
+            or not any(
+                item.kind == "command" and item.path == str(command)
+                for item in record.owned_outputs
+            )
         ):
             warn(LOG, "Optional shortcuts were not updated")
             return inspection

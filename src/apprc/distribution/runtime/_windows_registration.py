@@ -250,7 +250,11 @@ def publish_registration(
                 "UninstallString": f'"{command}" {group} uninstall --wait',
             }
             if icon is not None:
-                desired["DisplayIcon"] = f'"{icon}",0'
+                from apprc.distribution.runtime._icons import (
+                    windows_icon_location,
+                )
+
+                desired["DisplayIcon"] = windows_icon_location(icon)
             elif preserve_icon and "DisplayIcon" in old:
                 desired["DisplayIcon"] = old["DisplayIcon"]
             path = inspection.directory / _JOURNAL

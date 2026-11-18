@@ -14,11 +14,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Protocol, cast
 
 import typer
-from packaging.utils import canonicalize_name
 from typer._click import ClickException
 
 from apprc.definition.resolution import resolve_editable_environment
-from apprc.interfaces.cli._editable_checkout import editable_entry_point
+from apprc.interfaces.cli._editable_checkout import (
+    _distribution_name,
+    editable_entry_point,
+)
 
 if TYPE_CHECKING:
     from apprc.distribution.native import NativeTarget
@@ -52,9 +54,8 @@ class CheckoutAuthoring:
             backend = import_module(self.module)
         except ImportError as exc:
             raise ClickException(
-                f"Cannot load distribution backend {self.module!r}: {exc}. "
-                "Install the checkout's authoring dependencies with "
-                "`uv sync --locked --all-groups`."
+                f"Cannot load distribution backend {self.module!r}: {exc}.\n"
+                "Set up this checkout with `uv sync --locked --all-groups`."
             ) from exc
         if not all(
             callable(getattr(backend, name, None))
@@ -131,8 +132,8 @@ def discover_checkout_authoring(
         settings = document["tool"]["apprc"]["distribution"]
         if (
             not isinstance(project["name"], str)
-            or canonicalize_name(project["name"])
-            != canonicalize_name(distribution.metadata["Name"])
+            or _distribution_name(project["name"])
+            != _distribution_name(distribution.metadata["Name"])
             or project["version"] != distribution.version
             or project["scripts"][command] != entry.value
             or settings.get("app-id", app_id) != app_id
@@ -187,9 +188,8 @@ def _check(
         raise
     except (OSError, ValueError) as exc:
         raise ClickException(
-            f"{exc} Inspect the setup files and SHA256SUMS in dist/. "
-            "Restore a matching output set, or move the affected output set "
-            "out of dist/ before rebuilding."
+            f"{exc}\nInspect the setup files and SHA256SUMS in dist/.\n"
+            "Restore a matching output set or move the old set before rebuilding."
         ) from exc
 
 

@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
-from packaging.utils import canonicalize_name
 from typer._click import Context as ClickContext
 from typer._click import ClickException
 from typer.core import TyperCommand
@@ -28,7 +27,10 @@ from apprc.definition.installation import (
     OperationContext,
     RuntimeSlot,
 )
-from apprc.interfaces.cli._editable_checkout import editable_entry_point
+from apprc.interfaces.cli._editable_checkout import (
+    _distribution_name,
+    editable_entry_point,
+)
 from apprc.interfaces.cli.context import (
     InstallationCommandContext,
     installation_command_context_from,
@@ -672,7 +674,7 @@ def _validate_editable_checkout(
             if expected_identity is not None
             else None,
         )
-        installed_name = canonicalize_name(distribution.metadata["Name"])
+        installed_name = _distribution_name(distribution.metadata["Name"])
         project_root = source_root.resolve(strict=True)
         distribution_spec = read_distribution_spec(project_root)
         identity = distribution_spec.metadata.identity

@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -75,9 +76,16 @@ def test_distribution_help_is_lazy_in_a_fresh_process(checkout: Path) -> None:
             sys.executable,
             "-c",
             """
+import importlib.abc
 import sys
 from pathlib import Path
 
+class NoAuthoringDependencies(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "packaging" or fullname.startswith("packaging."):
+            raise ModuleNotFoundError("authoring-only dependency is unavailable")
+
+sys.meta_path.insert(0, NoAuthoringDependencies())
 sys.path.insert(0, sys.argv[1])
 sys.prefix = str(Path(sys.argv[1]) / "checkout" / ".venv")
 sys.argv = ["dist-fixture", "dist", "build", "--help"]
@@ -222,3 +230,84 @@ def test_checkout_install_only_delegates_verified_native_setup(
         assert calls == (
             ["build", "install"] if existing == "missing" else ["install"]
         )
+
+
+def test_missing_authoring_backend_reports_checkout_setup(
+    checkout: Path,
+) -> None:
+    args = ["dist", "check"]
+    result = CliRunner().invoke(_app(args), args)
+    assert result.exit_code != 0
+    assert "Cannot load distribution backend" in result.output
+    assert "uv sync --locked --all-groups" in result.output
+
+
+def test_distribution_name_collision_preserves_the_host_cli(
+    checkout: Path,
+) -> None:
+    app = typer.Typer()
+
+    @app.command("dist")
+    def host_dist() -> None:
+        typer.echo("host distribution command")
+
+    original_commands = tuple(app.registered_commands)
+    with pytest.raises(RuntimeError, match="dist"):
+        mount_app_cli(
+            app,
+            AppRC(app_id=_COMMAND, command_name=_COMMAND),
+        )
+    assert tuple(app.registered_commands) == original_commands
+    assert app.registered_groups == []
+    result = CliRunner().invoke(app, [])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "host distribution command"
+
+
+def test_explicit_installer_delegate_takes_precedence(checkout: Path) -> None:
+    calls: list[tuple[str, ...]] = []
+    args = ["app", "install", "--yes", "--skip-setup"]
+    app = typer.Typer()
+
+    def install(arguments: Sequence[str]) -> int:
+        calls.append(tuple(arguments))
+        return 9
+
+    mount_app_cli(
+        app,
+        AppRC(app_id=_COMMAND, command_name=_COMMAND),
+        installation_management=True,
+        installer_entrypoint=install,
+        args_provider=lambda: args,
+    )
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 9, result.output
+    assert calls == [("--yes", "--skip-setup")]
+
+
+def test_unattended_missing_setup_does_not_build_without_yes(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apprc.distribution import MissingNativeArtifact
+    from apprc.interfaces.cli import _distribution_command as command
+
+    backend = ModuleType("authoring_fixture")
+    builds: list[Path] = []
+
+    def build(root: Path, *, revision: str, targets: tuple[str, ...]) -> None:
+        builds.append(root)
+
+    def check(
+        root: Path, *, revision: str, targets: tuple[str, ...]
+    ) -> tuple[Path, ...]:
+        raise MissingNativeArtifact("Missing setup")
+
+    monkeypatch.setattr(backend, "build", build, raising=False)
+    monkeypatch.setattr(backend, "check", check, raising=False)
+    monkeypatch.setitem(sys.modules, backend.__name__, backend)
+    monkeypatch.setattr(command, "_revision", lambda root: _REVISION)
+    args = ["app", "install"]
+    result = CliRunner().invoke(_app(args, installation_management=True), args)
+    assert result.exit_code != 0
+    assert "app install --yes" in result.output
+    assert builds == []

@@ -5,11 +5,15 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import url2pathname
 
-from packaging.utils import canonicalize_name
+
+def _distribution_name(name: str) -> str:
+    """Normalize installed distribution names without optional authoring packages."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def editable_entry_point(
@@ -34,7 +38,7 @@ def editable_entry_point(
             entry
             for entry in installed_commands
             if entry.dist is not None
-            and canonicalize_name(entry.dist.metadata["Name"])
+            and _distribution_name(entry.dist.metadata["Name"])
             == expected_distribution
         )
     if len(installed_commands) != 1:

@@ -93,8 +93,12 @@ def test_existing_shortcuts_report_each_validated_path(tmp_path, monkeypatch):
             desktop=True,
             launch_enabled=False,
             previous=tuple(previous),
+            icon=tmp_path / "replacement.png",
         )
     assert created == ()
+    assert all(
+        path.read_bytes() == b"existing owned shortcut" for path in paths
+    )
     assert [(event.status, event.path) for event in events] == [
         ("EXISTING", path) for path in paths
     ]
@@ -109,6 +113,7 @@ def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
     )
     destination = tmp_path / "fixture.lnk"
     command = tmp_path / "fixture.exe"
+    icon = tmp_path / "fixture.ico"
     monkeypatch.setattr(
         _os_integration, "os", SimpleNamespace(name="nt", replace=os.replace)
     )
@@ -123,7 +128,14 @@ def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
         staging = Path(path)
         assert staging.suffix == ".lnk"
         assert not staging.exists()
-        return SimpleNamespace(Save=lambda: staging.write_bytes(b"shortcut"))
+        shortcut = SimpleNamespace()
+
+        def save():
+            assert shortcut.IconLocation == str(icon)
+            staging.write_bytes(b"shortcut")
+
+        shortcut.Save = save
+        return shortcut
 
     monkeypatch.setattr(
         client,
@@ -159,6 +171,7 @@ def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
             start_menu=False,
             desktop=True,
             launch_enabled=False,
+            icon=icon,
         )
 
     if failure:
@@ -180,6 +193,38 @@ def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
     with pytest.raises(InstallationError, match="unowned shortcut"):
         publish()
     assert destination.read_bytes() == b"shortcut"
+
+
+@pytest.mark.parametrize("branded", [False, True])
+def test_linux_shortcut_emits_icon_only_when_supplied(
+    tmp_path, monkeypatch, branded
+):
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
+    destination = tmp_path / "fixture.desktop"
+    icon = tmp_path / "fixture icon.png"
+    monkeypatch.setattr(
+        _os_integration, "os", SimpleNamespace(name="posix", replace=os.replace)
+    )
+    monkeypatch.setattr(
+        _os_integration,
+        "_shortcut_destination",
+        lambda *args, **kwargs: (destination,),
+    )
+    _os_integration.publish_shortcuts(
+        tmp_path / "fixture",
+        identity,
+        display_name="Fixture",
+        start_menu=False,
+        desktop=True,
+        launch_enabled=False,
+        icon=icon if branded else None,
+    )
+    entries = destination.read_text(encoding="utf-8").splitlines()
+    assert [entry for entry in entries if entry.startswith("Icon=")] == (
+        [f"Icon={icon}"] if branded else []
+    )
 
 
 class _RegistryKey:
@@ -899,7 +944,7 @@ def test_windows_command_replacement_denial_explains_running_processes(
     assert "running application processes" in " ".join(captured.value.__notes__)
 
 
-@pytest.mark.parametrize("failure", [None, 1, 2, 4])
+@pytest.mark.parametrize("failure", [None, 1, 2, 4, 5])
 def test_optional_app_list_update_recovers_partial_writes(
     tmp_path, monkeypatch, windows_registry, failure, caplog
 ):
@@ -932,9 +977,10 @@ def test_optional_app_list_update_recovers_partial_writes(
         ),
     )
     before = inspect_installation(tmp_path, app_id="fixture")
+    icon = tmp_path / "fixture.ico"
     windows_registry.fail_after = failure
     result = metadata.publish_registration(
-        before, "1.2.3", tmp_path / "fixture.exe", "app"
+        before, "1.2.3", tmp_path / "fixture.exe", "app", icon=icon
     )
     assert result.status == "ready"
     if failure:
@@ -945,6 +991,7 @@ def test_optional_app_list_update_recovers_partial_writes(
             "1.2.4",
             tmp_path / "fixture.exe",
             "app",
+            icon=icon,
         )
     assert result.record is not None
     output = next(
@@ -953,10 +1000,49 @@ def test_optional_app_list_update_recovers_partial_writes(
     assert dict(output.values)["DisplayVersion"] == (
         "1.2.4" if failure else "1.2.3"
     )
+    expected_icon = f'"{icon}",0'
+    assert dict(output.values)["DisplayIcon"] == expected_icon
+    registry_entry = windows_registry.keys[output.path.removeprefix("HKCU\\")]
+    assert registry_entry.values["DisplayIcon"] == (
+        expected_icon,
+        windows_registry.REG_SZ,
+    )
     assert not any(
         item.path == ".windows-registration.json"
         for item in result.record.owned_outputs
     )
+
+    delete = windows_registry.DeleteValue
+
+    def delete_then_fail(key, name):
+        delete(key, name)
+        raise OSError("Stopped after deleting the icon")
+
+    with monkeypatch.context() as interrupted:
+        interrupted.setattr(windows_registry, "DeleteValue", delete_then_fail)
+        metadata.publish_registration(
+            result, "1.2.5", tmp_path / "fixture.exe", "app"
+        )
+    with installation_lock(tmp_path):
+        recovered = metadata.recover_registration(
+            inspect_installation(tmp_path, app_id="fixture")
+        )
+    assert recovered.record is not None
+    assert recovered.record.owned_outputs == (
+        OwnedOutput(
+            "hkcu",
+            output.path,
+            None,
+            tuple(
+                (name, value)
+                for name, value in sorted(
+                    dict(output.values, DisplayVersion="1.2.5").items()
+                )
+                if name != "DisplayIcon"
+            ),
+        ),
+    )
+    assert "DisplayIcon" not in registry_entry.values
 
 
 @pytest.mark.parametrize("written", [0, 1, 2])

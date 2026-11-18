@@ -18,6 +18,7 @@ from apprc.distribution.models import (
     relative_destination,
 )
 from apprc.definition.paths import Layout, Paths
+from apprc.user_files.app_home.locations import assert_no_links
 
 if TYPE_CHECKING:
     from apprc.public.app_rc import AppRC
@@ -68,6 +69,41 @@ def _validate_project_declaration(
         raise ValueError(
             "Committed installation hook declarations do not match the author tree."
         )
+    with (committed_project / "pyproject.toml").open("rb") as stream:
+        icons = _icon_paths(tomllib.load(stream))
+    for platform, relative in icons.items():
+        path = committed_project.joinpath(*relative.parts)
+        assert_no_links(path)
+        if not path.is_file():
+            raise ValueError(
+                f"Declared {platform} icon is missing from the committed project: {relative}."
+            )
+
+
+def _icon_paths(document: dict[str, object]) -> dict[str, PurePosixPath]:
+    """Read the optional paths to committed platform artwork."""
+    settings: object = document
+    for key in ("tool", "apprc", "distribution"):
+        settings = settings.get(key, {}) if isinstance(settings, dict) else {}
+    icons = settings.get("icons", {}) if isinstance(settings, dict) else {}
+    extensions = {"windows": ".ico", "linux": ".png"}
+    if not isinstance(icons, dict) or set(icons) - extensions.keys():
+        raise ValueError(
+            "Distribution icons must be a table with windows or linux keys."
+        )
+    paths: dict[str, PurePosixPath] = {}
+    for platform, value in icons.items():
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Distribution {platform} icon must be a project-relative path."
+            )
+        path = relative_destination(value)
+        if path.suffix.lower() != extensions[platform]:
+            raise ValueError(
+                f"Distribution {platform} icon must have a {extensions[platform]} extension."
+            )
+        paths[platform] = path
+    return paths
 
 
 def _declared_hooks(project_root: Path) -> InstallationHooks:
@@ -134,6 +170,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "runtime-python",
         "display-name",
         "install-next-step",
+        "icons",
         "bootstrap-env-prefix",
         "maintenance-group-name",
         "launch-enabled",
@@ -150,6 +187,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
     if set(settings) - allowed:
         raise ValueError("Unknown tool.apprc.distribution setting.")
     string_keys = allowed - {
+        "icons",
         "hooks",
         "authoring",
         "launch-enabled",
@@ -167,6 +205,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         if key in string_keys
     ):
         raise ValueError("String distribution settings must be strings.")
+    _icon_paths(document)
     distribution = re.sub(r"[-_.]+", "-", name).lower()
     packages = {
         value.split(":", 1)[0].split(".", 1)[0] for value in scripts.values()

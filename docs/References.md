@@ -251,6 +251,11 @@ Distribution authoring uses committed project source and the application's exact
 `uv.lock`. The SDK delegates dependency installation to uv; it does not generate
 runtime overrides, compile private dependency wheels or maintain a wheelhouse.
 
+Set `install-next-step = "Open a new terminal and run demo."` in
+`[tool.apprc.distribution]` to display a **Next step** after successful managed
+installation or update. AppRC reads the text from the embedded project snapshot.
+Use `setup_next_step` for guidance after explicit `config setup`.
+
 | API | Result / contract |
 | --- | --- |
 | `read_project_metadata(project_root)` | Packaging, import, app and console-command identities remain distinct. |

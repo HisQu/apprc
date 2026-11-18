@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import io
 import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from collections.abc import Callable
 from typing import cast
 from uuid import uuid4
@@ -131,7 +133,7 @@ def _install(
     output(InstallProgress("stage", "Preparing Runtime"))
     try:
         with installation_progress(output):
-            _install_managed(binding, manager, executable, args)
+            next_step = _install_managed(binding, manager, executable, args)
     except (
         OSError,
         ValueError,
@@ -153,7 +155,7 @@ def _install(
                     None, "Setup diagnostic log", path=diagnostic, error=True
                 )
         return 1
-    output.complete()
+    output.complete(next_step=next_step)
     return 0
 
 
@@ -162,8 +164,8 @@ def _install_managed(
     manager: InstallationManager,
     executable: Path,
     args: tuple[str, ...],
-) -> None:
-    """Install or update the embedded project and offer optional setup."""
+) -> str | None:
+    """Install the embedded project, offer optional setup, and return its hint."""
     import argparse
     import logging
 
@@ -264,6 +266,23 @@ def _install_managed(
     _, project_bytes = _read_product(include_project=True)
     if project_bytes is None:
         raise RuntimeError("The embedded project snapshot is unavailable.")
+    metadata_path = (
+        PurePosixPath(binding.source.project_path) / "pyproject.toml"
+    )
+    try:
+        with zipfile.ZipFile(io.BytesIO(project_bytes)) as snapshot:
+            metadata = tomllib.loads(
+                snapshot.read(metadata_path.as_posix()).decode("utf-8")
+            )
+    except (KeyError, zipfile.BadZipFile) as error:
+        raise ValueError(
+            "Cannot read the embedded project metadata."
+        ) from error
+    try:
+        hint = metadata["tool"]["apprc"]["distribution"]["install-next-step"]
+    except (KeyError, TypeError):
+        hint = None
+    next_step = (hint.strip() or None) if isinstance(hint, str) else None
 
     temp_parent = Path(tempfile.gettempdir()).resolve(strict=True)
     with tempfile.TemporaryDirectory(
@@ -295,25 +314,6 @@ def _install_managed(
         offer_configuration_setup,
         publish_optional_shortcuts,
     )
-
-    if options.start_menu or options.desktop:
-        try:
-            inspection = publish_optional_shortcuts(
-                manager,
-                manager.directory
-                / (binding.command_name + (".exe" if os.name == "nt" else "")),
-                binding.identity,
-                display_name=binding.display_name,
-                start_menu=options.start_menu,
-                desktop=options.desktop,
-                launch_enabled=binding.launch_enabled,
-            )
-        except (OSError, ValueError) as error:
-            warn(
-                logging.getLogger(__name__),
-                "Optional shortcuts were not updated",
-                error,
-            )
     from apprc.distribution.runtime._install_progress import installation_color
     from apprc.interfaces._terminal_console import color_environment
 
@@ -334,6 +334,46 @@ def _install_managed(
             f"Configuration setup failed. Run `{binding.command_name} config setup` to retry",
             error,
         )
+
+    if (
+        previous is None
+        and not options.desktop
+        and not options.yes
+        and sys.platform in {"linux", "win32"}
+        and sys.stdin is not None
+        and sys.stdin.isatty()
+    ):
+        import typer
+        from apprc.distribution.runtime._os_integration import (
+            desktop_shortcut_available,
+        )
+
+        if desktop_shortcut_available(binding.identity):
+            try:
+                options.desktop = typer.confirm(
+                    "Add Desktop shortcut?", default=False
+                )
+            except typer.Abort:
+                options.desktop = False
+    if options.start_menu or options.desktop:
+        try:
+            publish_optional_shortcuts(
+                manager,
+                manager.directory
+                / (binding.command_name + (".exe" if os.name == "nt" else "")),
+                binding.identity,
+                display_name=binding.display_name,
+                start_menu=options.start_menu,
+                desktop=options.desktop,
+                launch_enabled=binding.launch_enabled,
+            )
+        except (OSError, ValueError) as error:
+            warn(
+                logging.getLogger(__name__),
+                "Optional shortcuts were not updated",
+                error,
+            )
+    return next_step
 
 
 def _owned_manager_invocation(

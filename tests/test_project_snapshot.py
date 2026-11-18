@@ -18,6 +18,7 @@ from zipfile import ZipFile, ZipInfo
 
 from filelock import Timeout
 import pytest
+import typer
 
 import apprc as rc
 from apprc.definition.installation import (
@@ -48,9 +49,30 @@ from types import SimpleNamespace
 from apprc.distribution.runtime import _manager
 
 
+@pytest.mark.parametrize(
+    ("scenario", "args", "expect_prompt", "expect_shortcut"),
+    [
+        ("accept", ("--skip-setup",), True, True),
+        ("decline", (), True, False),
+        ("abort", (), True, False),
+        ("update", (), False, False),
+        ("unattended", ("--yes",), False, False),
+        ("piped", (), False, False),
+        ("no-desktop", (), False, False),
+        ("explicit", ("--desktop", "--yes"), False, True),
+        ("unset", ("--yes",), False, False),
+        ("blank", ("--yes",), False, False),
+        ("failed", (), False, False),
+    ],
+)
 def test_native_install_extracts_payload_below_physical_temp_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    scenario: str,
+    args: tuple[str, ...],
+    expect_prompt: bool,
+    expect_shortcut: bool,
 ) -> None:
     app_id = "temporary-root-fixture"
     identity = InstallationIdentity(
@@ -58,8 +80,15 @@ def test_native_install_extracts_payload_below_physical_temp_root(
     )
     source_archive = tmp_path / "source.zip"
     lock = b"version = 1\n"
+    hint = "Open a new terminal and run the fixture."
+    project = '[project]\nname="fixture"\n'
+    if scenario != "unset":
+        text = "  " if scenario == "blank" else hint
+        project += (
+            f"\n[tool.apprc.distribution]\ninstall-next-step = {text!r}\n"
+        )
     with ZipFile(source_archive, "w") as package:
-        package.writestr("pyproject.toml", '[project]\nname="fixture"\n')
+        package.writestr("pyproject.toml", project)
         package.writestr("uv.lock", lock)
         package.writestr("fixture.py", "VALUE = 7\n")
     source = _snapshot(source_archive)
@@ -105,17 +134,61 @@ def test_native_install_extracts_payload_below_physical_temp_root(
             logs_dir=None,
         ),
     )
-    from apprc.distribution.runtime import installation
+    from apprc.distribution.runtime import _os_integration, installation
 
+    ready = manager.inspect()
+    if scenario == "update":
+        monkeypatch.setattr(
+            manager,
+            "inspect",
+            lambda: SimpleNamespace(
+                record=SimpleNamespace(
+                    identity=identity,
+                    command_name=app_id,
+                    placement=object(),
+                )
+            ),
+        )
+    monkeypatch.setattr(_manager, "_setup_launch", lambda: {})
+    monkeypatch.setattr(_manager.sys, "platform", "linux")
+    monkeypatch.setattr(
+        sys, "stdin", SimpleNamespace(isatty=lambda: scenario != "piped")
+    )
+    monkeypatch.setattr(
+        _os_integration,
+        "desktop_shortcut_available",
+        lambda identity: scenario != "no-desktop",
+    )
+    events: list[str] = []
+
+    def confirm(message: str, *, default: bool) -> bool:
+        assert message == "Add Desktop shortcut?"
+        assert default is False
+        events.append("prompt")
+        if scenario == "abort":
+            raise typer.Abort()
+        return scenario == "accept"
+
+    def publish(*args, desktop: bool, **kwargs):
+        assert desktop
+        events.append("shortcut")
+        return ready
+
+    def configure(*unused, skip: bool, **kwargs) -> bool:
+        assert skip == ("--skip-setup" in args)
+        events.append("config")
+        return False
+
+    monkeypatch.setattr(typer, "confirm", confirm)
     monkeypatch.setattr(
         installation,
         "publish_optional_shortcuts",
-        lambda *args, **kwargs: manager.inspect(),
+        publish,
     )
     monkeypatch.setattr(
         installation,
         "offer_configuration_setup",
-        lambda *args, **kwargs: False,
+        configure,
     )
 
     observed: list[Path] = []
@@ -127,11 +200,31 @@ def test_native_install_extracts_payload_below_physical_temp_root(
         materialize_project_snapshot(project_archive, destination, source)
         assert (destination / "fixture.py").read_bytes() == b"VALUE = 7\n"
         observed.append(project_archive)
-        return manager.inspect()
+        if scenario == "failed":
+            raise InstallationError("Fixture failed")
+        return ready
 
     monkeypatch.setattr(installation, "install_application", capture_install)
-    _manager._install(binding, manager, tmp_path / "setup", ())
+    assert _manager._install(binding, manager, tmp_path / "setup", args) == (
+        1 if scenario == "failed" else 0
+    )
     assert len(observed) == 1
+    assert events == (
+        []
+        if scenario == "failed"
+        else [
+            "config",
+            *(["prompt"] if expect_prompt else []),
+            *(["shortcut"] if expect_shortcut else []),
+        ]
+    )
+    output = capsys.readouterr().out
+    if scenario in {"unset", "blank", "failed"}:
+        assert "Next step" not in output
+    else:
+        assert (
+            f"managed installation complete.\n\nNext step\n  {hint}" in output
+        )
 
     linked_managed = tmp_path / "linked-managed"
     managed_target = tmp_path / "managed-target"

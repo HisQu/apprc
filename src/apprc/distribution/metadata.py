@@ -133,6 +133,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "command-name",
         "runtime-python",
         "display-name",
+        "install-next-step",
         "bootstrap-env-prefix",
         "maintenance-group-name",
         "launch-enabled",

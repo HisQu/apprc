@@ -1131,6 +1131,11 @@ When double-clicking setup, read the result before pressing Enter. On failure,
 the result can include a local diagnostic log path. Running setup in an
 existing terminal lets you read the failure and check its exit code there.
 
+A fresh interactive managed install can ask **Add Desktop shortcut? [y/N]**
+when a desktop directory is available. Use `--desktop` to request the shortcut
+explicitly. Apps that supply a next step display it below the successful
+installation summary, including when optional configuration is skipped.
+
 At the end, AppRC offers `config setup` only when active, editable user settings
 are required, have no fallback, and remain missing after configuration resolution.
 Workspace-only and already supplied settings do not trigger the offer.

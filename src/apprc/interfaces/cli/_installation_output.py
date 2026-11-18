@@ -105,7 +105,7 @@ class InstallationProgressOutput:
         else:
             self._write(f"   {event.message}", style="detail")
 
-    def complete(self) -> None:
+    def complete(self, *, next_step: str | None = None) -> None:
         """Confirm the usable, committed install."""
         product = (
             f"{self._name} {self._version}" if self._version else self._name
@@ -114,6 +114,10 @@ class InstallationProgressOutput:
             "repair" if self._mode == "repair" else f"{self._mode} installation"
         )
         self._write(f"\n{product} {action} complete.", style="success")
+        if next_step:
+            self._write("\nNext step")
+            for line in next_step.splitlines():
+                self._write(f"  {line}")
 
     def failed(self, message: str) -> None:
         """Display the installation failure, including any recovery notes."""

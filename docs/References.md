@@ -2,6 +2,8 @@
 
 [Documentation](README.md) · [Explanations](Explanations.md) · [How-to user guides](How-To-User-Guides.md) · [Examples](EXAMPLES.md) · [Development](Development.md)
 
+- [Installation vocabulary](#installation-vocabulary)
+  - [Installation terminology](#installation-terminology)
 - [Python API](#python-api)
   - [Public namespaces](#public-namespaces)
   - [Declarations](#declarations)
@@ -26,6 +28,35 @@
   - [Terminal commands](#terminal-commands)
   - [Launcher](#launcher)
   - [Errors and write guarantees](#errors-and-write-guarantees)
+
+<br>
+
+# Installation vocabulary
+
+## Installation terminology
+
+| Kind | Term | Meaning |
+| --- | --- | --- |
+| Route | **One-line installer (OLI)** | The application's one-line entry point and its script. The script finds the platform RBE in the latest published release, checks it against `SHA256SUMS`, and runs it. |
+| Route and artifact | **Released Binary Executable (RBE)** | A platform installer executable published as an application release asset. The direct route starts by downloading and verifying this asset. |
+| Route | **Editable Source Checkout (eSC)** | Register the existing checkout and its environment with `app install -e`. The operation is called **editable registration**. |
+| Route | **Source Build (SB)** | Use checkout `app install` to verify or build a local executable, then run it. |
+| Artifacts | **Release package** | The platform setup executables and their `SHA256SUMS`, ready for publication. The publisher can host the optional OLI scripts separately. |
+| Installed result | **Release installation** | The application recorded by AppRC with an AppRC-owned, locked runtime slot. OLI, RBE, and SB use the same installation runtime. |
+| Installed result | **Editable installation** | The application registration that points to a developer-owned checkout and existing environment. |
+| Resource layout | **OS-native Directory layout** | Enabled resource directories use their native per-user locations. Select with `Layout.native()` or `--layout native`. |
+| Resource layout | **Single-root Directory layout** | Enabled resource directories share an explicit parent. Select with `Layout.single_root(root)` or `--layout single-root --app-root PATH`. |
+
+Directory layouts place application resources. The installation record stays at
+the [fixed native installation address](#installationmanager) in both modes.
+Commands and machine-readable records retain their exact spelling. For example,
+`dist test --managed` tests a release installation and `RELEASE_REPO_OLIS`
+sets the OLI's release repository. Installing the AppRC SDK with pip adds
+Python distributions to an environment.
+
+See the [route overview](Explanations.md#four-installation-routes) for the
+shared components and the [task guide](How-To-User-Guides.md#install-and-recover-applications)
+for commands.
 
 <br>
 
@@ -272,7 +303,7 @@ with the project before building. An omitted platform uses its default icon.
 | `read_project_metadata(project_root)` | Packaging, import, app and console-command identities remain distinct. |
 | `inspect_capabilities(apprc)` | Declared filesystem capabilities without resolving business settings. |
 | `build_project_snapshot(spec, *, revision, destination, prepare=None)` | `PreparedProject(archive, source)` from one committed Git tree and optional authored preparation of its private staging copy. |
-| `build_native_distribution(spec, project, *, uv, workspace, targets=..., extras=(), environment=None)` | Native setup artifacts and their checksum file. A configured build also emits the two OLIS files. |
+| `build_native_distribution(spec, project, *, uv, workspace, targets=..., extras=(), environment=None)` | Native setup artifacts and their checksum file. A configured build also emits the two OLI scripts. |
 | `check_native_distribution(root, *, app_id, targets, revision)` | Check the integrity of the published set and the completeness and committed revision of the requested targets. Returns the verified setup paths in target order. |
 | `NativeFrontendBuilder.build(*, target, destination, runtime_archive, entrypoint)` | Compile the verified ordinary-module archive without executing the produced binary. |
 
@@ -309,23 +340,26 @@ An explicit `installer_entrypoint` continues to take precedence.
 
 | Term | Meaning |
 | --- | --- |
-| One-line install command | The terminal command a recipient copies and pastes. |
-| One-line install script (OLIS) | The `.sh` or `.ps1` fetched by that command. It downloads, verifies and runs the native setup executable. |
-| OLIS template | One of the four Linux and Windows public or private source templates supplied by `apprc-core`. |
-| Native setup executable | The PyApp binary that performs the installation. |
+| One-line installer (OLI) command | The terminal command a recipient copies from the application's installation guide. |
+| OLI script | The `.sh` or `.ps1` fetched by that command. The generated header calls it OLIS. It downloads the platform RBE and `SHA256SUMS` from the latest published application release, checks the hash, and starts setup. |
+| OLI template | One of four source templates in `apprc-core` covering public and private release access on Linux and Windows. |
+| Native setup executable | The PyApp binary that performs the release installation. |
 
 | Build setting | Effect |
 | --- | --- |
 | `--olis-repo` / `-o` | GitHub repository in `OWNER/REPO` form that contains the native setup releases. An explicit flag overrides `RELEASE_REPO_OLIS`. |
-| `RELEASE_REPO_OLIS` | Default GitHub release source when the flag is absent. If both are omitted, the build skips OLIS generation and warns if existing scripts may be stale. |
+| `RELEASE_REPO_OLIS` | Default GitHub release source when the flag is absent. If both are omitted, the build skips OLI generation and warns if existing scripts may be stale. |
 | `RELEASE_PUBLIC` | `true` selects the public templates. `false`, an empty value, or an unset value selects the private templates. Invalid settings warn without failing the native build. |
 
 The build reads these settings from its authoring environment. A configured
 build produces both `dist/install_from_github.sh` and
 `dist/install_from_github.ps1`, including when `-t` compiles a single target.
 Their contents are independent of the application version. `SHA256SUMS` lists
-the native setup executables. Publishing OLIS at a public URL belongs to the
-host application.
+the native setup executables. The host application publishes the executable
+assets and manifest and hosts the OLI scripts at a trusted URL. On Linux the
+script needs Bash and `sha256sum`, and the public template uses `curl`.
+The Windows public template uses PowerShell's `Invoke-WebRequest`.
+Private templates use an authenticated `gh` with access to the release.
 
 Snapshot preparation retains the complete workspace, local member source,
 `pyproject.toml`, `uv.lock` and build inputs. uv selects the installed package and
@@ -465,10 +499,11 @@ loader.
 
 ### Guided installation validation
 
-Opted-in editable checkouts also expose `dist test`. The runner uses the
-checkout's existing Python environment and launches installers and published
-commands in child processes. Native managed profiles support Linux x86-64 and
-Windows x86-64; run Windows validation in native Windows.
+Opted-in editable checkouts with installation management also expose
+`dist test`. The runner uses the checkout's existing Python environment and
+launches installers and published commands in child processes. Native release
+installation profiles support Linux and Windows x86-64. Run Windows validation
+on native Windows.
 
 | Invocation | Profile |
 | --- | --- |
@@ -575,6 +610,28 @@ diagnostics without creating authority. Statuses remain `missing`, `invalid`,
 installations do not require a record. Invalid authority never authorizes a
 silent fallback to another resource location.
 
+**Observable installation states**
+
+```mermaid
+flowchart TD
+    accTitle: Observable installation states
+    Missing["missing"] -->|Start install or registration| Provisional["provisional"]
+    Provisional -->|Activate validated runtime| Ready["ready"]
+    Provisional -->|Pre-activation rollback succeeds| Missing
+    Provisional -->|Recovery work remains| Incomplete["incomplete"]
+    Ready -->|Pending replacement, repair, or removal| Incomplete
+    Incomplete -->|Completed or prior runtime restored| Ready
+    Incomplete -->|Complete removal| Missing
+    Incomplete -->|Removal leaves retained authority| Retained["removed-retained"]
+    Retained -->|Reinstall| Incomplete
+    Invalid["invalid"] --> Diagnose["Inspect authority and recover explicitly"]
+```
+
+This model shows durable states across operations. It omits intermediate
+checkpoints and the distinction between pending authority and runtime
+availability. A replacement can have pending work while the previous runtime
+is still active.
+
 `plan_resume()` reconstructs the exact pending install, replacement, or repair
 from captured authority. It retains the operation ID, target, placement, command,
 generation, and original operation kind. `plan_repair(identity, runtime, placement)`
@@ -639,11 +696,13 @@ captured prior record or initial absence. It rejects committed activation and
 unrelated authority. Failure to restore managed effects retains incomplete
 recovery state; this operation does not undo application callbacks or databases.
 
-Program-only removal preserves user resources by default. Complete removal
-requires explicit choices and exact provider inventories; unknown files,
-changed ownership or unavailable required code block unsafe deletion. Temporary
-native finalization waits for its initiating process before removing owned
-program files. No saved Python/CMD/PowerShell management copies are required.
+The lower-level program-only removal API preserves user resources and can
+retain reconnectable authority. Lower-level exact inventories, when supplied,
+apply their own file-identity and revision checks.
+The [CLI uninstall guide](How-To-User-Guides.md#remove-a-managed-program)
+defines the default whole-directory inventory, configuration choice, and
+repository removal. Temporary native finalization waits for its initiating
+process before removing owned program files.
 
 ## ConfigManager
 
@@ -922,16 +981,30 @@ Ordinary application invocations leave `installation_context` as `None`.
 
 ### Command tree
 
-Paths below use default group names. Only host commands, enabled `config`,
-conditional `workspace`, `app`, and optional `launch` appear at the root.
+Paths below use default group names. The mounted CLI includes host commands
+plus the AppRC commands enabled by the declaration and authoring context.
+
+```mermaid
+flowchart LR
+    accTitle: Conditional CLI composition
+    Host["Host application CLI"] --> Inspect["Always: app paths and app doctor"]
+    Host --> Config["Declarations: config and workspace"]
+    Host --> Providers["Resource providers: app data, cache, or state"]
+    Host --> Install["Management or a delegate: app install"]
+    Host --> Maintain["Management: app repair, uninstall, migrate"]
+    Host --> Launch["LauncherSpec: launch"]
+    Host --> Dist["Checkout authoring: dist build and check"]
+    Dist --> Test["With management: dist test"]
+```
+
 
 | Command | Availability and behavior |
 | --- | --- |
 | `app doctor [--verbose] [--json]` | Always. Aggregate local/read-only installation, path, ownership, boundary and config diagnostics; no host business factories or remote services. JSON contract below. |
 | `app paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. Without a category, list all paths; a category prints its absolute path. Disabled category and invalid `--open` combinations exit 2. Open only an existing directory; never create it. Original authority/path failures exit nonzero without fallback locations. |
-| `app install [-e/--editable] [--desktop] [ARGS]...` | Enabled by installation management or an explicit installer delegate. Editable registration uses the invocation's actual checkout `.venv`. With `-e`, `--desktop` explicitly requests a shortcut. Other arguments go to the authored installer delegate when configured. `--help` remains local. |
+| `app install [-e/--editable] [--desktop] [ARGS]...` | Enabled by installation management or an explicit installer delegate. Editable registration uses the invocation's actual checkout `.venv`. With `-e`, `--desktop` explicitly requests a shortcut. With installation management, an opted-in checkout can hand Source Build to its authoring backend. An explicit installer delegate takes precedence and receives forwarded arguments. `--help` remains local. |
 | `app repair` | `installation_management=True`. Rebuild the recorded managed project through authenticated native support without selecting newer source or changing placement. Editable environments receive `uv sync --locked` guidance instead. |
-| `app uninstall [--dry-run] [--keep-config] [--remove-repository] [--yes/-y] [--wait]` | `installation_management=True`. Interactive removal offers config retention, then shows a filesystem tree with shared parents and Delete/Keep target labels and confirms the application name plus Delete items. Interactive Windows execution opens a separate cleanup window, reports completion or failure there, and waits for Enter unless `--yes` is used. Known paths use cyan in human-facing terminal output. `--yes` skips prompts and acknowledgement. `--keep-config` retains only config; other managed resources and installation support are removed. Editable checkouts remain unless explicitly selected with `--remove-repository`; retained config must not lie inside a checkout selected for removal. Post-commit staging cleanup failures are warnings with the leftover path, not uninstall failures. |
+| `app uninstall [--dry-run] [--keep-config] [--remove-repository] [--yes/-y] [--wait]` | `installation_management=True`. Preview or execute the saved removal inventory. See the [CLI uninstall guide](How-To-User-Guides.md#remove-a-managed-program) for confirmation, retention, and Windows completion. |
 | `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview/apply exact resource migration, or resume its saved pending inventory/revision, with confirmation and quiescence checks. Unrecognized data needs application-owned inventory; recovery never rescans it silently. |
 | `app data backup/restore` | Declared appdata and corresponding provider operations. Restore confirms unless `--yes`; data means AppRC appdata, never workspace/project payloads. |
 | `app cache prune/clear`, `app state prune/reset` | Declared category and supported provider operations; preserve dry-run, confirmation and JSON controls. Host resource extensions may provide application-specific commands. |

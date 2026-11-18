@@ -13,12 +13,26 @@
 
 ## Start here
 
-AppRC lets a Python application declare typed settings and independently opt in
-to configuration, application data, cache, and state paths. Start with the
-[working example](../README.md#load-settings), then read how
-[`AppRC`](Explanations.md#apprc) connects these features.
+Choose the journey that matches what you want to do.
 
-Learn the components in this order:
+| Journey | Start here | Continue with |
+| --- | --- | --- |
+| **Use the SDK** | [Install the SDK](../README.md#install-the-apprc-sdk) and [read typed settings](How-To-User-Guides.md#read-typed-settings). | [Choose an example](EXAMPLES.md#choose-a-setup) to add the resources or settings interfaces you need. |
+| **Ship an application** | [Prepare a release package](How-To-User-Guides.md#prepare-a-release-package). | [Validate installation](How-To-User-Guides.md#validate-installation-on-your-machine) and check the [native authoring requirements](Development.md#native-application-frontends). |
+| **Use an installed application** | [Run a published installer](How-To-User-Guides.md#run-a-published-installer) or [register your checkout](How-To-User-Guides.md#install-from-a-checkout). | [Launch the app](How-To-User-Guides.md#run-the-installed-application), then [update it](How-To-User-Guides.md#update-an-application), [repair it](How-To-User-Guides.md#inspect-or-repair-installation), or [uninstall it](How-To-User-Guides.md#remove-a-managed-program). |
+
+```mermaid
+flowchart TD
+    accTitle: Three journeys through the AppRC documentation
+    Docs["AppRC documentation"] --> SDK["Use the SDK"]
+    Docs --> Ship["Ship an application"]
+    Docs --> Use["Use an installed application"]
+    SDK --> Settings["Resolve typed settings and choose capabilities"]
+    Ship --> Build["Build, check, and test a release package"]
+    Use --> Tasks["Install, launch, update, repair, and uninstall"]
+```
+
+### Learn the SDK components
 
 1. Define a [config section](Explanations.md#config-sections-and-fields) and build
    settings from a [`ResolvedConfig`](Explanations.md#resolvedconfig).
@@ -98,15 +112,21 @@ before changing documentation.
 - Use the document labels in [Choose a document](#choose-a-document) verbatim.
 - Use the [component names](#component-names) consistently. Define a component
   before relying on it in instructions.
-- Call the Windows `Setup.exe` an **installer** and the process of creating it an
-  **installer build**.
+- Use the [installation terminology](References.md#installation-terminology)
+  for route names, installed results, and Directory layouts. Keep literal CLI
+  flags, filenames, and environment keys as the software spells them.
+- Give SDK developers, application publishers, and application users equal
+  entry points in the root README and this index. Preserve the
+  [Buildben presentation](Development.md#readme-maintenance).
 - Introduce basic settings before files, optional features, and integrations.
 - Start Explanations sections with what a component is and why an application
   needs it. Describe concrete inputs, outputs, and connections.
 - Use task headings in How-to user guides and define unfamiliar terms when first
   used.
-- Describe current behavior. Keep upgrade instructions in clearly labeled
-  migration guidance and breaking changes in the changelog.
+- Verify commands against `main` and distinguish implementation there from
+  availability in a published SDK or application release. Keep future proposals
+  outside runnable instructions. Keep upgrades in labeled migration guidance
+  and breaking changes in the changelog.
 
 ### Links and examples
 
@@ -126,12 +146,15 @@ before changing documentation.
   contents. List each topical H1 and every H2 exactly once in document order.
 - Put a standalone `<br>` before the first topical H1 and between later H1
   sections. Do not add spacers between H2 sections.
-- Check links and anchors after renaming headings. Preserve existing anchors
-  where practical and update internal links to current headings.
+- Preserve existing incoming anchors when headings move or change. Use an
+  explicit `<a id="old-anchor"></a>` if the original heading slug changes,
+  then update the internal table of contents to use the current heading.
 - Review prose for undefined terms, synonym drift, vague claims, and unexplained
   component relationships.
 - Follow the [generated-file procedure](Development.md#generated-files) for
-  package descriptions. Diagram source scripts are canonical; do not hand-edit
-  generated SVG files.
+  package descriptions. Maintain generated SVGs through their source scripts.
+  Keep Mermaid in Markdown with an accessible title and text that explains
+  the diagram. [Render published diagrams locally](Development.md#documentation-checks)
+  after making diagram changes.
 - Run the [documentation checks](Development.md#documentation-checks) alongside
   checks required for any accompanying code changes.

@@ -67,3 +67,23 @@ def test_rewrite_repository_links_uses_github_urls() -> None:
         "[Anchor](#local)\n"
         "[External](https://example.com)\n"
     )
+
+
+def test_pypi_readme_keeps_mermaid_explanation_and_ordinary_code() -> None:
+    module = load_pypi_readme_module()
+
+    source = (
+        "**Update**\n\n"
+        "```mermaid\nflowchart LR\n    A --> B\n```\n\n"
+        "[Update walkthrough](docs/Explanations.md#activation-repair-and-rollback)\n\n"
+        "````markdown\n```mermaid\nexample source\n```\n````\n\n"
+        "```shell\ndemo app repair\n```\n"
+    )
+
+    assert module.build_pypi_markdown(source) == (
+        "**Update**\n\n\n"
+        "[Update walkthrough](https://github.com/HisQu/apprc/blob/main/"
+        "docs/Explanations.md#activation-repair-and-rollback)\n\n"
+        "````markdown\n```mermaid\nexample source\n```\n````\n\n"
+        "```shell\ndemo app repair\n```\n"
+    )

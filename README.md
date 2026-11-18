@@ -20,8 +20,9 @@ design. Before editing, read "README maintenance" in docs/Development.md.
 
 <!-- --- Title  -->
 <a id="project-overview"></a>
+<a id="apprc-application-runtime-config"></a>
 
-# `AppRC`: Application Runtime Config
+# `AppRC`
 
 
 <!-- --- Badges -->
@@ -43,11 +44,11 @@ design. Before editing, read "README maintenance" in docs/Development.md.
 
 <!-- --- Abstract  -->
 
-AppRC provides typed application settings, optional user preferences, and
-independent application paths. An application opts in to configuration,
-application data, cache, and state separately; a cache-only application does not
-also acquire configuration files or a workspace registry.
-
+AppRC provides configuration, installation, and lifecycle management for Python
+applications. Declare typed settings, opt into independent resources such as
+config or cache, and add the interfaces your users need. When you ship a native
+installer, AppRC can also register the command, keep the app's resource locations
+across updates, and provide repair and uninstall.
 
 #### Main dependencies:
 - **[`typed-settings`]**: Convert and validate typed application settings.
@@ -70,11 +71,20 @@ also acquire configuration files or a workspace registry.
 
 
 <!-- ====================================================================== -->
+<!-- == Reader journeys -->
+
+| Use the SDK | Ship an application | Use an installed application |
+| --- | --- | --- |
+| [Install the Python SDK](#installation) and [resolve typed settings](#load-settings). | [Build a release package](#ship-an-application) and [verify installation](docs/How-To-User-Guides.md#validate-installation-on-your-machine). | [Install or register the app](#use-an-installed-application), then [run it](#run-the-application) or [manage it](#maintain-the-application). |
+
+<br>
+
+<!-- ====================================================================== -->
 ### Table of Contents
 
-1. [`AppRC`: Application Runtime Config](#project-overview)
+1. [AppRC](#project-overview)
 2. [Installation](#installation)
-   1. [One-Line Install](#one-line-install)
+   1. [Install the AppRC SDK](#install-the-apprc-sdk)
    2. [Install from a Cloned Repository](#install-from-a-cloned-repository)
    3. [Uninstall](#uninstall)
 3. [Usage](#usage)
@@ -83,7 +93,12 @@ also acquire configuration files or a workspace registry.
    3. [Save user settings](#save-user-settings)
    4. [Add terminal commands](#add-terminal-commands)
    5. [Add a Gradio settings page](#add-a-gradio-settings-page)
-4. [Documentation](#documentation)
+4. [Ship an application](#ship-an-application)
+5. [Use an installed application](#use-an-installed-application)
+   1. [Choose an installation route](#choose-an-installation-route)
+   2. [Run the application](#run-the-application)
+   3. [Maintain the application](#maintain-the-application)
+6. [Documentation](#documentation)
 
 ---
 
@@ -94,15 +109,20 @@ also acquire configuration files or a workspace registry.
 
 <br>
 
-## One-Line Install
+<a id="one-line-install"></a>
 
-Python 3.12 or newer is required.
+## Install the AppRC SDK
+
+These SDK packages require Python 3.12 or newer. The commands below install
+the published SDK from PyPI. The distribution and lifecycle guides describe AppRC
+on `main`. The features available in a downloaded installer depend on the
+application release that built it.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.35.0,<0.36"` | Core configuration, Typer commands, prompts, and Textual editor. |
-| `python -m pip install "apprc-core>=0.35.0,<0.36"` | Configuration and noninteractive path/maintenance APIs. |
-| `python -m pip install "apprc-gui>=0.35.0,<0.36"` | Configuration and Gradio settings editor. |
+| `python -m pip install apprc` | Core configuration, Typer commands, prompts, and Textual editor. |
+| `python -m pip install apprc-core` | Configuration and noninteractive path/maintenance APIs. |
+| `python -m pip install apprc-gui` | Configuration and Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
 `from apprc_gui import ConfigEditor`. Terminal and GUI distributions install the
@@ -212,6 +232,23 @@ enabled application resource directories, not the Python environment or fixed
 native installation support. Plain `pip install -e .` remains independent of
 this optional installation workflow.
 
+**Enable the resources your app needs**
+
+A cache-only declaration gives your code a cache directory on demand. Add a
+config directory and user dotenv if people need to save preferences. The
+[capability map](docs/Explanations.md#optional-capabilities) shows how workspaces
+and other resources fit.
+
+```mermaid
+flowchart TD
+    accTitle: Add paths and preferences to a typed AppRC declaration
+    App["AppRC declaration"] --> Settings["Typed settings"]
+    App --> Cache["Paths(cache=True)"]
+    App --> Config["Paths(config=True) + UserDotenv()"]
+    Cache --> Files["Initialize cache when needed"]
+    Config --> Preferences["Save user preferences"]
+```
+
 Applications that need selectable named working directories declare
 `Workspaces()`. A [`WorkspaceManager`](docs/Explanations.md#workspaces) manages
 the registry and archive operations separately from `AppPaths`; selecting a
@@ -260,13 +297,8 @@ Managed installation uses the native setup executable or an explicit
 aliases. Python `ensure_path` and maintenance purge planning remain available
 with their existing [ownership and safety boundaries](docs/Explanations.md#maintenance).
 
-Application uninstall removes the program and its managed data by default.
-Interactive Windows cleanup shows its result in a separate window and waits
-for Enter before closing; the original shell remains usable.
-Use `app uninstall --keep-config` to retain configuration only. Editable
-repositories remain unless explicitly selected with `--remove-repository`;
-the preview separates **Delete** and **Keep**, and terminal paths use cyan.
-See the [removal guide](docs/How-To-User-Guides.md#remove-a-managed-program).
+The [removal guide](docs/How-To-User-Guides.md#remove-a-managed-program)
+covers the uninstall preview, confirmation, and what each option retains.
 
 Passing `launcher_spec` and `launcher_handlers` adds optional root `launch`,
 which opens the existing Textual management launcher. It is separate from a
@@ -292,45 +324,117 @@ If the application declares registry-backed workspaces, provide
 [Gradio guide](docs/How-To-User-Guides.md#add-a-gradio-settings-page) shows the
 integration.
 
-AppRC's optional
-[`apprc.distribution`](docs/References.md#distribution-generation) authoring APIs
-build platform-specific setup executables from complete, prebuilt project
-snapshots. Final artifacts belong in ignored `dist/`; build intermediates stay
-in `.cache/apprc/`, never in application source directories.
+<!-- ====================================================================== -->
+<br>
 
-Native builds can also generate [one-line install scripts (OLIS)](docs/How-To-User-Guides.md#generate-one-line-install-scripts).
-Use `dist build --olis-repo OWNER/REPO` or set `RELEASE_REPO_OLIS` to choose the
-GitHub repository that contains the setup releases. Each OLIS downloads and
-verifies the native setup executable, then runs it.
+# Ship an application
 
-Applications with an opted-in [authoring backend](docs/References.md#distribution-generation)
-provide `dist build` and `dist check` from their editable checkout environment.
-With `AppRCRootGroup`, root help lists `dist` under **AppRC: Commands**.
-Use `-t` for the current native target. The checkout can also hand off
-`app install` to its verified native setup.
+<br>
 
-Managed installations use locked, non-editable runtime slots. Setup can offer a
-desktop shortcut and show an application-defined next step. Setup also supports
-[app-provided icons](docs/References.md#distribution-generation). Editable
-registration can also create a branded desktop shortcut with `--desktop`.
-The stable native command handles installation diagnostics, repair and removal independently of
-the application's environment, and forwards normal commands—including
-`launch`—to the recorded active slot. Run a newer setup executable to update
-a managed installation in place.
+Use the optional [distribution authoring APIs](docs/References.md#distribution-generation)
+to build a release package from a committed, locked project snapshot. The
+application supplies a build backend. Final executables and `SHA256SUMS` go
+in ignored `dist/`. Build intermediates stay in `.cache/apprc/`.
 
-For development, run `<app> app install -e` from the checkout with its `.venv`
-activated. This registers the existing environment and initializes declared
-resources without copying or owning the checkout or environment. Git and uv
-remain responsible for updating it. Editable and managed installs report each
-applicable stage and finish with an explicit result. See the
-[terminal output conventions](docs/Development.md#terminal-output-and-color)
-for maintenance reports and color settings.
-On Windows, native setup publishes the command for the current user and
-reports whether it added the shared executable directory to user PATH.
-Double-clicked setup waits for Enter after showing its result.
-Open a new PowerShell window after a PATH update.
-See the [installation guide](docs/How-To-User-Guides.md#install-from-a-checkout)
-and [native authoring requirements](docs/Development.md#native-application-frontends).
+In an opted-in source checkout, the host command provides `dist build` and
+`dist check`. Installation management also enables `dist test`. Use `-t` with
+build or check for the current platform, and `dist test --managed` for guided
+testing of a release installation.
+With `AppRCRootGroup`, these commands live under **AppRC: Commands**.
+
+Configure [One-line installer (OLI) generation](docs/How-To-User-Guides.md#generate-one-line-install-scripts)
+with `dist build --olis-repo OWNER/REPO` or `RELEASE_REPO_OLIS`. Publish the
+installer executables and checksums as application release assets and host the
+OLI scripts at a trusted URL. An OLI selects an executable from the
+application's latest published GitHub release.
+
+**From a commit to an installed command**
+
+Build from committed source, publish a checksummed setup, and let setup
+prepare the application runtime on the recipient's machine. Follow the
+[release package guide](docs/How-To-User-Guides.md#prepare-a-release-package)
+for build and verification steps.
+
+```mermaid
+flowchart LR
+    accTitle: From committed source to an installed command
+    Source["Git commit + uv.lock"] -->|dist build| Package["Setup executables + SHA256SUMS"]
+    Package -->|Publish| Release["GitHub release"]
+    Release -->|Verify and run setup| Installed["App runtime + installed command"]
+```
+
+See the [authoring requirements](docs/Development.md#native-application-frontends)
+for toolchain prerequisites, application icons, installation messages, and
+[configuring the app's default action](docs/Development.md#choose-a-default-action-for-an-installed-command).
+
+<!-- ====================================================================== -->
+<br>
+
+# Use an installed application
+
+<br>
+
+## Choose an installation route
+
+The application supplies the release assets, command name, and installation
+instructions. Start with the route that matches what you have.
+
+| Route | Where to start | Result |
+| --- | --- | --- |
+| **One-line installer (OLI)** | [Run the app's published command](docs/How-To-User-Guides.md#run-a-published-installer). It downloads, verifies, and launches the released executable. | Release installation |
+| **Released Binary Executable (RBE)** | [Verify and run the binary](docs/How-To-User-Guides.md#run-a-published-installer) from the application's release. | Release installation |
+| **Editable Source Checkout (eSC)** | [Prepare and register a checkout](docs/How-To-User-Guides.md#install-from-a-checkout) with `<app> app install -e` in its environment. | Editable installation |
+| **Source Build (SB)** | [Build or reuse a local executable](docs/How-To-User-Guides.md#install-from-a-source-build) with `<app> app install` in a distribution-enabled checkout. | Release installation |
+
+Installation reports the applicable steps, resolved paths, and final result.
+An application can show a **Next step** after successful setup. On Windows,
+double-clicked setup displays its result before asking you to press Enter.
+
+<br>
+
+## Run the application
+
+Use the published command in a terminal or open an installed shortcut.
+Setup can create a desktop shortcut, and editable registration also accepts
+`<app> app install -e --desktop`. If setup changed user PATH, open a new
+terminal before using the command. A bare command runs the action chosen by
+the application. For example, it may start a local server and open its
+browser UI. See the [launch guide](docs/How-To-User-Guides.md#run-the-installed-application)
+for command publication and shortcuts.
+
+<br>
+
+## Maintain the application
+
+[Run a newer installer](docs/How-To-User-Guides.md#update-an-application) to update
+a release installation. Update a registered checkout using Git and uv.
+Use the [inspection and repair guide](docs/How-To-User-Guides.md#inspect-or-repair-installation)
+to diagnose the saved installation. Review the
+[uninstall preview](docs/How-To-User-Guides.md#remove-a-managed-program)
+before removing the program and its managed resources.
+
+**Update through the same command**
+
+Setup prepares and validates a replacement while the current runtime is still
+selected. On success, the installed command switches to the new runtime and
+keeps the saved resource locations. See the
+[lifecycle diagram and recovery details](docs/Explanations.md#activation-repair-and-rollback).
+
+```mermaid
+sequenceDiagram
+    accTitle: How an update switches the active runtime
+    participant Setup as Newer setup
+    participant Record as Installation record
+    participant Cmd as Installed command
+    Note over Record,Cmd: Runtime A is active
+    Setup->>Setup: Prepare and validate runtime B
+    alt B is valid
+        Setup->>Record: Activate B with the saved resource paths
+        Cmd->>Record: Select runtime B on the next launch
+    else Validation fails
+        Note over Record,Cmd: Runtime A stays selected
+    end
+```
 
 <!-- ====================================================================== -->
 <br>

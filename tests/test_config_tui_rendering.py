@@ -190,10 +190,17 @@ def test_value_modal_rendering_formats_sources_and_metadata() -> None:
 
     assert source_label_text(effective).style == EFFECTIVE_SOURCE_STYLE
     assert source_value_text(access_token, effective).plain == "<secret>"
-    assert (
-        source_value_text(access_token, effective).style
-        == EFFECTIVE_SOURCE_STYLE
+    assert source_value_text(access_token, effective).style == SECRET_STYLE
+    effective_path = EditableConfigValueSource(
+        key="effective",
+        raw_value="/example/[cache]",
+        origin_key="workspace",
     )
+    path_value = source_value_text(
+        WORKSPACE_EXAMPLE_OWNER.field("cache_dir"), effective_path
+    )
+    assert path_value.plain == "/example/[cache]"
+    assert path_value.style == PATH_STYLE
     assert source_value_text(access_token, workspace).plain == "<secret>"
     assert source_value_text(access_token, workspace).style == SECRET_STYLE
     assert source_value_text(mode, shell).plain == "unset"

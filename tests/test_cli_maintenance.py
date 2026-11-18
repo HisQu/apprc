@@ -456,3 +456,63 @@ def test_doctor_does_not_catch_provider_programming_errors(
     result = CliRunner().invoke(app, ["app", "doctor", "--verbose", "--json"])
 
     assert isinstance(result.exception, RuntimeError)
+
+
+def test_cache_preview_and_results_follow_the_output_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_root = tmp_path / "app"
+    cache = app_root / "cache"
+    target = cache / "[entry]"
+    skipped = cache / "in-use"
+
+    def plan(path: Path) -> RemovalPlan:
+        return RemovalPlan("cache", path, (target, skipped), "revision")
+
+    def apply(_plan: RemovalPlan) -> RemovalResult:
+        target.unlink()
+        return RemovalResult(removed=(target,), skipped=(skipped,))
+
+    app, declaration = _app(
+        app_root,
+        handlers=MaintenanceHandlers(
+            cache=CacheOperations(prune=RemovalOperation(plan, apply))
+        ),
+    )
+    declaration.ensure_path("cache")
+    target.write_text("remove")
+    skipped.write_text("keep")
+    runner = CliRunner()
+    command = ["app", "cache", "prune"]
+    stdout = typer.get_text_stream
+
+    def terminal_stream(name):
+        stream = stdout(name)
+        if name == "stdout":
+            monkeypatch.setattr(stream, "isatty", lambda: True)
+        return stream
+
+    redirected = runner.invoke(app, [*command, "--dry-run"], color=True)
+    assert redirected.exit_code == 0, redirected.output
+    expected = json.loads(redirected.stdout)
+    assert expected["plans"][0]["targets"] == [str(target), str(skipped)]
+    monkeypatch.setattr(typer, "get_text_stream", terminal_stream)
+    explicit = runner.invoke(app, [*command, "--dry-run", "--json"], color=True)
+    assert explicit.exit_code == 0 and json.loads(explicit.stdout) == expected
+    assert "\x1b[" not in explicit.stdout
+
+    monkeypatch.setenv("NO_COLOR", "")
+    preview = runner.invoke(app, [*command, "--dry-run"], color=True)
+    assert preview.exit_code == 0, preview.output
+    assert "Cache prune preview" in preview.stdout
+    assert f"Delete {target}" in preview.stdout
+    assert "\x1b[" not in preview.stdout
+    assert target.is_file() and skipped.is_file()
+
+    attempted = runner.invoke(app, [*command, "--yes"], color=True)
+    assert attempted.exit_code == 1, attempted.output
+    assert attempted.stdout.index("Delete") < attempted.stdout.index("Applying")
+    assert f"Removed: {target}" in attempted.stdout
+    assert f"Skipped: {skipped}" in attempted.stdout
+    assert "complete." not in attempted.stdout
+    assert not target.exists() and skipped.is_file()

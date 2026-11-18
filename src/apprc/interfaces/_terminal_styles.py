@@ -1,4 +1,4 @@
-"""Shared Rich text styles for runtime-config terminal output."""
+"""Shared Rich styles for AppRC terminal output."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ STAGE_STYLE = "magenta"
 SUCCESS_STYLE = "green"
 WARNING_STYLE = "yellow"
 ERROR_STYLE = "red"
-EFFECTIVE_SOURCE_STYLE = f"bold {ERROR_STYLE}"
+EFFECTIVE_SOURCE_STYLE = "bold"
 GENERIC_VALUE_STYLE = "dim italic"
 SECRET_STYLE = "dim italic"
 REQUIRED_STYLE = "bold white on red"
@@ -29,6 +29,13 @@ BOOL_STYLE = "bold magenta"
 NUMBER_STYLE = "yellow"
 CHOICE_STYLE = "bold cyan"
 TEXT_STYLE = "white"
+RESULT_STYLES = {
+    "stage": STAGE_STYLE,
+    "success": SUCCESS_STYLE,
+    "warning": WARNING_STYLE,
+    "error": ERROR_STYLE,
+    "detail": LABEL_STYLE,
+}
 
 
 def path_text(path: str | Path) -> Text:

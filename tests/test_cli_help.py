@@ -261,14 +261,14 @@ def test_non_opted_in_typer_keeps_its_normal_help() -> None:
         (False, False, True, False),
         (None, False, False, False),
         (None, False, True, True),
-        (True, True, True, False),
-        (None, True, True, False),
+        (True, "", True, False),
+        (None, "1", True, False),
     ],
 )
 def test_root_help_respects_color_policy(
     monkeypatch: pytest.MonkeyPatch,
     color: bool | None,
-    no_color: bool,
+    no_color: str | bool,
     terminal: bool,
     expected: bool,
 ) -> None:
@@ -277,8 +277,8 @@ def test_root_help_respects_color_policy(
     monkeypatch.setattr(stream, "isatty", lambda: terminal)
     monkeypatch.setattr(typer, "get_text_stream", lambda name: stream)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
-    if no_color:
-        monkeypatch.setenv("NO_COLOR", "1")
+    if isinstance(no_color, str):
+        monkeypatch.setenv("NO_COLOR", no_color)
     else:
         monkeypatch.delenv("NO_COLOR", raising=False)
     result = CliRunner().invoke(_build_app(color=color), ["--help"], color=True)

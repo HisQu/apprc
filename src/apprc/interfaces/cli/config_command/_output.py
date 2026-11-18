@@ -8,11 +8,20 @@ from typing import TypedDict
 
 # == 3rd Party ===============================
 import typer
-from rich.console import Console
 from rich.text import Text
 from rich.tree import Tree
 
 # == Internal ================================
+from apprc.interfaces._terminal_console import cli_console
+from apprc.interfaces._terminal_styles import (
+    ERROR_STYLE,
+    LABEL_STYLE,
+    STAGE_STYLE,
+    SUCCESS_STYLE,
+    label_value_text,
+    path_text,
+    workspace_name_text,
+)
 from apprc.user_files.workspace_roots._io import ordered_workspace_names
 from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 
@@ -75,13 +84,13 @@ def print_workspace_list(payload: WorkspaceListPayload) -> None:
 
     :param payload: Workspace payload from :func:`workspace_list_payload`.
     """
-    console = Console(soft_wrap=True)
+    console = cli_console()
     console.print(_workspace_detail_text("config_file", payload["config_file"]))
     workspaces = payload["workspaces"]
     if not workspaces:
         typer.echo("workspaces: <none>")
         return
-    tree = Tree(Text("workspaces:", style="dim cyan"))
+    tree = Tree(Text("workspaces:", style=STAGE_STYLE))
     for workspace in workspaces:
         branch = tree.add(_workspace_name_text(workspace))
         branch.add(_workspace_detail_text("root", workspace["root"]))
@@ -104,21 +113,21 @@ def print_workspace_list(payload: WorkspaceListPayload) -> None:
 
 def _workspace_detail_text(key: str, value: object) -> Text:
     """Return one colored key/value line for workspace-list output."""
-    return Text.assemble((key, "dim cyan"), ": ", str(value))
+    return label_value_text(key, path_text(str(value)))
 
 
 def _workspace_bool_text(key: str, value: bool) -> Text:
     """Return one colored boolean line for workspace-list output."""
     return Text.assemble(
-        (key, "dim cyan"),
+        (key, LABEL_STYLE),
         ": ",
-        (str(value).lower(), "green" if value else "red"),
+        (str(value).lower(), SUCCESS_STYLE if value else ERROR_STYLE),
     )
 
 
 def _workspace_name_text(workspace: WorkspaceListRowPayload) -> Text:
     """Return a workspace branch label with an active marker."""
-    label = Text(workspace["name"], style="bold")
+    label = workspace_name_text(workspace["name"])
     if workspace["active"]:
-        label.append(" [active]", style="green")
+        label.append(" [active]", style=SUCCESS_STYLE)
     return label

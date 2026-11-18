@@ -8,7 +8,6 @@ import sys
 
 # == 3rd Party ===============================
 import typer
-from rich import print as rich_print
 
 from apprc.interfaces.cli._typer_utils import dump_json
 from apprc.interfaces.cli.config_command._base import ConfigCommandBase
@@ -55,12 +54,37 @@ class RuntimeConfigCommands(ConfigCommandBase):
         if json_output:
             dump_json(payload)
             return
-        rich_print(payload)
+        from apprc.interfaces._terminal_console import cli_console, human_report
+        from apprc.interfaces._terminal_styles import PATH_STYLE
+        from rich.pretty import pretty_repr
+        from rich.text import Text
+
+        console = cli_console(ctx)
+        if self.runtime_payload is not None or not human_report():
+            console.print(Text(pretty_repr(payload, max_width=console.width)))
+            return
+        for label, value in payload.items():
+            style = (
+                PATH_STYLE
+                if isinstance(value, str)
+                and label
+                in {
+                    "config_dir",
+                    "user_dotenv",
+                    "config_file",
+                    "workspace_root",
+                    "workspace_dotenv",
+                }
+                else ""
+            )
+            console.print(Text.assemble(f"{label}: ", (str(value), style)))
 
     def secrets_migrate(
         self, ctx: typer.Context, *, scope: str, assume_yes: bool
     ) -> None:
         """Move secret assignments into a private companion file."""
+        from apprc.interfaces._terminal_console import cli_line
+
         selected = self._secret_scope(scope)
         manager = self.manager(ctx)
         try:
@@ -81,12 +105,14 @@ class RuntimeConfigCommands(ConfigCommandBase):
             manager.apply_secret_migration(plan)
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc), param_hint="--scope") from exc
-        typer.echo("Secret assignments migrated.")
+        cli_line(ctx, "Secret assignments migrated.", style="success")
 
     def secrets_repair(
         self, ctx: typer.Context, *, scope: str, assume_yes: bool
     ) -> None:
         """Repair a reviewed layer directory and companion permission set."""
+        from apprc.interfaces._terminal_console import cli_line
+
         selected = self._secret_scope(scope)
         manager = self.manager(ctx)
         try:
@@ -94,7 +120,11 @@ class RuntimeConfigCommands(ConfigCommandBase):
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc), param_hint="--scope") from exc
         if status.available and status.path.is_file():
-            typer.echo("Secret file permissions are already private.")
+            cli_line(
+                ctx,
+                "Secret file permissions are already private.",
+                style="success",
+            )
             return
         allowed_principals = (
             "this user, SYSTEM, and Administrators"
@@ -119,7 +149,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 result.issue or "Secret file is unavailable.",
                 param_hint="--scope",
             )
-        typer.echo("Secret file permissions repaired.")
+        cli_line(ctx, "Secret file permissions repaired.", style="success")
 
     def _secret_scope(self, scope: str) -> WriteScope:
         """Require one of the layer names declared by this AppRC."""
@@ -145,46 +175,57 @@ class RuntimeConfigCommands(ConfigCommandBase):
             resolved_scope = manager.resolve_write_scope(scope)
             plan = manager.plan_update(key, value, scope=resolved_scope)
             update = self._confirm_and_apply_env_file_edit(
-                plan, manager=manager
+                plan, manager=manager, ctx=ctx
             )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(
                 str(exc), param_hint="--scope / KEY"
             ) from exc
-        typer.echo(f"updated: {update.env_key}")
-        typer.echo(f"{resolved_scope}_dotenv: {update.path}")
-        self._print_post_write_warnings(plan)
+        from apprc.interfaces._terminal_console import cli_line
+
+        cli_line(ctx, f"updated: {update.env_key}", style="success")
+        cli_line(ctx, f"{resolved_scope}_dotenv", path=update.path)
+        self._print_post_write_warnings(plan, ctx=ctx)
 
     @staticmethod
     def _confirm_and_apply_env_file_edit(
         plan: EnvFileEditPlan,
         *,
         manager: ConfigManager,
+        ctx: typer.Context | None = None,
     ) -> EnvFileUpdate:
         """Confirm duplicate cleanup when interactive, then write the edit.
 
         :param plan: Validated dotenv edit to inspect and apply.
         :return: Completed dotenv update.
         """
+        from apprc.interfaces._terminal_console import cli_line
+
         interactive = _is_interactive_terminal()
         if plan.warnings and interactive:
             for warning in plan.warnings:
-                typer.echo(f"Warning: {warning}", err=True)
+                cli_line(
+                    ctx, f"Warning: {warning}", style="warning", error=True
+                )
             if not typer.confirm("Continue with this dotenv edit?"):
                 typer.echo("Aborted.")
                 raise typer.Exit(code=1)
         return manager.apply_edit(plan)
 
     @staticmethod
-    def _print_post_write_warnings(plan: EnvFileEditPlan) -> None:
+    def _print_post_write_warnings(
+        plan: EnvFileEditPlan, *, ctx: typer.Context | None = None
+    ) -> None:
         """Print warnings after a non-interactive dotenv write.
 
         :param plan: Applied edit whose warnings may need output.
         """
+        from apprc.interfaces._terminal_console import cli_line
+
         if _is_interactive_terminal():
             return
         for warning in plan.warnings:
-            typer.echo(f"Warning: {warning}", err=True)
+            cli_line(ctx, f"Warning: {warning}", style="warning", error=True)
 
 
 def _is_interactive_terminal() -> bool:

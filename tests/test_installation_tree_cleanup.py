@@ -630,18 +630,19 @@ def test_staged_results_keep_colors_without_application_package(tmp_path):
         _stage_repository_finalizer,
     )
 
+    from apprc.interfaces._terminal_console import color_environment
+
     staging = tmp_path / "staging"
     staging.mkdir(mode=0o700)
     _stage_repository_finalizer(staging)
-    environment = dict(os.environ)
+    environment = color_environment(os.environ, True)
     environment.pop("NO_COLOR", None)
-    environment["FORCE_COLOR"] = "1"
     environment["TERM"] = "xterm"
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            f"import sys, shutil; sys.path.insert(0, {str(staging)!r}); sys.modules['apprc'] = None; import _uninstall_terminal; shutil.rmtree({str(staging)!r}); _uninstall_terminal.result_line('Retained configuration', '/example/[settings]')",
+            f"import sys, shutil; sys.path.insert(0, {str(staging)!r}); sys.modules['apprc'] = None; import _uninstall_terminal; shutil.rmtree({str(staging)!r}); _uninstall_terminal.result_line('Uninstall completed.', style='success'); _uninstall_terminal.result_line('Retained configuration', '/example/[settings]'); _uninstall_terminal.result_line('Temporary cleanup failed.', style='warning')",
         ],
         cwd=tmp_path,
         env=environment,
@@ -650,5 +651,7 @@ def test_staged_results_keep_colors_without_application_package(tmp_path):
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+    assert "\x1b[32mUninstall completed." in result.stderr
     assert "\x1b[36m" in result.stderr
+    assert "\x1b[33mTemporary cleanup failed." in result.stderr
     assert "/example/[settings]" in result.stderr

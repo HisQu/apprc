@@ -334,3 +334,21 @@ def test_optional_setup_offers_and_saves_missing_required_secret(
     assert manager.inspect().fields[0].value == (
         "saved-secret" if accept else None
     )
+
+
+def test_setup_completion_and_known_paths_use_semantic_colors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    app_rc = _app(tmp_path)
+    app = typer.Typer(context_settings={"color": True})
+    mount_app_cli(app, app_rc)
+    result = CliRunner().invoke(app, ["config", "setup", "--yes"], color=True)
+    assert result.exit_code == 0, result.output
+    assert (
+        "\x1b[32m" in result.stdout and "AppRC setup complete." in result.stdout
+    )
+    assert (
+        f"\x1b[36m{app_rc.paths(environment={}).require('config')}"
+        in result.stdout
+    )

@@ -1,6 +1,9 @@
 """Uninstall terminal acknowledgement keeps unattended invocations bounded."""
 
 import io
+import os
+
+import pytest
 from types import SimpleNamespace
 
 from apprc.distribution.runtime import _uninstall_terminal as terminal
@@ -30,8 +33,16 @@ def test_acknowledgement_does_not_read_redirected_input(monkeypatch):
     terminal.acknowledge()
 
 
-def test_result_path_is_literal_and_no_color(monkeypatch, capsys, tmp_path):
-    monkeypatch.setenv("NO_COLOR", "1")
+@pytest.mark.parametrize("no_color", ["", "1"])
+def test_result_path_is_literal_and_no_color(
+    monkeypatch, capsys, tmp_path, no_color
+):
+    from apprc.interfaces._terminal_console import color_environment
+
+    for key, value in color_environment(os.environ, True).items():
+        if os.environ.get(key) != value:
+            monkeypatch.setenv(key, value)
+    monkeypatch.setenv("NO_COLOR", no_color)
     path = tmp_path / "[red]settings"
     terminal.result_line("Retained configuration", path)
     result = capsys.readouterr().err

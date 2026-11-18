@@ -631,6 +631,8 @@ def execute_handoff(
         )
     assert_no_links(recovery)
     inspection = inspect_installation(directory, app_id=value["app_id"])
+    from apprc.distribution.runtime._uninstall_terminal import result_line
+
     completion = [False]
     if inspection.record is None:
         try:
@@ -644,15 +646,13 @@ def execute_handoff(
                 completion=completion,
             )
         except BaseException as error:
-            print(
-                f"Uninstall finalization failed: {error}",
-                file=sys.stderr,
-                flush=True,
+            result_line(
+                f"Uninstall finalization failed: {error}", style="error"
             )
             raise
         else:
             if _REPOSITORY_FINALIZER is None:
-                print("Uninstall completed.", file=sys.stderr, flush=True)
+                result_line("Uninstall completed.", style="success")
         finally:
             if (
                 value["wait"]
@@ -677,27 +677,21 @@ def execute_handoff(
             plan_file, value, recovery, pending, completion=completion
         )
     except BaseException as error:
-        print(
-            str(error)
-            if isinstance(error, _CommittedFinalizationError)
-            else f"Uninstall failed: {error}",
-            file=sys.stderr,
-            flush=True,
+        committed = isinstance(error, _CommittedFinalizationError)
+        result_line(
+            str(error) if committed else f"Uninstall failed: {error}",
+            style="warning" if committed else "error",
         )
         raise
     else:
         if _REPOSITORY_FINALIZER is None:
-            print("Uninstall completed.", file=sys.stderr, flush=True)
+            result_line("Uninstall completed.", style="success")
         for entry in (
             ()
             if _REPOSITORY_FINALIZER is not None
             else pending.plan.inventory.retained
         ):
-            print(
-                f"Retained configuration: {entry.path}",
-                file=sys.stderr,
-                flush=True,
-            )
+            result_line("Retained configuration", entry.path)
     finally:
         if value["wait"] and completion[0] and _REPOSITORY_FINALIZER is None:
             from apprc.distribution.runtime._uninstall_terminal import (
@@ -1578,13 +1572,12 @@ def _stage_repository_finalizer(staging: Path) -> Path:
             elif resource.is_file():
                 write_bytes_atomic(target, resource.read_bytes(), private=True)
 
-    write_bytes_atomic(
-        staging / "_terminal_styles.py",
-        resources.files("apprc.interfaces")
-        .joinpath("_terminal_styles.py")
-        .read_bytes(),
-        private=True,
-    )
+    for name in ("_terminal_styles.py", "_terminal_console.py"):
+        write_bytes_atomic(
+            staging / name,
+            resources.files("apprc.interfaces").joinpath(name).read_bytes(),
+            private=True,
+        )
     copy_dependency(resources.files(filelock), staging / "filelock")
     return leaf
 

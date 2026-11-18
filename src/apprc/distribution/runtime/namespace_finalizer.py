@@ -190,13 +190,14 @@ def main() -> None:
                 )
         if external:
             assert terminal is not None
-            terminal.result_line("Uninstall completed.")
+            terminal.result_line("Uninstall completed.", style="success")
             for path in arguments.retained_config:
                 terminal.result_line("Retained configuration", Path(path))
     except (OSError, ValueError) as error:
         if terminal is not None:
             terminal.result_line(
-                f"Uninstall committed; finalization incomplete: {error}"
+                f"Uninstall committed; finalization incomplete: {error}",
+                style="warning",
             )
         raise
     finally:
@@ -392,6 +393,7 @@ def cleanup_staging(staging: Path) -> None:
         terminal.result_line(
             f"Warning: uninstall completed, but temporary cleanup failed ({error})",
             staging,
+            style="warning",
         )
 
 

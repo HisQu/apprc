@@ -871,14 +871,12 @@ def start_uninstall_handoff(
     temp_parent = Path(tempfile.gettempdir()).resolve(strict=True)
     _handoff.assert_outside_removal(temp_parent, removal_roots)
     assert_no_links(temp_parent)
-    environment = dict(os.environ)
+    from apprc.interfaces._terminal_console import color_environment
+
+    environment = color_environment(os.environ, color)
     environment.pop("_APPRC_UNINSTALL_RESULT_WINDOW", None)
     if result_window:
         environment["_APPRC_UNINSTALL_RESULT_WINDOW"] = "1"
-    if color is False:
-        environment["NO_COLOR"] = "1"
-    elif color is True and "NO_COLOR" not in environment:
-        environment["FORCE_COLOR"] = "1"
     invocation_cwd = Path.cwd()
     for key in (
         "UV_CACHE_DIR",

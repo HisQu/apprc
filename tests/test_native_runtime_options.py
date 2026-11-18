@@ -55,3 +55,28 @@ def test_placement_capture_masks_disabled_paths_and_subordinate_logs(
     assert placement.appdata_dir is None
     assert placement.state_dir is None
     assert placement.logs_dir is None
+
+
+def test_native_install_reports_rollback_after_live_progress(
+    tmp_path, monkeypatch, capsys
+):
+    from types import SimpleNamespace
+
+    from apprc.distribution.runtime import _manager
+    from apprc.distribution.runtime._install_progress import report
+
+    def fail(*args):
+        assert "1. Preparing Runtime" in capsys.readouterr().out
+        report("result", "Installed runtime", "VALIDATED")
+        error = OSError("Command is in use")
+        error.add_note("AppRC installation changes were rolled back.")
+        raise error
+
+    monkeypatch.setattr(_manager, "_install_managed", fail)
+    binding = SimpleNamespace(display_name="Example")
+    assert _manager._install(binding, None, tmp_path / "manager", ()) == 1
+    captured = capsys.readouterr()
+    assert "VALIDATED" in captured.out
+    assert "installation complete" not in captured.out
+    assert "Installation failed: Command is in use" in captured.err
+    assert "installation changes were rolled back" in captured.err

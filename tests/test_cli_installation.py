@@ -774,11 +774,13 @@ def test_editable_install_reports_rollback_notes_and_guidance_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from apprc.distribution.runtime import installation
+    from apprc.distribution.runtime._install_progress import report
 
     _context, commands = _pending_editable_context(tmp_path, monkeypatch)
     outcome = "AppRC installation changes were rolled back."
 
     def fail_registration(*args, **kwargs):
+        report("result", "Global command", "PUBLISHED", commands / "fixture")
         error = ValueError("controlled publication failure")
         error.add_note(outcome)
         raise error
@@ -789,6 +791,8 @@ def test_editable_install_reports_rollback_notes_and_guidance_once(
     args = ["app", "install", "-e", "--command-directory", str(commands)]
     result = CliRunner().invoke(_app(args=args), args, terminal_width=1000)
     assert result.exit_code == 2, result.output
+    assert "PUBLISHED" in result.output
+    assert "installation complete" not in result.output
     error = (
         result.exception.__context__ if result.exception is not None else None
     )
@@ -838,8 +842,8 @@ def test_editable_install_reports_outcome(tmp_path, monkeypatch, setup_fails):
     args = ["app", "install", "-e"]
     result = CliRunner().invoke(_app(args=args), args, terminal_width=1000)
     assert result.exit_code == (1 if setup_fails else 0), result.output
-    assert str(command) in result.output
-    assert str(intended.runtime.project) in result.output
+    assert "1. Reusing Runtime" in result.output
+    assert result.output.rstrip().endswith("editable installation complete.")
     if setup_fails:
         assert "config setup failed" in result.output
 
@@ -993,11 +997,12 @@ def test_uninstall_tree_separates_retained_paths_and_integrations(
     "color,no_color,expected",
     [(True, False, True), (False, False, False), (True, True, False)],
 )
-def test_installation_path_output_honors_color_policy(
+def test_installation_progress_honors_color_policy(
     monkeypatch, color, no_color, expected
 ):
+    from apprc.distribution.runtime._install_progress import InstallProgress
     from apprc.interfaces.cli._installation_output import (
-        print_installation_path,
+        InstallationProgressOutput,
     )
 
     if no_color:
@@ -1009,12 +1014,20 @@ def test_installation_path_output_honors_color_policy(
     @app.command()
     def show(ctx: typer.Context):
         ctx.color = color
-        print_installation_path(ctx, "Path", Path("/example/[literal]"))
+        output = InstallationProgressOutput(ctx, "Example", "managed")
+        output(InstallProgress("stage", "Preparing Runtime"))
+        output(
+            InstallProgress(
+                "result", "Environment", "CREATED", Path("/example/[literal]")
+            )
+        )
+        output.complete()
 
     result = CliRunner().invoke(app, [], color=color)
     assert result.exit_code == 0, result.output
     assert "/example/[literal]" in result.output
-    assert ("\x1b[36m" in result.output) is expected
+    for code in (32, 35, 36):
+        assert (f"\x1b[{code}m" in result.output) is expected
 
 
 def test_uninstall_path_tree_shares_windows_parents_and_preserves_unc():

@@ -232,14 +232,35 @@ Check diagnostic content independently of ANSI styling and terminal line
 wrapping; exercise colored output as well as plain output. Reproduce CI's
 terminal settings locally before changing a message or retrying a failed job.
 
-### Terminal paths and color
+### Terminal output and color
 
-Known filesystem paths in AppRC human-facing terminal output use the shared cyan
-path style from `apprc.interfaces._terminal_styles`. Build styled output from
-structured paths; do not guess paths inside arbitrary exception messages.
-Respect terminal detection, Click's explicit color setting, and `NO_COLOR`.
-JSON, logs, and plain fallbacks contain no styling. Apply this policy to install
-and uninstall prompts, previews, completion messages, and recovery guidance.
+Announce each stage of a multi-step operation before its work starts. Use
+numbered action headings such as `1. Preparing Runtime`. Number only the stages
+that run. Print aligned status labels and useful paths as results become known.
+For example, a managed install shows dependency synchronization, and editable
+registration shows the checkout and environment it reused. Omit inapplicable
+results. Use a distinct layout for help, diagnostics, and previews.
+
+| Element | Style |
+| --- | --- |
+| AppRC operation headings | Magenta |
+| Known filesystem paths | Cyan |
+| Confirmed results and overall success | Green |
+| Warnings and actions needed | Yellow |
+| Failures and destructive actions | Red |
+| Secondary labels and relevant skips | Dim |
+
+Use the shared styles and structured path formatter in
+`apprc.interfaces._terminal_styles`. Avoid guessing paths inside arbitrary
+exception messages. Keep every message understandable in plain text and respect
+terminal detection, Click's explicit color setting, and `NO_COLOR`. JSON, logs,
+and plain fallbacks contain no styling. Keep progress out of machine-readable
+output.
+
+A step's status describes its result at that point. Print overall success only
+after the operation succeeds. Report confirmed rollback or recovery guidance
+on failure. Show warnings for optional work that failed after the operation
+succeeded.
 
 The uninstall preview groups paths under shared filesystem parents, with **Delete** or **Keep**
 labels on each target. Unmarked parents provide context only. It lists paths for owned resources, installation files, commands, shortcuts

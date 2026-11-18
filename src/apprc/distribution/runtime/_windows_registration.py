@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 from apprc.definition.installation import InstallationInspection, OwnedOutput
+from apprc.distribution.runtime._install_progress import report, warn
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
@@ -169,6 +170,7 @@ def publish_registration(
     """
     if os.name != "nt":
         return inspection
+    report("stage", "Registering with Windows")
     try:
         import winreg
 
@@ -195,6 +197,7 @@ def publish_registration(
                 None,
             )
             old = dict(previous.values) if previous is not None else {}
+            status = "UPDATED"
             try:
                 with winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
@@ -225,6 +228,7 @@ def publish_registration(
                     old = {name: value for name, (value, _) in actual.items()}
             except FileNotFoundError:
                 old = {}
+                status = "REGISTERED"
             desired = {
                 "DisplayName": record.identity.app_id,
                 "DisplayVersion": version,
@@ -256,10 +260,13 @@ def publish_registration(
                 os.replace(temporary, path)
             finally:
                 Path(temporary).unlink(missing_ok=True)
-            return recover_registration(inspection)
+            result = recover_registration(inspection)
+            report("result", "Windows Installed apps", status)
+            return result
     except Exception as error:
-        LOG.warning(
-            "Windows Installed apps information was not updated; application installation succeeded: %s",
+        warn(
+            LOG,
+            "Windows Installed apps information was not updated; application installation succeeded",
             error,
         )
         return inspection

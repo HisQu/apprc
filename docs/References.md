@@ -403,10 +403,6 @@ interaction with `--yes`. Ordinary `config setup` keeps explicit initialization
 and prompting. Native setup installs its embedded
 release; updates use newer setup, not `--main`, `--version` or wheel/index input.
 
-<br>
-
-# Value sources and files
-
 ### Guided installation validation
 
 Opted-in editable checkouts also expose `dist test`. The runner uses the
@@ -444,6 +440,9 @@ The maintained synthetic A/B fixture additionally checks that version B's
 installed application prints `Updated version! Uninstall me when finished!`.
 The fixture marker belongs exclusively to test code.
 
+<br>
+
+# Value sources and files
 
 ## Source precedence
 

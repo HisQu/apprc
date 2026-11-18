@@ -33,6 +33,7 @@ from apprc.interfaces.cli._typer_utils import (
 from apprc.interfaces.cli.context import (
     APPRC_CONTEXT_META_KEY,
     CliRuntimeContext,
+    CliRuntimeOptions,
     CliRuntimeOptionsProtocol,
     InstallationCommandContext,
     installation_command_context_from,
@@ -470,6 +471,13 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 callback is not None
                 and inspect.unwrap(callback) is distribution_group
             ):
+                parsed = CliRuntimeOptions.from_options(options)
+                ctx.meta["apprc.distribution.runtime_options"] = replace(
+                    parsed,
+                    env_files=tuple(
+                        path.absolute() for path in parsed.env_files
+                    ),
+                )
                 return CliRuntimeSession(apprc_context=None)
         if ctx.resilient_parsing:
             context = self._installation_context(ctx, options)

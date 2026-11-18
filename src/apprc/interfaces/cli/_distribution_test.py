@@ -27,6 +27,7 @@ from apprc.definition.installation import (
     InstallationRecord,
     RuntimeSlot,
 )
+from apprc.definition.resolution import CliRuntimeOptions, ResolveOptions
 from apprc.distribution.frontends import _check_old_setup, _inspect_native_setup
 from apprc.distribution.runtime._os_integration import (
     capture_windows_registration,
@@ -41,6 +42,7 @@ from apprc.interfaces.cli._distribution_command import (
     _revision,
     _targets,
 )
+from apprc.interfaces.cli.context import cli_runtime_options_to_args
 from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
@@ -195,9 +197,10 @@ def _uninstall(
     root: Path,
     environment: dict[str, str],
     report: dict[str, object],
+    root_arguments: tuple[str, ...] = (),
 ) -> InstallationInspection:
     """Use normal uninstall and retain private recovery files on an incomplete run."""
-    if expected.record is None:
+    if expected.record is None or expected.revision is None:
         raise InstallationError(
             "Uninstall requires the previously verified authority."
         )
@@ -228,10 +231,11 @@ def _uninstall(
     if assume_yes:
         flags.append("--yes")
     _run(
-        [str(command), group, "uninstall", *flags],
+        [str(command), *root_arguments, group, "uninstall", *flags],
         cwd=root,
         environment={
             **environment,
+            "_APPRC_DIST_TEST_UNINSTALL_REVISION": expected.revision,
             **dict.fromkeys(("TMPDIR", "TMP", "TEMP"), str(parent)),
         },
     )
@@ -253,6 +257,7 @@ def _verify_runtime(
     prefix: Path,
     binding: NativeBinding | None,
     environment: dict[str, str],
+    root_arguments: tuple[str, ...] = (),
 ) -> InstallationInspection:
     """Check saved runtime, the published command, and its diagnostics."""
     inspection = manager.inspect()
@@ -295,7 +300,7 @@ def _verify_runtime(
         )
     doctor = json.loads(
         _run(
-            [str(publication), group, "doctor", "--json"],
+            [str(publication), *root_arguments, group, "doctor", "--json"],
             cwd=root.parent,
             environment=shell_environment,
             capture=True,
@@ -328,6 +333,11 @@ def _check_setup_pair(
         targets=(target,),
     )
     binding = _inspect_native_setup(setup, app_id=app_id, target=target)
+    for path in (setup,) if older is None else (setup, older):
+        if not os.access(path, os.X_OK):
+            raise InstallationError(
+                f"Setup is not executable: {path}. Grant execute permission before testing."
+            )
     if older is None:
         return ((setup, binding),)
     older = older.absolute()
@@ -358,6 +368,12 @@ def run_distribution_test(
     root = authoring.root
     prefix = Path(sys.prefix).resolve(strict=True)
     environment = dict(os.environ)
+    options = ctx.meta.get(
+        "apprc.distribution.runtime_options", CliRuntimeOptions()
+    )
+    if not isinstance(options, CliRuntimeOptions):
+        raise InstallationError("Distribution runtime options are unavailable.")
+    root_arguments = tuple(cli_runtime_options_to_args(options))
     manager = apprc.installation(environment=environment)
     report_dir = root / ".cache" / "apprc" / "dist-test"
     assert_no_links(report_dir)
@@ -421,7 +437,16 @@ def run_distribution_test(
             raise InstallationError(
                 "Resolve the pending installation before running the test."
             )
-        paths = apprc.paths(environment=environment)
+        paths = apprc.paths(
+            ResolveOptions(
+                env_files=options.env_files,
+                env_file_overrides_os_environ=options.env_file_overrides_os_environ,
+                load_dotenv_layers=options.load_dotenv_layers,
+                workspace=options.workspace,
+                layout=options.layout,
+            ),
+            environment=environment,
+        )
         placement = InstallationPlacement.from_paths(paths, apprc.schema.paths)
         resource_paths = tuple(path for _, path in resource_roots(placement))
         _protected_paths(resource_paths, (root, prefix))
@@ -467,6 +492,7 @@ def run_distribution_test(
                 root=root,
                 environment=environment,
                 report=report,
+                root_arguments=root_arguments,
             )
             retained = tuple(path for path in config_roots if path.exists())
             report["retained_config_count"] = len(retained)
@@ -499,7 +525,9 @@ def run_distribution_test(
                 [group, "install", "-e", *flags] if binding is None else flags
             )
             _run(
-                [str(executable), *arguments], cwd=root, environment=environment
+                [str(executable), *root_arguments, *arguments],
+                cwd=root,
+                environment=environment,
             )
             current = _verify_runtime(
                 manager,
@@ -509,6 +537,7 @@ def run_distribution_test(
                 prefix=prefix,
                 binding=binding,
                 environment=environment,
+                root_arguments=root_arguments,
             )
             active = current.record.active_runtime if current.record else None
             if len(setups) == 2:
@@ -561,7 +590,7 @@ def run_distribution_test(
                 "not verified" if choice == "skip" else choice
             )
         _uninstall(
-            publication,
+            checkout_command,
             group,
             manager,
             inspections[-1],
@@ -572,6 +601,7 @@ def run_distribution_test(
             root=root,
             environment=environment,
             report=report,
+            root_arguments=root_arguments,
         )
         if not checkout_command.is_file() or any(
             not path.exists() for path in retained

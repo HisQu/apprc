@@ -429,6 +429,16 @@ def mount_installation_group(
         try:
             command_context = _inspection(ctx)
             inspection = command_context.inspection
+            expected_revision = command_context.environment.get(
+                "_APPRC_DIST_TEST_UNINSTALL_REVISION"
+            )
+            if (
+                expected_revision is not None
+                and inspection.revision != expected_revision
+            ):
+                raise typer.BadParameter(
+                    "Installation changed since the guided test accepted its authority."
+                )
             directory = inspection.directory
             record = inspection.record
             if (
@@ -468,6 +478,13 @@ def mount_installation_group(
                 )
             except (OSError, ValueError) as exc:
                 raise typer.BadParameter(str(exc)) from exc
+            if (
+                expected_revision is not None
+                and preparation.inspection.revision != expected_revision
+            ):
+                raise typer.BadParameter(
+                    "Installation changed before the guided uninstall preview."
+                )
             payload = _preparation_payload(preparation)
             if json_output:
                 _emit(payload, True)

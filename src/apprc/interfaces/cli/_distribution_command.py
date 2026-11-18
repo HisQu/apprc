@@ -329,9 +329,15 @@ def build_authoring_group(
             raise typer.BadParameter(
                 "--editable cannot be combined with --managed or --update-from."
             )
-        from apprc.interfaces.cli._distribution_test import (
-            run_distribution_test,
-        )
+        try:
+            from apprc.interfaces.cli._distribution_test import (
+                run_distribution_test,
+            )
+        except ImportError as exc:
+            raise ClickException(
+                f"Cannot load guided distribution testing: {exc}.\n"
+                "Set up this checkout with `uv sync --locked --all-groups`."
+            ) from exc
 
         command = apprc.schema.command_name
         assert command is not None

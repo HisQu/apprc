@@ -282,3 +282,196 @@ def test_retained_config_is_rechecked_against_final_uninstall_preview(
             report={},
         )
     execute.assert_not_called()
+
+
+@pytest.mark.parametrize("changed_at", ["initial", "preview"])
+def test_guided_uninstall_child_rejects_changed_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed_at: str
+) -> None:
+    from typer.testing import CliRunner
+
+    from apprc.definition.resolution import CliRuntimeOptions
+    from apprc.distribution.runtime import _uninstall_controller as controller
+    from apprc.interfaces.cli import installation_command
+    from apprc.interfaces.cli.context import InstallationCommandContext
+
+    manager = _manager(tmp_path)
+    record = installation_record()
+    expected = InstallationInspection(
+        "removed-retained",
+        manager.directory,
+        "accepted",
+        manager.spec.app_id,
+        record,
+    )
+    current = (
+        replace(expected, revision="changed")
+        if changed_at == "initial"
+        else expected
+    )
+    context = InstallationCommandContext(
+        CliRuntimeOptions(),
+        CliRuntimeOptions(),
+        {"_APPRC_DIST_TEST_UNINSTALL_REVISION": "accepted"},
+        current,
+        manager,
+    )
+    monkeypatch.setattr(
+        installation_command, "_inspection", lambda ctx: context
+    )
+    preview = Mock(
+        return_value=UninstallPreparation(
+            None, replace(expected, revision="changed"), (), (), False
+        )
+    )
+    launch = Mock(
+        side_effect=AssertionError("changed authority must not be removed")
+    )
+    monkeypatch.setattr(controller, "prepare_uninstall", preview)
+    monkeypatch.setattr(controller, "start_uninstall_handoff", launch)
+    app = typer.Typer()
+    installation_command.mount_installation_group(
+        app, installation_management=True
+    )
+
+    result = CliRunner().invoke(app, ["uninstall", "--yes"])
+    assert result.exit_code != 0
+    assert "Installation changed" in result.output
+    launch.assert_not_called()
+    assert preview.call_count == (0 if changed_at == "initial" else 1)
+
+
+def test_uninstall_child_carries_accepted_revision_and_root_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = _manager(tmp_path)
+    record = installation_record()
+    expected = InstallationInspection(
+        "removed-retained",
+        manager.directory,
+        "accepted",
+        manager.spec.app_id,
+        record,
+    )
+    plan = UninstallPlan(
+        manager.directory,
+        "accepted",
+        record.generation_id,
+        record.identity.app_id,
+        uuid4(),
+        record.placement,
+        CleanupInventory(),
+    )
+    monkeypatch.setattr(
+        guide,
+        "prepare_uninstall",
+        lambda *args, **kwargs: UninstallPreparation(
+            plan, expected, (), (), True
+        ),
+    )
+    monkeypatch.setattr(guide, "_await_uninstall", lambda *args: expected)
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def execute(
+        command: list[str], *, cwd: Path, environment: dict[str, str]
+    ) -> str:
+        calls.append((command, environment))
+        return ""
+
+    monkeypatch.setattr(guide, "_run", execute)
+    guide._uninstall(
+        tmp_path / "checkout-command",
+        "app",
+        manager,
+        expected,
+        tmp_path / "published",
+        (),
+        keep_config=True,
+        assume_yes=True,
+        root=tmp_path,
+        environment={},
+        report={},
+        root_arguments=(
+            "--layout",
+            "single-root",
+            "--app-root",
+            str(tmp_path / "resources"),
+        ),
+    )
+    ((command, environment),) = calls
+    assert command == [
+        str(tmp_path / "checkout-command"),
+        "--layout",
+        "single-root",
+        "--app-root",
+        str(tmp_path / "resources"),
+        "app",
+        "uninstall",
+        "--keep-config",
+        "--yes",
+    ]
+    assert environment["_APPRC_DIST_TEST_UNINSTALL_REVISION"] == "accepted"
+
+
+def test_distribution_capture_keeps_selectors_without_resolving_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.main import get_command
+
+    from apprc.cli import CliRuntime
+    from apprc.definition.paths import Layout
+    from apprc.definition.resolution import CliRuntimeOptions
+    from apprc.interfaces.cli._distribution_command import build_authoring_group
+
+    app_rc = AppRC(
+        app_id="coordination-fixture", command_name="coordination-fixture"
+    )
+    app = typer.Typer()
+    app.add_typer(
+        build_authoring_group(
+            CheckoutAuthoring(tmp_path, "unused"),
+            app_rc,
+            "app",
+            installation_management=True,
+        ),
+        name="dist",
+    )
+    runtime = CliRuntime(app_rc)
+    command = get_command(app)
+    ctx = typer.Context(command)
+    ctx.invoked_subcommand = "dist"
+    monkeypatch.chdir(tmp_path)
+    layout = Layout.single_root(tmp_path / "resources")
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "Capturing authoring selectors must not resolve resources"
+        )
+
+    monkeypatch.setattr(app_rc, "paths", forbidden)
+    runtime.prepare(
+        ctx,
+        CliRuntimeOptions(env_files=(Path("selection.env"),), layout=layout),
+    )
+    captured = ctx.meta["apprc.distribution.runtime_options"]
+    assert isinstance(captured, CliRuntimeOptions)
+    assert captured.env_files == (tmp_path / "selection.env",)
+    assert captured.layout == layout
+
+
+def test_nonexecutable_setup_is_rejected_during_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup = tmp_path / "setup"
+    monkeypatch.setattr(
+        guide, "_targets", lambda **kwargs: ("x86_64-unknown-linux-gnu",)
+    )
+    monkeypatch.setattr(guide, "_check", lambda *args, **kwargs: (setup,))
+    monkeypatch.setattr(guide, "_inspect_native_setup", Mock())
+    monkeypatch.setattr(CheckoutAuthoring, "backend", Mock())
+    monkeypatch.setattr(guide.os, "access", lambda *args: False)
+
+    with pytest.raises(InstallationError, match="not executable"):
+        guide._check_setup_pair(
+            CheckoutAuthoring(tmp_path, "unused"), "fixture", "a" * 40, None
+        )

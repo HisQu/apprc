@@ -257,7 +257,33 @@ runtime overrides, compile private dependency wheels or maintain a wheelhouse.
 | `inspect_capabilities(apprc)` | Declared filesystem capabilities without resolving business settings. |
 | `build_project_snapshot(spec, *, revision, destination, prepare=None)` | `PreparedProject(archive, source)` from one committed Git tree and optional authored preparation of its private staging copy. |
 | `build_native_distribution(spec, project, *, uv, workspace, targets=..., extras=(), environment=None)` | Native setup artifacts and their checksum file. |
+| `check_native_distribution(root, *, app_id, targets, revision)` | Check the integrity of the published set and the completeness and committed revision of the requested targets. Returns the verified setup paths in target order. |
 | `NativeFrontendBuilder.build(*, target, destination, runtime_archive, entrypoint)` | Compile the verified ordinary-module archive without executing the produced binary. |
+
+To mount the developer commands, opt in from the editable project's
+`pyproject.toml`:
+
+```toml
+[tool.apprc.distribution.authoring]
+backend = "myapp_distr.commands"
+```
+
+The importable backend module provides `build(root, *, revision, targets)`
+and `check(root, *, revision, targets)`. `root` is the verified editable project
+directory, `revision` is the full Git commit, and `targets` is a tuple of
+`NativeTarget` values. `build` publishes the selected setups and returns
+`None`. `check` returns the verified setup paths and should use
+`check_native_distribution()`. Its `MissingNativeArtifact` and
+`StaleNativeArtifact` errors allow a rebuild. Integrity failures stop the command
+and leave the existing files available for investigation.
+
+`dist build` and `dist check` require the Linux and Windows x86-64 setups by
+default. `--target-current/-t` selects the current native platform for
+completeness and freshness. Both modes check the integrity of all published
+setups. Managed installations and regular wheel installs do not mount `dist`.
+In an opted-in checkout with installation management, `app install` uses a
+verified current-platform setup and can offer to build a missing or stale one.
+An explicit `installer_entrypoint` continues to take precedence.
 
 Snapshot preparation retains the complete workspace, local member source,
 `pyproject.toml`, `uv.lock` and build inputs. uv selects the installed package and

@@ -48,6 +48,22 @@ def _git(root: Path, *arguments: str) -> bytes:
     return result.stdout
 
 
+def _resolve_revision(root: Path, revision: str) -> str:
+    """Resolve a local Git commit to the immutable snapshot identifier."""
+    commit = (
+        _git(root, "rev-parse", "--verify", f"{revision}^{{commit}}")
+        .decode()
+        .strip()
+    )
+    if len(commit) != 40 or any(
+        char not in "0123456789abcdef" for char in commit
+    ):
+        raise ValueError(
+            "Git did not resolve the revision to a full commit ID."
+        )
+    return commit
+
+
 def _validate_workspace(tree: Path) -> None:
     """Validate every workspace member and local source against the full tree."""
     tree_root = tree.resolve()
@@ -360,17 +376,7 @@ def build_project_snapshot(
     assert_no_links(destination)
     if destination.exists():
         raise FileExistsError(destination)
-    commit = (
-        _git(repository, "rev-parse", "--verify", f"{revision}^{{commit}}")
-        .decode()
-        .strip()
-    )
-    if len(commit) != 40 or any(
-        char not in "0123456789abcdef" for char in commit
-    ):
-        raise ValueError(
-            "Git did not resolve the revision to a full commit ID."
-        )
+    commit = _resolve_revision(repository, revision)
     tar_bytes = _git(repository, "archive", "--format=tar", commit)
     destination.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(

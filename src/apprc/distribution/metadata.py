@@ -137,6 +137,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "maintenance-group-name",
         "launch-enabled",
         "hooks",
+        "authoring",
         "config",
         "appdata",
         "cache",
@@ -149,6 +150,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         raise ValueError("Unknown tool.apprc.distribution setting.")
     string_keys = allowed - {
         "hooks",
+        "authoring",
         "launch-enabled",
         "config",
         "appdata",

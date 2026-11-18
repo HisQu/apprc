@@ -431,7 +431,7 @@ def test_native_cli_migrate_resumes_exact_pending_inventory_and_hook(
 def test_editable_file_url_decodes_localhost_and_escaped_path(
     tmp_path: Path,
 ) -> None:
-    from apprc.interfaces.cli.installation_command import _editable_source_path
+    from apprc.interfaces.cli._editable_checkout import _editable_source_path
 
     source = tmp_path / "checkout with spaces"
     assert _editable_source_path(source.as_uri()) == source
@@ -450,7 +450,7 @@ def test_editable_file_url_decodes_localhost_and_escaped_path(
     ],
 )
 def test_editable_source_url_rejects_ambiguous_sources(url: str) -> None:
-    from apprc.interfaces.cli.installation_command import _editable_source_path
+    from apprc.interfaces.cli._editable_checkout import _editable_source_path
 
     with pytest.raises(ValueError, match="file URL"):
         _editable_source_path(url)
@@ -459,7 +459,7 @@ def test_editable_source_url_rejects_ambiguous_sources(url: str) -> None:
 def test_editable_network_source_is_explicit_about_platform() -> None:
     import os
 
-    from apprc.interfaces.cli.installation_command import _editable_source_path
+    from apprc.interfaces.cli._editable_checkout import _editable_source_path
 
     if os.name == "nt":
         assert _editable_source_path("file://server/share/check%20out") == Path(
@@ -476,19 +476,19 @@ def test_editable_network_source_is_explicit_about_platform() -> None:
 def test_editable_conversion_error_names_source_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from apprc.interfaces.cli import installation_command
+    from apprc.interfaces.cli import _editable_checkout
 
     def unavailable_conversion(path: str) -> str:
         raise OSError(22, "conversion failed", path)
 
     monkeypatch.setattr(
-        installation_command, "url2pathname", unavailable_conversion
+        _editable_checkout, "url2pathname", unavailable_conversion
     )
     source = "file:///checkout"
     with pytest.raises(
         ValueError, match="Cannot convert editable source URL"
     ) as failure:
-        installation_command._editable_source_path(source)
+        _editable_checkout._editable_source_path(source)
     assert source in str(failure.value)
     assert isinstance(failure.value.__cause__, OSError)
 

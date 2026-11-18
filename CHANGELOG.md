@@ -92,6 +92,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Opted-in editable checkouts provide `dist build` and `dist check` for committed native setups, with `-t` for the current platform. Checkout `app install` can hand off to a verified native setup.
+
 - Editable registration and managed setup now show live installation stages, resolved paths, and an explicit completion result.
 
 ### 🛠️ Changed

@@ -6,8 +6,11 @@ from apprc.definition.installation import (
     RuntimeSelection,
 )
 from apprc.distribution.frontends import (
+    MissingNativeArtifact,
     NativeDistribution,
+    StaleNativeArtifact,
     build_native_distribution,
+    check_native_distribution,
 )
 from apprc.distribution.metadata import (
     inspect_capabilities,
@@ -38,6 +41,7 @@ __all__ = (
     "Artifact",
     "DistributionSpec",
     "InstallationHooks",
+    "MissingNativeArtifact",
     "NativeArtifact",
     "NativeBinding",
     "NativeDistribution",
@@ -47,8 +51,10 @@ __all__ = (
     "ProjectMetadata",
     "ProjectSnapshot",
     "RuntimeSelection",
+    "StaleNativeArtifact",
     "build_native_distribution",
     "build_project_snapshot",
+    "check_native_distribution",
     "decode_native_binding",
     "encode_native_binding",
     "inspect_capabilities",

@@ -364,7 +364,8 @@ def _bridge_response(
             )
     elif result.returncode != 0:
         raise InstallationError(
-            f"Application bridge {action} failed: {result.stderr.strip()}"
+            f"Application bridge {action} failed (exit {result.returncode}). "
+            "Child diagnostics were written to stderr."
         )
     return payload
 

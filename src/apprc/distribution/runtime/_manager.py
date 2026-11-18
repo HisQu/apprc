@@ -115,6 +115,7 @@ def _install(
     args: tuple[str, ...],
 ) -> int:
     """Render native setup progress and report its terminal outcome."""
+    _setup_launch()["install"] = True
     from apprc.distribution.runtime._install_progress import (
         InstallProgress,
         installation_progress,
@@ -126,7 +127,6 @@ def _install(
         _installation_error_message,
     )
 
-    _setup_launch()["install"] = True
     output = InstallationProgressOutput(None, binding.display_name, "managed")
     output(InstallProgress("stage", "Preparing Runtime"))
     try:

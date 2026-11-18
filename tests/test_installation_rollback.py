@@ -480,7 +480,18 @@ def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
 
 
 @pytest.mark.parametrize(
-    "scenario", ["commit", "rollback", "path-failure", "occupied", "update"]
+    "scenario",
+    [
+        "commit",
+        "rollback",
+        "path-failure",
+        "occupied",
+        "update",
+        "changed-command",
+        "linked-command",
+        "linked-parent",
+        "changed-authority",
+    ],
 )
 def test_windows_default_command_is_transactional(
     native_case, monkeypatch, tmp_path, scenario
@@ -526,6 +537,43 @@ def test_windows_default_command_is_transactional(
     if scenario == "occupied":
         bin_dir.mkdir()
         command.write_bytes(b"foreign")
+    if scenario in {
+        "changed-command",
+        "linked-command",
+        "linked-parent",
+        "changed-authority",
+    }:
+        original_finish = installation._finish_installation
+
+        def change_after_commit(manager, result):
+            result = original_finish(manager, result)
+            if scenario == "changed-command":
+                command.write_bytes(b"replaced command")
+            elif scenario == "linked-command":
+                target = tmp_path / "other-command"
+                target.write_bytes(command.read_bytes())
+                command.unlink()
+                command.symlink_to(target)
+            elif scenario == "linked-parent":
+                target = tmp_path / "other-bin"
+                bin_dir.rename(target)
+                bin_dir.symlink_to(target, target_is_directory=True)
+            else:
+                from apprc.user_files.installation.coordination import (
+                    write_record,
+                )
+
+                assert result.record is not None
+                write_record(
+                    manager.directory,
+                    replace(result.record, support_version="changed"),
+                    expected_revision=result.revision,
+                )
+            return result
+
+        monkeypatch.setattr(
+            installation, "_finish_installation", change_after_commit
+        )
     events = []
     with installation_progress(events.append):
         if scenario in {"rollback", "occupied"}:
@@ -539,6 +587,18 @@ def test_windows_default_command_is_transactional(
                 assert command.read_bytes() == b"foreign"
             return
         assert native_case.install().status == "ready"
+    if scenario in {
+        "changed-command",
+        "linked-command",
+        "linked-parent",
+        "changed-authority",
+    }:
+        assert not changes
+        assert any(
+            event.kind == "warning" and event.path == command
+            for event in events
+        )
+        return
     if scenario == "update":
         monkeypatch.setattr(windows, "is_on_path", lambda *args: True)
         monkeypatch.setattr(
@@ -565,3 +625,108 @@ def test_windows_default_command_is_transactional(
             event.status == "UPDATED" and event.message == "User PATH"
             for event in events
         )
+
+
+@pytest.mark.parametrize(
+    ("original", "retry"),
+    [
+        ("default", "default"),
+        ("explicit", "default"),
+        ("default", "explicit"),
+        ("default", "repair"),
+        ("explicit", "repair"),
+        ("stable-only", "default"),
+    ],
+)
+def test_pending_windows_publication_preserves_path_intent(
+    native_case, monkeypatch, tmp_path, original, retry
+):
+    import os
+    from types import SimpleNamespace
+
+    import apprc.utils as ut
+    from apprc.distribution.runtime import _os_integration
+    from apprc.distribution.runtime import _windows_command_path as windows
+
+    case = native_case
+    bin_dir = tmp_path / "shared-bin"
+    bin_dir.mkdir()
+    monkeypatch.setattr(windows, "enabled", lambda: True)
+    monkeypatch.setattr(
+        _os_integration, "os", SimpleNamespace(**(vars(os) | {"name": "nt"}))
+    )
+    monkeypatch.setattr(windows, "is_user_directory", lambda *args: True)
+    monkeypatch.setattr(
+        installation, "_default_command_directory", lambda *args: bin_dir
+    )
+    monkeypatch.setattr(
+        installation, "_command_directory", lambda *args: bin_dir
+    )
+    changes = []
+    monkeypatch.setattr(
+        windows,
+        "ensure_user_path",
+        lambda path, env: changes.append(path) or True,
+    )
+    monkeypatch.setattr(windows, "notify_path_change", lambda: None)
+
+    def attempt(selected=None):
+        return installation.install_application(
+            case.manager,
+            case.identity,
+            RuntimeSlot(
+                uuid4(),
+                ProjectSnapshot(
+                    ut.sha256_file(case.archive), "b" * 64, "c" * 40
+                ),
+                RuntimeSelection("3.14"),
+            ),
+            case.placement,
+            command_name="fixture",
+            project_archive=case.archive,
+            manager_executable=case.setup,
+            uv=case.uv,
+            command_directory=selected,
+        )
+
+    with monkeypatch.context() as interrupt:
+        if original == "stable-only":
+            interrupt.setattr(windows, "enabled", lambda: False)
+
+        def stop_before_publication(*args, **kwargs):
+            raise SystemExit(91)
+
+        interrupt.setattr(
+            installation, "_publish_stable_command", stop_before_publication
+        )
+        interrupt.setattr(
+            installation, "_failed_operation", stop_before_publication
+        )
+        with pytest.raises(SystemExit):
+            attempt(bin_dir if original == "explicit" else None)
+    pending = case.manager.inspect().record
+    assert pending is not None and pending.operation is not None
+    if original == "stable-only":
+        assert len(pending.operation.publication) == 1
+    else:
+        assert pending.operation.publication[1].update_user_path is (
+            original == "default"
+        )
+    assert not changes
+
+    def reuse_prepared(manager, plan, runtime, *args, **kwargs):
+        return replace(
+            runtime, version="1.0", python_version="3.14"
+        ), manager.inspect().revision
+
+    monkeypatch.setattr(installation, "_prepare_candidate", reuse_prepared)
+    if retry == "repair":
+        result = installation._repair_managed_application(
+            case.manager, manager_executable=case.setup, uv=case.uv
+        )
+    else:
+        result = attempt(bin_dir if retry == "explicit" else None)
+    assert result.status == "ready"
+    assert changes == (
+        [bin_dir] if original == "default" and retry != "explicit" else []
+    )

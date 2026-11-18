@@ -174,11 +174,18 @@ def test_olis_problems_only_warn_and_leave_native_outputs_intact(
         ("bad-hash", 1),
         ("duplicate", 1),
         ("setup", 17),
+        ("file-stdin", 0),
+        ("piped-tty", 0),
+        ("cleanup", 17),
     ],
 )
 def test_linux_olis_checks_before_running_and_cleans_up(
     tmp_path: Path, public: str, scenario: str, status: int
 ) -> None:
+    if scenario == "piped-tty" and shutil.which("script") is None:
+        pytest.skip(
+            "The script utility supplies the controlling test terminal."
+        )
     commands = tmp_path / "commands"
     commands.mkdir()
     temporary = tmp_path / "temporary"
@@ -187,7 +194,12 @@ def test_linux_olis_checks_before_running_and_cleans_up(
     downloads.mkdir()
     setup = downloads / _LINUX_SETUP
     setup.write_text(
-        '#!/bin/sh\ntouch "$OLIS_MARKER"\nexit "$OLIS_SETUP_STATUS"\n',
+        "#!/bin/sh\n"
+        'case "$OLIS_SCENARIO" in\n'
+        'file-stdin) read -r response; [ "$response" = supplied ] || exit 88 ;;\n'
+        "piped-tty) [ -t 0 ] || exit 88 ;;\n"
+        "esac\n"
+        'touch "$OLIS_MARKER"\nexit "$OLIS_SETUP_STATUS"\n',
         encoding="utf-8",
     )
     digest = hashlib.sha256(setup.read_bytes()).hexdigest()
@@ -207,6 +219,10 @@ def test_linux_olis_checks_before_running_and_cleans_up(
         'for last do :; done\ncp "$OLIS_DOWNLOADS/"* "$last/"\n',
         encoding="utf-8",
     )
+    if scenario == "cleanup":
+        (commands / "rm").write_text(
+            '#!/bin/sh\n/bin/rm "$@"\nexit 64\n', encoding="utf-8"
+        )
     for command in commands.iterdir():
         command.chmod(0o755)
     frontends._write_olis(
@@ -215,9 +231,18 @@ def test_linux_olis_checks_before_running_and_cleans_up(
         {"RELEASE_PUBLIC": public, "RELEASE_REPOSITORY": _REPOSITORY},
     )
     marker = tmp_path / "setup-ran"
+    script = tmp_path / _OUTPUTS[0]
+    command = ["bash"]
+    script_input = script.read_bytes()
+    if scenario == "file-stdin":
+        command.append(str(script))
+        script_input = b"supplied\n"
+    elif scenario == "piped-tty":
+        command = ["script", "-qec", 'cat "$OLIS_SCRIPT" | bash', "/dev/null"]
+        script_input = b""
     result = subprocess.run(
-        ["bash"],
-        input=(tmp_path / _OUTPUTS[0]).read_bytes(),
+        command,
+        input=script_input,
         capture_output=True,
         env={
             **os.environ,
@@ -227,10 +252,16 @@ def test_linux_olis_checks_before_running_and_cleans_up(
             "OLIS_DOWNLOADS": str(downloads),
             "OLIS_MARKER": str(marker),
             "OLIS_SCENARIO": scenario,
-            "OLIS_SETUP_STATUS": "17" if scenario == "setup" else "0",
+            "OLIS_SCRIPT": str(script),
+            "OLIS_SETUP_STATUS": "17"
+            if scenario in {"setup", "cleanup"}
+            else "0",
         },
         check=False,
+        timeout=10,
     )
     assert result.returncode == status, result.stderr
-    assert marker.exists() == (scenario in {"ok", "setup"})
+    assert marker.exists() == (
+        scenario in {"ok", "setup", "file-stdin", "piped-tty", "cleanup"}
+    )
     assert list(temporary.iterdir()) == []

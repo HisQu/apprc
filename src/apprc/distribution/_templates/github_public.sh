@@ -17,7 +17,7 @@
     repository='@@REPOSITORY@@'
     setup='@@SETUP@@'
     temporary=$(mktemp -d)
-    trap 'rm -rf -- "$temporary"' EXIT
+    trap 'status=$?; rm -rf -- "$temporary" || :; exit "$status"' EXIT
     command -v curl >/dev/null || { echo "OLIS requires curl." >&2; exit 1; }
     base="https://github.com/$repository/releases/latest/download"
     curl -fsSL "$base/$setup" -o "$temporary/$setup"
@@ -38,5 +38,10 @@
         exit 1
     }
     chmod +x "$temporary/$setup"
-    "$temporary/$setup"
+    # > Give a piped OLIS's setup access to the terminal for normal prompts.
+    if [ -z "${BASH_SOURCE[0]-}" ] && { exec 3</dev/tty; } 2>/dev/null; then
+        "$temporary/$setup" <&3
+    else
+        "$temporary/$setup"
+    fi
 )

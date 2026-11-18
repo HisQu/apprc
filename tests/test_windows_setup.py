@@ -14,15 +14,22 @@ from apprc.distribution.runtime import _windows_command_path as windows
 
 
 @pytest.mark.parametrize(
-    ("args", "processes", "dedicated"),
+    ("args", "launchers", "dedicated"),
     [
-        ([], {11, 12}, True),
-        ([], {10, 11, 12}, False),
-        (["--yes"], {11, 12}, False),
+        ([], {11: (1, "setup.exe")}, True),
+        ([], {11: (10, "python.exe"), 10: (1, "SETUP.EXE")}, True),
+        ([], {11: (10, "setup.exe"), 10: (1, "powershell.exe")}, False),
+        (
+            [],
+            {11: (10, "python.exe"), 10: (9, "setup.exe"), 9: (1, "pwsh.exe")},
+            False,
+        ),
+        ([], {11: (10, "python.exe"), 10: (1, "pwsh.exe")}, False),
+        (["--yes"], {11: (1, "setup.exe")}, False),
     ],
 )
 def test_setup_acknowledgement_and_early_diagnostic(
-    tmp_path, monkeypatch, capsys, args, processes, dedicated
+    tmp_path, monkeypatch, capsys, args, launchers, dedicated
 ):
     stdin = io.StringIO("\n")
     monkeypatch.setattr(stdin, "isatty", lambda: True)
@@ -31,7 +38,12 @@ def test_setup_acknowledgement_and_early_diagnostic(
     monkeypatch.setattr(
         terminal,
         "sys",
-        SimpleNamespace(stdin=stdin, stderr=stderr, argv=["loader.py", *args]),
+        SimpleNamespace(
+            stdin=stdin,
+            stderr=stderr,
+            argv=["loader.py", *args],
+            executable=r"C:\AppRC\Scripts\python.exe",
+        ),
     )
     import os
 
@@ -46,8 +58,16 @@ def test_setup_acknowledgement_and_early_diagnostic(
         ),
     )
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("PYAPP", r"C:\Downloads\setup.exe")
     monkeypatch.setenv("API_TOKEN", "my-private-value")
-    monkeypatch.setattr(terminal, "_console_processes", lambda: processes)
+    monkeypatch.setattr(
+        terminal, "_console_processes", lambda: {12, *launchers}
+    )
+    monkeypatch.setattr(
+        terminal,
+        "_process_details",
+        lambda pids: {pid: launchers[pid] for pid in pids},
+    )
 
     def fail():
         raise OSError("Cannot start my-private-value")

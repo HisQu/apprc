@@ -433,7 +433,8 @@ PATH and existing PATH entries intact. An explicit `--command-directory`
 still requires an existing directory on PATH. PATH write failures produce a
 warning and the full executable path. Uninstall leaves the shared PATH entry.
 
-A dedicated Windows setup console waits for acknowledgement after the result.
+A dedicated Windows setup console waits for acknowledgement after the result,
+including when PyApp starts Python through the virtual-environment redirector.
 Setup invoked from an existing terminal or with arguments returns normally
 with its exit code. Failure logs are written to `%LOCALAPPDATA%\AppRC\setup-logs`
 when that directory is available. Logging starts when PyApp reaches the Python

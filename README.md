@@ -322,6 +322,7 @@ applicable stage and finish with an explicit result. See the
 for maintenance reports and color settings.
 On Windows, native setup publishes the command for the current user and
 reports whether it added the shared executable directory to user PATH.
+Double-clicked setup waits for Enter after showing its result.
 Open a new PowerShell window after a PATH update.
 See the [installation guide](docs/How-To-User-Guides.md#install-from-a-checkout)
 and [native authoring requirements](docs/Development.md#native-application-frontends).

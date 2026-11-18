@@ -8,7 +8,7 @@ import sys
 import tempfile
 import traceback
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlsplit, urlunsplit
 
 _URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"']+")
@@ -92,6 +92,57 @@ def _console_processes() -> set[int]:
     return set(processes[:count]) if 0 < count <= len(processes) else set()
 
 
+def _process_details(process_ids: set[int]) -> dict[int, tuple[int, str]]:
+    """Look up the parent and executable name of the console's launchers."""
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessEntry(ctypes.Structure):
+        _fields_ = [
+            ("size", wintypes.DWORD),
+            ("usage", wintypes.DWORD),
+            ("pid", wintypes.DWORD),
+            ("default_heap", ctypes.c_size_t),
+            ("module", wintypes.DWORD),
+            ("threads", wintypes.DWORD),
+            ("parent_pid", wintypes.DWORD),
+            ("priority", wintypes.LONG),
+            ("flags", wintypes.DWORD),
+            ("executable", wintypes.WCHAR * 260),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    snapshot = kernel.CreateToolhelp32Snapshot
+    snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    snapshot.restype = wintypes.HANDLE
+    handle = snapshot(0x00000002, 0)  # < TH32CS_SNAPPROCESS
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    first = kernel.Process32FirstW
+    next_entry = kernel.Process32NextW
+    first.argtypes = next_entry.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(ProcessEntry),
+    ]
+    first.restype = next_entry.restype = wintypes.BOOL
+    close = kernel.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    entry = ProcessEntry()
+    entry.size = ctypes.sizeof(entry)
+    details: dict[int, tuple[int, str]] = {}
+    try:
+        found = first(handle, ctypes.byref(entry))
+        while found:
+            if entry.pid in process_ids:
+                details[entry.pid] = (entry.parent_pid, entry.executable)
+                if len(details) == len(process_ids):
+                    break
+            found = next_entry(handle, ctypes.byref(entry))
+    finally:
+        close(handle)
+    return details
+
+
 def dedicated_setup_console() -> bool:
     """Recognize an isolated setup console without pausing a parent shell."""
     if (
@@ -103,10 +154,33 @@ def dedicated_setup_console() -> bool:
         or not sys.stderr.isatty()
     ):
         return False
+    bootstrap = os.environ.get("PYAPP")
+    if not bootstrap:
+        return False
+    current, parent = os.getpid(), os.getppid()
     try:
-        return _console_processes() == {os.getpid(), os.getppid()}
+        processes = _console_processes()
+        if len(processes) not in {2, 3} or not {current, parent} <= processes:
+            return False
+        details = _process_details(processes - {current})
     except OSError:
         return False
+    bootstrap_name = PureWindowsPath(bootstrap).name.casefold()
+    launcher = details.get(parent)
+    if launcher is None:
+        return False
+    if len(processes) == 2:
+        return launcher[1].casefold() == bootstrap_name
+    # > PyApp starts the Windows venv redirector, which waits for Python.
+    bootstrap_pid, launcher_name = launcher
+    if (
+        bootstrap_pid not in processes - {current, parent}
+        or launcher_name.casefold()
+        != PureWindowsPath(sys.executable).name.casefold()
+    ):
+        return False
+    root = details.get(bootstrap_pid)
+    return root is not None and root[1].casefold() == bootstrap_name
 
 
 def _acknowledge_setup() -> None:

@@ -113,6 +113,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 - Apply the private Windows ACL before extracting a managed runtime's project, so a fresh setup can proceed past source staging.
 - Windows managed setup publishes its command by default, reports user PATH updates and setup failures, and keeps its dedicated result window visible until acknowledged.
+- Keep the double-clicked Windows setup window open when PyApp launches Python through the Windows virtual-environment redirector.
 
 
 ### 🔒 Security

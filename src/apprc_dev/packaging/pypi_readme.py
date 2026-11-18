@@ -9,6 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 CALLOUT_RE = re.compile(r"^> \[!(?P<label>[A-Z]+)\]\s*$")
+FENCED_BLOCK_RE = re.compile(
+    r"^ {0,3}(?P<fence>`{3,}|~{3,})[ \t]*(?P<info>[^\n]*)\n"
+    r".*?^ {0,3}(?P=fence)[ \t]*(?:\n|$)",
+    re.MULTILINE | re.DOTALL,
+)
 GITHUB_BLOB_URL = "https://github.com/HisQu/apprc/blob/main"
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/HisQu/apprc/main"
 HTML_SRC_RE = re.compile(
@@ -82,6 +87,10 @@ def build_pypi_markdown(markdown: str) -> str:
     :param markdown: GitHub-facing README text.
     :return: Converted Markdown for package metadata.
     """
+    markdown = FENCED_BLOCK_RE.sub(
+        lambda match: "" if match["info"].strip() == "mermaid" else match[0],
+        markdown,
+    )
     return rewrite_repository_links(convert_github_callouts(markdown))
 
 

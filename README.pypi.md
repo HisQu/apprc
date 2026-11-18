@@ -113,16 +113,16 @@ across updates, and provide repair and uninstall.
 
 ## Install the AppRC SDK
 
-These SDK packages require Python 3.12 or newer. The examples select the
-published 0.36 series. The distribution and lifecycle guides describe AppRC on
-`main`. The features available in a downloaded installer depend on the
+These SDK packages require Python 3.12 or newer. The commands below install
+the published SDK from PyPI. The distribution and lifecycle guides describe AppRC
+on `main`. The features available in a downloaded installer depend on the
 application release that built it.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.36.1,<0.37"` | Core configuration, Typer commands, prompts, and Textual editor. |
-| `python -m pip install "apprc-core>=0.36.1,<0.37"` | Configuration and noninteractive path/maintenance APIs. |
-| `python -m pip install "apprc-gui>=0.36.1,<0.37"` | Configuration and Gradio settings editor. |
+| `python -m pip install apprc` | Core configuration, Typer commands, prompts, and Textual editor. |
+| `python -m pip install apprc-core` | Configuration and noninteractive path/maintenance APIs. |
+| `python -m pip install apprc-gui` | Configuration and Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
 `from apprc_gui import ConfigEditor`. Terminal and GUI distributions install the
@@ -233,6 +233,14 @@ enabled application resource directories, not the Python environment or fixed
 native installation support. Plain `pip install -e .` remains independent of
 this optional installation workflow.
 
+**Enable the resources your app needs**
+
+A cache-only declaration gives your code a cache directory on demand. Add a
+config directory and user dotenv if people need to save preferences. The
+[capability map](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#optional-capabilities) shows how workspaces
+and other resources fit.
+
+
 Applications that need selectable named working directories declare
 `Workspaces()`. A [`WorkspaceManager`](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#workspaces) manages
 the registry and archive operations separately from `AppPaths`; selecting a
@@ -332,6 +340,14 @@ installer executables and checksums as application release assets and host the
 OLI scripts at a trusted URL. An OLI selects an executable from the
 application's latest published GitHub release.
 
+**From a commit to an installed command**
+
+Build from committed source, publish a checksummed setup, and let setup
+prepare the application runtime on the recipient's machine. Follow the
+[release package guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#prepare-a-release-package)
+for build and verification steps.
+
+
 See the [authoring requirements](https://github.com/HisQu/apprc/blob/main/docs/Development.md#native-application-frontends)
 for toolchain prerequisites, application icons, installation messages, and
 [configuring the app's default action](https://github.com/HisQu/apprc/blob/main/docs/Development.md#choose-a-default-action-for-an-installed-command).
@@ -381,6 +397,14 @@ Use the [inspection and repair guide](https://github.com/HisQu/apprc/blob/main/d
 to diagnose the saved installation. Review the
 [uninstall preview](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#remove-a-managed-program)
 before removing the program and its managed resources.
+
+**Update through the same command**
+
+Setup prepares and validates a replacement while the current runtime is still
+selected. On success, the installed command switches to the new runtime and
+keeps the saved resource locations. See the
+[lifecycle diagram and recovery details](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#activation-repair-and-rollback).
+
 
 <!-- ====================================================================== -->
 <br>

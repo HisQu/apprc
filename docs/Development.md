@@ -367,8 +367,9 @@ npx --yes --package @mermaid-js/mermaid-cli@12.2.0 mmdc \
 Run the same command for each changed page with a diagram. Check that every
 diagram renders, labels fit, and the arrows match the adjacent prose and CLI
 behavior. Mermaid source stays in Markdown. Keep the rendered files temporary.
-The root and PyPI READMEs use the existing graphical abstract and link to the
-Mermaid-bearing docs.
+The GitHub README can render Mermaid. Package descriptions keep the existing
+graphical abstract, the explanations next to each diagram, and their links.
+The generator omits the standalone Mermaid blocks.
 
 ## Actions artifact diagnostic
 
@@ -453,7 +454,9 @@ Edit source documentation and diagram scripts, then regenerate:
 .venv/bin/python src/apprc_dev/packaging/terminal_metadata.py
 ```
 
-The PyPI README generator rewrites repository links and GitHub callouts.
+The PyPI README generator rewrites repository links and GitHub callouts and
+omits Mermaid blocks. Include an explanation and a documentation link beside
+each diagram so the package description still explains the feature.
 The terminal generator copies shared metadata, description, and license from
 the root and pins `apprc-core` to its exact version. Its `--check` mode rejects
 stale generated files. Commit generated files with their source changes.

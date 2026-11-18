@@ -112,6 +112,11 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🛠️ Changed
 
+- The README and documentation give SDK developers, publishers, and installed
+  app users direct paths to the tasks they need. Mermaid diagrams explain how
+  capabilities, release packages, and runtime replacement work. The uninstall
+  guide explains configuration retention and application-data removal.
+
 - Setup, diagnostics, maintenance, and uninstall use the shared terminal colors. Repair, migration, resource maintenance, and workspace listings show human-readable terminal reports while preserving redirected and JSON output.
 
 

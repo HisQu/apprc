@@ -73,14 +73,28 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-16](#2026-11-16)
+2. [2026-11-18](#2026-11-18)
+   1. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
+3. [2026-11-16](#2026-11-16)
    1. [P1 / E1 \[Bug risk\] - *Uninstall cleanup can race with new resource leases*](#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
    2. [P2 / E2 \[Bug risk\] - *Literal secret interpolation needs an explicit contract*](#p2--e2-bug-risk---literal-secret-interpolation-needs-an-explicit-contract)
-3. [2026-11-13](#2026-11-13)
+4. [2026-11-13](#2026-11-13)
    1. [P2 / E2 \[Bug risk\] - *Metadata-only version commands resolve appdata ownership*](#p2--e2-bug-risk---metadata-only-version-commands-resolve-appdata-ownership)
-4. [2026-11-09](#2026-11-09)
+5. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
+
+<br>
+
+# 2026-11-18
+
+## P3 / E3 [Tooling] - *Hosted distribution CLI tests depend on terminal formatting*
+- **Area:** `tests/test_cli_distribution.py`
+- **Observed while:** Checking the merge of GitHub one-line install script generation. [Baseline run](https://github.com/HisQu/apprc/actions/runs/44367354562), [pull request run](https://github.com/HisQu/apprc/actions/runs/44377188297).
+- **Why deferred:** The failures also occur on the pre-change revision. CLI output assertions are outside the script generation pass.
+- **Evidence:** Three hosted tests fail to match `--target-current`, `uv sync --locked --all-groups`, or `app install --yes` in Rich output with ANSI formatting. All 11 distribution CLI tests pass in the local environment.
+- **Context:** The tests check help and installer guidance as raw substrings, so a styling boundary or line wrap can break an assertion.
+- **Suggested next step:** Make the assertions insensitive to ANSI formatting and line wrapping while retaining the checks for help text and lightweight startup.
 
 <br>
 

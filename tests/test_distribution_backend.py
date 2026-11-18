@@ -100,8 +100,9 @@ def test_existing_shortcuts_report_each_validated_path(tmp_path, monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("failure", [None, "cleanup", "digest"])
 def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, failure
 ):
     identity = InstallationIdentity(
         "fixture", "fixture", "fixture", None, ("fixture",)
@@ -131,6 +132,24 @@ def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
         raising=False,
     )
     monkeypatch.setitem(sys.modules, "win32com.client", client)
+    if failure == "cleanup":
+        temporary_directory = _os_integration.tempfile.TemporaryDirectory
+
+        @contextlib.contextmanager
+        def fail_cleanup(*args, **kwargs):
+            with temporary_directory(*args, **kwargs) as staging:
+                yield staging
+            raise OSError("Controlled staging cleanup failure")
+
+        monkeypatch.setattr(
+            _os_integration.tempfile, "TemporaryDirectory", fail_cleanup
+        )
+    elif failure == "digest":
+
+        def fail_digest(path):
+            raise OSError("Controlled staging digest failure")
+
+        monkeypatch.setattr(_os_integration.ut, "sha256_file", fail_digest)
 
     def publish():
         return _os_integration.publish_shortcuts(
@@ -141,6 +160,14 @@ def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
             desktop=True,
             launch_enabled=False,
         )
+
+    if failure:
+        with pytest.raises(
+            OSError, match=f"Controlled staging {failure} failure"
+        ):
+            publish()
+        assert not list(tmp_path.iterdir())
+        return
 
     assert publish() == (
         OwnedOutput(

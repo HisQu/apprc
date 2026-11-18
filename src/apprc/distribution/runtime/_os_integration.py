@@ -610,12 +610,11 @@ def publish_shortcuts(
                     temporary.chmod(
                         0o755 if destination.parent.name == "Desktop" else 0o644
                     )
+                digest = ut.sha256_file(temporary)
                 os.replace(temporary, destination)
-            outputs.append(
-                OwnedOutput(
-                    "shortcut", str(destination), ut.sha256_file(destination)
+                outputs.append(
+                    OwnedOutput("shortcut", str(destination), digest)
                 )
-            )
     except BaseException:
         for output in reversed(outputs):
             try:

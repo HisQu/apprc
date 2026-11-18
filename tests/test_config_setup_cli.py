@@ -94,22 +94,28 @@ def test_setup_rejects_blocking_config_path_without_creating_preferences(
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
 def test_config_secret_repair_restores_private_directory_permissions(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
     app_rc = _app(tmp_path)
     config_dir = app_rc.paths(environment={}).require("config")
-    app = typer.Typer()
+    app = typer.Typer(context_settings={"color": True})
     mount_app_cli(app, app_rc)
     setup = CliRunner().invoke(app, ["config", "setup", "--yes"])
     config_dir.chmod(0o755)
 
     repaired = CliRunner().invoke(
-        app, ["config", "secrets", "repair", "--scope", "user", "--yes"]
+        app,
+        ["config", "secrets", "repair", "--scope", "user", "--yes"],
+        color=True,
     )
 
     assert setup.exit_code == 0, setup.output
     assert repaired.exit_code == 0, repaired.output
     assert config_dir.stat().st_mode & 0o777 == 0o700
+    files = AppFiles(app_rc.schema, app_rc.paths(environment={}))
+    assert f"\x1b[36m{config_dir}" in repaired.stdout
+    assert f"\x1b[36m{files.user_secret_dotenv_path().name}" in repaired.stdout
 
 
 def test_setup_prompts_for_missing_field_despite_changed_display_prose(
@@ -334,3 +340,47 @@ def test_optional_setup_offers_and_saves_missing_required_secret(
     assert manager.inspect().fields[0].value == (
         "saved-secret" if accept else None
     )
+
+
+def test_setup_completion_and_known_paths_use_semantic_colors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    app_rc = _app(tmp_path)
+    app = typer.Typer(context_settings={"color": True})
+    mount_app_cli(app, app_rc)
+    result = CliRunner().invoke(app, ["config", "setup", "--yes"], color=True)
+    assert result.exit_code == 0, result.output
+    assert (
+        "\x1b[32m" in result.stdout and "AppRC setup complete." in result.stdout
+    )
+    assert (
+        f"\x1b[36m{app_rc.paths(environment={}).require('config')}"
+        in result.stdout
+    )
+
+
+def test_secret_migration_styles_known_filenames_without_showing_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    declaration = _app(tmp_path)
+    app = typer.Typer(context_settings={"color": True})
+    mount_app_cli(app, declaration)
+    setup = CliRunner().invoke(app, ["config", "setup", "--yes"])
+    assert setup.exit_code == 0, setup.output
+    files = AppFiles(declaration.schema, declaration.paths(environment={}))
+    files.user_dotenv_path().write_text(
+        "SETUP_PREFERENCES_TOKEN=private-value\n"
+    )
+    result = CliRunner().invoke(
+        app,
+        ["config", "secrets", "migrate", "--scope", "user", "--yes"],
+        color=True,
+    )
+    assert result.exit_code == 0, result.output
+    assert f"\x1b[36m{files.user_dotenv_path().name}" in result.stdout
+    assert f"\x1b[36m{files.user_secret_dotenv_path().name}" in result.stdout
+    assert "private-value" not in result.output
+    assert "SETUP_PREFERENCES_TOKEN" not in files.user_dotenv_path().read_text()
+    assert "private-value" in files.user_secret_dotenv_path().read_text()

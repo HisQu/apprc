@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from io import StringIO
-import os
 from typing import Protocol
 
 import typer
@@ -38,7 +37,6 @@ class AppRCRootGroup(TyperGroup):
             super().format_help(ctx, formatter)
             output_formatter.write(formatter.getvalue())
             return
-        from rich.console import Console
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
@@ -88,31 +86,29 @@ class AppRCRootGroup(TyperGroup):
         self.format_usage(ctx, formatter)
         self.format_help_text(ctx, formatter)
 
-        # > Capture panels locally while detecting the actual output terminal.
-        # > Rich honors NO_COLOR; explicit Click color settings override detection.
+        from apprc.interfaces._terminal_console import terminal_console
+        from apprc.interfaces._terminal_styles import (
+            LABEL_STYLE,
+            PATH_STYLE,
+            STAGE_STYLE,
+        )
+
         output = StringIO()
-        use_color = (
-            ctx.color
-            if ctx.color is not None
-            else typer.get_text_stream("stdout").isatty()
-        ) and "NO_COLOR" not in os.environ
-        console = Console(
-            file=output,
+        console = terminal_console(
+            output,
             width=formatter.width,
-            force_terminal=use_color,
-            color_system="standard" if use_color else None,
-            markup=False,
-            highlight=False,
+            color=ctx.color,
+            terminal=typer.get_text_stream("stdout").isatty(),
         )
         for title, rows in panels.items():
             if not rows:
                 continue
             style = (
-                "magenta"
+                STAGE_STYLE
                 if title.startswith("AppRC:")
-                else "dim"
+                else LABEL_STYLE
                 if title == "Help & Completion"
-                else "cyan"
+                else PATH_STYLE
             )
             table = Table.grid(padding=(0, 2), expand=True)
             table.add_column(

@@ -122,6 +122,10 @@ def mount_maintenance_groups(
         ] = False,
     ) -> None:
         """Show selected AppRC locations without creating them."""
+        from apprc.interfaces._terminal_console import cli_console, cli_line
+        from apprc.interfaces._terminal_styles import path_text
+        from rich.text import Text
+
         try:
             runtime = _context(ctx)
         except RuntimeError:
@@ -141,10 +145,13 @@ def mount_maintenance_groups(
             except ValueError as exc:
                 raise typer.BadParameter(str(exc)) from exc
             exists = path.is_dir()
-            _emit(
-                {"category": category, "path": str(path), "exists": exists},
-                json_output,
-            ) if json_output else typer.echo(str(path))
+            if json_output:
+                _emit(
+                    {"category": category, "path": str(path), "exists": exists},
+                    True,
+                )
+            else:
+                cli_line(ctx, "", path=path)
             if open_path:
                 if not exists:
                     raise typer.BadParameter(
@@ -157,12 +164,23 @@ def mount_maintenance_groups(
             _emit(payload, True)
         else:
             typer.echo(f"layout: {payload['layout']}")
-            typer.echo(f"root: {payload['root'] or '(native)'}")
+            root = payload["root"]
+            if isinstance(root, str):
+                cli_line(ctx, "root", path=root)
+            else:
+                typer.echo("root: (native)")
             typer.echo(f"source: {payload['source']}")
             exists = cast(dict[str, bool | None], payload["exists"])
+            console = cli_console(ctx)
             for key, path in _locations(runtime).items():
                 if path is not None:
-                    typer.echo(f"{key}: {path} (exists: {exists[key]})")
+                    console.print(
+                        Text.assemble(
+                            f"{key}: ",
+                            path_text(path),
+                            f" (exists: {exists[key]})",
+                        )
+                    )
 
     @maintenance.command("doctor", rich_help_panel=maintenance_help_panel)
     def doctor_command(
@@ -335,7 +353,7 @@ def mount_maintenance_groups(
         if json_output:
             _emit(payload, True)
         else:
-            print_doctor_report(payload)
+            print_doctor_report(payload, ctx=ctx)
         if payload["status"] in {
             "error",
             "invalid",
@@ -426,7 +444,17 @@ def _resource_group(
                     )
                 except (OSError, ValueError) as exc:
                     raise typer.BadParameter(str(exc)) from exc
-                typer.echo(str(path))
+                from apprc.interfaces._terminal_console import (
+                    cli_line,
+                    human_report,
+                )
+
+                cli_line(
+                    ctx,
+                    "Backup saved" if human_report() else "",
+                    path=path,
+                    style="success",
+                )
 
         if provider is not None and provider.restore is not None:
 
@@ -447,14 +475,30 @@ def _resource_group(
                 ] = False,
             ) -> None:
                 """Restore an application-owned AppData backup."""
+                from apprc.interfaces._terminal_console import (
+                    cli_line,
+                    human_report,
+                )
+
+                human = human_report()
+                if human and not assume_yes:
+                    cli_line(ctx, "Backup to restore", path=source)
                 if not assume_yes and not typer.confirm(
-                    f"Restore AppData from {source}?"
+                    "Restore AppData from this backup?"
+                    if human
+                    else f"Restore AppData from {source}?"
                 ):
                     raise typer.Exit(code=1)
+                if human:
+                    cli_line(
+                        ctx, "1. Restoring Application Data", style="stage"
+                    )
                 try:
                     _manager(ctx, apprc, handlers).restore_appdata(source)
                 except (OSError, ValueError) as exc:
                     raise typer.BadParameter(str(exc)) from exc
+                if human:
+                    cli_line(ctx, "Application data restored.", style="success")
     elif kind == "cache":
         provider = handlers.cache
         if provider is not None and provider.prune is not None:
@@ -500,11 +544,20 @@ def _add_operation_commands(
         ] = False,
     ) -> None:
         """Plan, then optionally apply, the declared resource operation."""
+        from apprc.interfaces._terminal_console import cli_line, human_report
+        from apprc.interfaces.cli._maintenance_output import (
+            print_resource_preview,
+            print_resource_result,
+        )
+
+        human = human_report(json_output)
         manager = _manager(ctx, apprc, handlers)
         try:
             plans = _plan_operation(manager, kind, operation_name)
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
+        if human:
+            print_resource_preview(ctx, kind, operation_name, plans)
         results: tuple[RemovalResult, ...] = ()
         failure: dict[str, object] | None = None
         if not dry_run and plans:
@@ -517,6 +570,12 @@ def _add_operation_commands(
                     f"Apply {kind} {operation_name}?", err=True
                 ):
                     raise typer.Exit(code=1)
+            if human:
+                cli_line(
+                    ctx,
+                    f"1. Applying {kind.title()} {operation_name.title()}",
+                    style="stage",
+                )
             try:
                 results = _apply_operation(manager, kind, operation_name, plans)
             except _MaintenanceApplyError as exc:
@@ -526,11 +585,34 @@ def _add_operation_commands(
                     "root": str(exc.failed_plan.root),
                     "message": str(exc),
                 }
-                _emit(_operation_payload(plans, results, failure), json_output)
+                if human:
+                    print_resource_result(
+                        ctx, kind, operation_name, results, failed=True
+                    )
+                    cli_line(
+                        ctx,
+                        "Failed target root",
+                        path=exc.failed_plan.root,
+                        style="error",
+                        error=True,
+                    )
+                    cli_line(
+                        ctx,
+                        f"{kind.title()} {operation_name} failed: {exc}",
+                        style="error",
+                        error=True,
+                    )
+                else:
+                    _emit(
+                        _operation_payload(plans, results, failure), json_output
+                    )
                 raise typer.Exit(code=1) from exc
             except (OSError, ValueError) as exc:
                 raise typer.BadParameter(str(exc)) from exc
-        _emit(_operation_payload(plans, results, failure), json_output)
+        if human:
+            print_resource_result(ctx, kind, operation_name, results)
+        else:
+            _emit(_operation_payload(plans, results, failure), json_output)
         if any(result.skipped or result.warnings for result in results):
             raise typer.Exit(code=1)
 
@@ -556,7 +638,15 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
                 ).inspect_registry()
             except (OSError, ValueError) as exc:
                 raise typer.BadParameter(str(exc)) from exc
-            _emit(_workspace_registry_payload(inspection), json_output)
+            from apprc.interfaces._terminal_console import human_report
+            from apprc.interfaces.cli._maintenance_output import (
+                print_workspace_registry,
+            )
+
+            if human_report(json_output):
+                print_workspace_registry(ctx, inspection)
+            else:
+                _emit(_workspace_registry_payload(inspection), json_output)
 
         @child.command("add")
         def add_workspace(
@@ -751,7 +841,9 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
                 root = _workspace_manager(ctx, apprc).initialize_workspace(path)
             except (OSError, ValueError) as exc:
                 raise typer.BadParameter(str(exc)) from exc
-            typer.echo(str(root))
+            from apprc.interfaces._terminal_console import cli_line
+
+            cli_line(ctx, "", path=root)
 
     return child
 

@@ -441,3 +441,50 @@ def test_root_doctor_reports_legacy_migration_without_creating_new_store() -> (
     assert not directory.exists()
     assert not (legacy_root / "appdata").exists()
     assert set(legacy_root.iterdir()) == {marker, payload}
+
+
+def test_doctor_statuses_and_paths_respect_the_command_color_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    declaration = rc.AppRC(
+        app_id="doctor-style",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "[settings]"),
+    )
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    for color in (True, False):
+        app = typer.Typer(context_settings={"color": color})
+        rc.cli.mount_app_cli(app, declaration)
+        if not color:
+            monkeypatch.setenv("FORCE_COLOR", "1")
+        result = CliRunner().invoke(
+            app, ["app", "doctor", "--verbose"], color=True
+        )
+        assert result.exit_code == 0, result.output
+        assert (
+            "[warning]" in result.stdout or "[\x1b[33mwarning" in result.stdout
+        )
+        assert (f"\x1b[36m{tmp_path / '[settings]'}" in result.stdout) is color
+        assert ("\x1b[" in result.stdout) is color
+    assert not (tmp_path / "[settings]").exists()
+
+
+def test_config_diagnostic_statuses_are_literal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from apprc.interfaces.cli.diagnostics.payload import (
+        ConfigDoctorPayload,
+        DiagnosticCheck,
+    )
+    from apprc.interfaces.cli.doctor_output import print_config_doctor
+
+    payload = ConfigDoctorPayload(
+        status="warning",
+        checks=(
+            DiagnosticCheck("config", "warning", "Path [yellow] is missing"),
+        ),
+    )
+    print_config_doctor(build_config_only_example_app(), payload)
+    assert (
+        "[warning] config: Path [yellow] is missing" in capsys.readouterr().out
+    )

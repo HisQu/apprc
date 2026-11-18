@@ -159,12 +159,18 @@ def mount_installation_group(
                         offer_configuration_setup,
                     )
 
+                    from apprc.interfaces._terminal_console import (
+                        color_environment,
+                    )
+
                     offer_configuration_setup(
                         result,
                         skip=skip_setup,
                         config_group_name=config_group_name,
                         runtime_options=context.runtime_options,
-                        environment=context.environment,
+                        environment=color_environment(
+                            context.environment, ctx.color
+                        ),
                         raise_on_failure=True,
                     )
                 except (OSError, subprocess.CalledProcessError) as exc:
@@ -222,6 +228,13 @@ def mount_installation_group(
         ] = False,
     ) -> None:
         """Preview or explicitly execute recognized AppRC placement migration."""
+        from apprc.interfaces._terminal_console import cli_line, human_report
+        from apprc.interfaces.cli._installation_output import (
+            print_installation_result,
+            print_migration_preview,
+        )
+
+        human = human_report(json_output)
         context = _inspection(ctx)
         manager = context.manager
         try:
@@ -259,7 +272,10 @@ def mount_installation_group(
                     identity=context.native_binding.identity,
                     command_name=context.native_binding.command_name,
                 )
-            _emit(_migration_payload(plan), json_output)
+            if human:
+                print_migration_preview(ctx, plan)
+            else:
+                _emit(_migration_payload(plan), json_output)
             if dry_run:
                 return
             if not assume_yes and not sys.stdin.isatty():
@@ -267,8 +283,11 @@ def mount_installation_group(
             if not assume_yes and not typer.confirm(
                 "Migration requires old application consumers to be stopped. Proceed?",
                 default=False,
+                err=json_output,
             ):
                 raise typer.Abort()
+            if human:
+                cli_line(ctx, "1. Applying Migration", style="stage")
             migration_hook = _migration_bridge(context)
             if pending is not None:
                 assert inspection.revision is not None
@@ -283,7 +302,10 @@ def mount_installation_group(
                 )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
-        _emit(_inspection_payload(result), json_output)
+        if human:
+            print_installation_result(ctx, result, operation="Migration")
+        else:
+            _emit(_inspection_payload(result), json_output)
 
     @child.command("repair")
     def repair(ctx: typer.Context) -> None:
@@ -305,20 +327,50 @@ def mount_installation_group(
                 "Managed repair requires the matching native setup executable. "
                 "Run that setup executable to repair the installation."
             )
-        try:
-            from apprc.distribution.runtime._manager import _manager_uv
-            from apprc.distribution.runtime.installation import (
-                _repair_managed_application,
-            )
+        from contextlib import nullcontext
 
-            result = _repair_managed_application(
-                context.manager,
-                manager_executable=context._native_manager_executable,
-                uv=_manager_uv(),
+        from apprc.distribution.runtime._install_progress import (
+            InstallProgress,
+            installation_progress,
+        )
+        from apprc.distribution.runtime._manager import _manager_uv
+        from apprc.distribution.runtime.installation import (
+            _repair_managed_application,
+        )
+        from apprc.interfaces._terminal_console import human_report
+        from apprc.interfaces.cli._installation_output import (
+            InstallationProgressOutput,
+            print_installation_result,
+        )
+
+        output = (
+            InstallationProgressOutput(
+                ctx, context.manager.spec.display_name, "repair"
             )
+            if human_report()
+            else None
+        )
+        if output is not None:
+            output(InstallProgress("stage", "Preparing Runtime"))
+        try:
+            with (
+                installation_progress(output)
+                if output is not None
+                else nullcontext()
+            ):
+                result = _repair_managed_application(
+                    context.manager,
+                    manager_executable=context._native_manager_executable,
+                    uv=_manager_uv(),
+                )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(_installation_error_message(exc)) from exc
-        _emit(_inspection_payload(result), False)
+        if output is None:
+            _emit(_inspection_payload(result), False)
+        elif result.status == "ready":
+            output.complete()
+        else:
+            print_installation_result(ctx, result, operation="Repair")
 
     @child.command("uninstall")
     def uninstall(
@@ -363,6 +415,7 @@ def mount_installation_group(
     ) -> None:
         """Preview or remove the installation and selected application data."""
         from apprc.distribution.runtime import _uninstall_terminal
+        from apprc.interfaces._terminal_console import cli_line
 
         wait = wait and not assume_yes and not dry_run
         result_window = (
@@ -392,11 +445,15 @@ def mount_installation_group(
                 )
 
                 print_installation_path(
-                    ctx, "User configuration", record.placement.config_dir
+                    ctx,
+                    "User configuration",
+                    record.placement.config_dir,
+                    error=json_output,
                 )
                 keep_config = typer.confirm(
                     "Keep this configuration directory (settings and secrets)?",
                     default=True,
+                    err=json_output,
                 )
             try:
                 from apprc.distribution.runtime import _uninstall_controller
@@ -421,9 +478,11 @@ def mount_installation_group(
 
                 installation_console(ctx).print(uninstall_tree(preparation))
                 for diagnostic in preparation.diagnostics:
-                    typer.echo(
+                    cli_line(
+                        ctx,
                         f"Cannot uninstall: {diagnostic.message} {diagnostic.recovery}",
-                        err=True,
+                        style="error",
+                        error=True,
                     )
             if dry_run:
                 return
@@ -434,6 +493,7 @@ def mount_installation_group(
             if not assume_yes and not typer.confirm(
                 f'Uninstall {command_context.manager.spec.display_name or command_context.manager.spec.app_id} and delete the items marked "Delete"?',
                 default=False,
+                err=json_output,
             ):
                 raise typer.Abort()
 
@@ -464,7 +524,12 @@ def mount_installation_group(
             raise SystemExit(0)
         except BaseException as error:
             if wait and not handed_off:
-                typer.echo(f"Uninstall did not complete: {error}", err=True)
+                cli_line(
+                    ctx,
+                    f"Uninstall did not complete: {error}",
+                    style="error",
+                    error=True,
+                )
                 _uninstall_terminal.acknowledge()
             raise
 

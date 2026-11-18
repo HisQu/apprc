@@ -307,7 +307,9 @@ For development, run `<app> app install -e` from the checkout with its `.venv`
 activated. This registers the existing environment and initializes declared
 resources without copying or owning the checkout or environment. Git and uv
 remain responsible for updating it. Editable and managed installs report each
-applicable stage and finish with an explicit result.
+applicable stage and finish with an explicit result. See the
+[terminal output conventions](docs/Development.md#terminal-output-and-color)
+for maintenance reports and color settings.
 See the [installation guide](docs/How-To-User-Guides.md#install-from-a-checkout)
 and [native authoring requirements](docs/Development.md#native-application-frontends).
 

@@ -622,7 +622,10 @@ def test_temporary_cleanup_failure_warns_without_failing_uninstall(
     assert staging.exists()
 
 
-def test_staged_results_keep_colors_without_application_package(tmp_path):
+@pytest.mark.parametrize("rich_available", [True, False])
+def test_staged_results_keep_colors_without_application_package(
+    tmp_path, rich_available
+):
     import os
     import subprocess
     import sys
@@ -630,18 +633,20 @@ def test_staged_results_keep_colors_without_application_package(tmp_path):
         _stage_repository_finalizer,
     )
 
+    from apprc.interfaces._terminal_console import color_environment
+
     staging = tmp_path / "staging"
     staging.mkdir(mode=0o700)
     _stage_repository_finalizer(staging)
-    environment = dict(os.environ)
+    environment = color_environment(os.environ, True)
     environment.pop("NO_COLOR", None)
-    environment["FORCE_COLOR"] = "1"
     environment["TERM"] = "xterm"
+    block_rich = "" if rich_available else "sys.modules['rich'] = None; "
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            f"import sys, shutil; sys.path.insert(0, {str(staging)!r}); sys.modules['apprc'] = None; import _uninstall_terminal; shutil.rmtree({str(staging)!r}); _uninstall_terminal.result_line('Retained configuration', '/example/[settings]')",
+            f"import sys, shutil; sys.path.insert(0, {str(staging)!r}); sys.modules['apprc'] = None; {block_rich}import _uninstall_terminal; shutil.rmtree({str(staging)!r}); _uninstall_terminal.result_line('Uninstall completed.', style='success'); _uninstall_terminal.result_line('Retained configuration', '/example/[settings]'); _uninstall_terminal.result_line('Temporary cleanup failed.', style='warning')",
         ],
         cwd=tmp_path,
         env=environment,
@@ -650,5 +655,7 @@ def test_staged_results_keep_colors_without_application_package(tmp_path):
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+    assert "\x1b[32mUninstall completed." in result.stderr
     assert "\x1b[36m" in result.stderr
+    assert "\x1b[33mTemporary cleanup failed." in result.stderr
     assert "/example/[settings]" in result.stderr

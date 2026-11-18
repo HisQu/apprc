@@ -265,13 +265,18 @@ def _install_managed(
                 "Optional shortcuts were not updated",
                 error,
             )
+    from apprc.distribution.runtime._install_progress import installation_color
+    from apprc.interfaces._terminal_console import color_environment
+
     inspection.require_usable()
     try:
         offer_configuration_setup(
             inspection,
             skip=options.skip_setup,
             runtime_options=captured_options,
-            environment=environment,
+            environment=color_environment(
+                environment, installation_color.get()
+            ),
             raise_on_failure=True,
         )
     except (OSError, subprocess.CalledProcessError) as error:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 from collections.abc import Mapping
@@ -18,6 +17,10 @@ from apprc.distribution.runtime._install_progress import (
 if TYPE_CHECKING:
     from rich.console import Console
     from rich.tree import Tree
+    from apprc.definition.installation import (
+        InstallationInspection,
+        MigrationPlan,
+    )
 
     from apprc.distribution.runtime._uninstall_controller import (
         UninstallPreparation,
@@ -33,20 +36,11 @@ def installation_console(
     :param error: Whether to write to the error stream.
     :return: Console without implicit markup or path guessing.
     """
-    from rich.console import Console
+    from apprc.interfaces._terminal_console import terminal_console
 
-    stream = typer.get_text_stream("stderr" if error else "stdout")
-    override = ctx.color if ctx is not None else installation_color.get()
-    color = (
-        stream.isatty() if override is None else override
-    ) and "NO_COLOR" not in os.environ
-    return Console(
-        file=stream,
-        force_terminal=color,
-        color_system="standard" if color else None,
-        markup=False,
-        highlight=False,
-        soft_wrap=True,
+    return terminal_console(
+        typer.get_text_stream("stderr" if error else "stdout"),
+        color=ctx.color if ctx is not None else installation_color.get(),
     )
 
 
@@ -59,7 +53,12 @@ class InstallationProgressOutput:
         self._mode = mode
         self._stage = 0
         self._version = ""
-        self._write(f"{name} · {mode.title()} installation")
+        title = (
+            "Repair installation"
+            if mode == "repair"
+            else f"{mode.title()} installation"
+        )
+        self._write(f"{name} · {title}")
 
     def _write(
         self,
@@ -70,32 +69,18 @@ class InstallationProgressOutput:
         path: str | Path | None = None,
         error: bool = False,
     ) -> None:
-        try:
-            from rich.text import Text
+        from apprc.interfaces._terminal_console import write_line
 
-            from apprc.interfaces import _terminal_styles as styles
-
-            console = installation_console(self._ctx, error=error)
-        except ImportError:
-            stream = typer.get_text_stream("stderr" if error else "stdout")
-            print(
-                prefix + message + (f": {path}" if path is not None else ""),
-                file=stream,
-                flush=True,
-            )
-            return
-        color = {
-            "stage": styles.STAGE_STYLE,
-            "warning": styles.WARNING_STYLE,
-            "success": styles.SUCCESS_STYLE,
-            "error": styles.ERROR_STYLE,
-            "detail": styles.LABEL_STYLE,
-        }.get(style, "")
-        line = Text.assemble((prefix, styles.SUCCESS_STYLE), (message, color))
-        if path is not None:
-            line.append(": " if message else "")
-            line.append_text(styles.path_text(path))
-        console.print(line)
+        write_line(
+            typer.get_text_stream("stderr" if error else "stdout"),
+            message,
+            style=style,
+            prefix=prefix,
+            path=path,
+            color=self._ctx.color
+            if self._ctx is not None
+            else installation_color.get(),
+        )
 
     def __call__(self, event: InstallProgress) -> None:
         if event.kind == "version":
@@ -119,9 +104,10 @@ class InstallationProgressOutput:
         product = (
             f"{self._name} {self._version}" if self._version else self._name
         )
-        self._write(
-            f"\n{product} {self._mode} installation complete.", style="success"
+        action = (
+            "repair" if self._mode == "repair" else f"{self._mode} installation"
         )
+        self._write(f"\n{product} {action} complete.", style="success")
 
     def failed(self, message: str) -> None:
         """Display the installation failure, including any recovery notes."""
@@ -131,19 +117,20 @@ class InstallationProgressOutput:
 
 
 def print_installation_path(
-    ctx: typer.Context, label: str, path: str | Path
+    ctx: typer.Context, label: str, path: str | Path, *, error: bool = False
 ) -> None:
     """Print one explicitly identified filesystem path with canonical styling.
 
     :param ctx: Active command context.
     :param label: Plain description of the path.
     :param path: Captured filesystem path.
+    :param error: Whether to write to stderr.
     """
     from rich.text import Text
 
     from apprc.interfaces._terminal_styles import path_text
 
-    installation_console(ctx).print(
+    installation_console(ctx, error=error).print(
         Text.assemble(label + ": ", path_text(path))
     )
 
@@ -158,7 +145,11 @@ def _add_path_tree(
     """
     from rich.text import Text
 
-    from apprc.interfaces._terminal_styles import path_text
+    from apprc.interfaces._terminal_styles import (
+        ERROR_STYLE,
+        SUCCESS_STYLE,
+        path_text,
+    )
 
     children: dict[PurePath, set[PurePath]] = {}
     anchors: set[PurePath] = set()
@@ -182,7 +173,9 @@ def _add_path_tree(
             action, explanation = targets[path]
             label.append("  ")
             label.append(
-                action, style="bold red" if action == "Delete" else "bold green"
+                action,
+                style="bold "
+                + (ERROR_STYLE if action == "Delete" else SUCCESS_STYLE),
             )
             label.append(" — " + explanation)
         branch = parent.add(label)
@@ -277,3 +270,53 @@ def uninstall_tree(preparation: UninstallPreparation) -> Tree:
         for key in registrations:
             registry.add(Text.assemble(("Delete", "bold red"), " — ", key))
     return root
+
+
+def print_migration_preview(ctx: typer.Context, plan: MigrationPlan) -> None:
+    """Show the exact migration inventory before asking to apply it."""
+    from apprc.interfaces._terminal_console import cli_line
+
+    cli_line(ctx, "Migration preview", style="stage")
+    cli_line(ctx, "Source", path=plan.inventory.source_root)
+    cli_line(ctx, "Destination", path=plan.inventory.destination_root)
+    for entry in plan.inventory.entries:
+        cli_line(ctx, "Move", path=entry.path)
+    for path in plan.inventory.unknown:
+        cli_line(ctx, "Unknown entry", path=path, style="warning")
+    if not plan.inventory.entries:
+        cli_line(ctx, "No files in the migration inventory.", style="detail")
+
+
+def print_installation_result(
+    ctx: typer.Context, inspection: InstallationInspection, *, operation: str
+) -> None:
+    """Show the saved placement and diagnostics from a migration or repair."""
+    from apprc.interfaces._terminal_console import cli_line
+
+    cli_line(
+        ctx,
+        "Installation record",
+        path=inspection.directory / "installation.json",
+    )
+    record = inspection.record
+    if record is not None:
+        layout = record.placement.layout
+        cli_line(ctx, f"Layout: {layout.mode}", path=layout.root)
+    for diagnostic in inspection.diagnostics:
+        cli_line(
+            ctx,
+            f"Warning: {diagnostic.message} {diagnostic.recovery}",
+            style="warning",
+            error=True,
+        )
+    if operation:
+        message = (
+            f"{operation} complete."
+            if inspection.status == "ready"
+            else f"{operation} result: {inspection.status}."
+        )
+        cli_line(
+            ctx,
+            message,
+            style="success" if inspection.status == "ready" else "warning",
+        )

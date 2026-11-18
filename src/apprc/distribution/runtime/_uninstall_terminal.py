@@ -9,17 +9,12 @@ from pathlib import Path
 
 # > Load optional rendering before the finalizer deletes its staged modules.
 try:
-    from rich.console import Console
-    from rich.text import Text
-
     if __package__:
-        from apprc.interfaces._terminal_styles import path_text
+        from apprc.interfaces._terminal_console import write_line
     else:
-        from _terminal_styles import path_text  # type: ignore[reportMissingImports]
+        from _terminal_console import write_line  # type: ignore[reportMissingImports]
 except ImportError:
-    Console = None
-    Text = None
-    path_text = None
+    write_line = None
 
 
 def prepare() -> None:
@@ -64,21 +59,15 @@ def acknowledge() -> None:
         sys.stdin.readline()
 
 
-def result_line(message: str, path: str | Path | None = None) -> None:
-    """Print a cleanup outcome with optional terminal styling and plain fallback.
-
-    :param message: Outcome or label, never parsed for paths.
-    :param path: Structured path value, when available.
-    """
-    if Console is None or Text is None or path_text is None:
+def result_line(
+    message: str, path: str | Path | None = None, *, style: str = ""
+) -> None:
+    """Print a cleanup outcome on stderr, separate from the control stream."""
+    if write_line is None:
         print(
             message + (f": {path}" if path is not None else ""),
             file=sys.stderr,
             flush=True,
         )
         return
-    line = Text(message)
-    if path is not None:
-        line.append(": ")
-        line.append_text(path_text(str(path)))
-    Console(file=sys.stderr, highlight=False, soft_wrap=True).print(line)
+    write_line(sys.stderr, message, path=path, style=style)

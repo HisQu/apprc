@@ -388,7 +388,24 @@ def test_native_cli_migrate_resumes_exact_pending_inventory_and_hook(
     )
     manager_executable = tmp_path / "native-manager"
     manager_executable.write_bytes(b"fixture manager")
+    stdout = typer.get_text_stream
+
+    def terminal_stream(name):
+        stream = stdout(name)
+        if name == "stdout":
+            monkeypatch.setattr(stream, "isatty", lambda: True)
+        return stream
+
+    monkeypatch.setattr(typer, "get_text_stream", terminal_stream)
     with _authenticated_native_manager_scope(manager_executable):
+        preview = CliRunner().invoke(
+            app, ["app", "migrate", "--dry-run"], env=environment
+        )
+        assert preview.exit_code == 0, preview.output
+        assert "Migration preview" in preview.stdout
+        assert str(source) in preview.stdout
+        assert "Applying Migration" not in preview.stdout
+        assert manager.inspect().revision == pending.revision
         result = CliRunner().invoke(app, arguments, env=environment)
 
     assert result.exit_code == 0, result.output

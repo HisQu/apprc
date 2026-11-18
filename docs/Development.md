@@ -255,7 +255,15 @@ Use the shared styles and structured path formatter in
 exception messages. Keep every message understandable in plain text and respect
 terminal detection, Click's explicit color setting, and `NO_COLOR`. JSON, logs,
 and plain fallbacks contain no styling. Keep progress out of machine-readable
-output.
+output. Terminal reports are selected from stdout's terminal capability and the
+absence of `--json`. Color preferences never change the selected layout.
+Keep redirected and explicit JSON output compatible. Prompt on stderr when
+stdout carries JSON. An explicit color choice can travel to an AppRC child
+process. The presence of `NO_COLOR`, including an empty value, takes priority.
+
+Textual uses its theme for widgets and uses the shared path and semantic styles
+for AppRC's values. Emphasize the effective source in bold and keep path values
+cyan. Browser controls follow the host theme.
 
 A step's status describes its result at that point. Print overall success only
 after the operation succeeds. Report confirmed rollback or recovery guidance
@@ -271,8 +279,10 @@ untouched. Do not enumerate every file inside large data directories.
 On Windows, interactive cleanup uses a separate console. Preserve the stdin/stdout
 readiness and exit-handshake pipes; attach human-facing output to that console
 without replacing the control channels. The finalizer owns completion and Enter
-acknowledgement. Stage the canonical path styles with the finalizer so result
-paths retain color after removing the application.
+acknowledgement. Stage the shared terminal renderer and styles with the finalizer so results
+retain their styling after the application and staging directory are removed.
+The standalone process can emit basic terminal colors with the standard library
+when Rich is unavailable and the stream supports them.
 
 Final cleanup runs from a surviving working directory. After the originating
 handoff process exits, an external finalizer removes private staging files so

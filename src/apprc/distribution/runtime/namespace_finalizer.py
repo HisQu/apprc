@@ -190,13 +190,14 @@ def main() -> None:
                 )
         if external:
             assert terminal is not None
-            terminal.result_line("Uninstall completed.")
+            terminal.result_line("Uninstall completed.", style="success")
             for path in arguments.retained_config:
                 terminal.result_line("Retained configuration", Path(path))
     except (OSError, ValueError) as error:
         if terminal is not None:
             terminal.result_line(
-                f"Uninstall committed; finalization incomplete: {error}"
+                f"Uninstall committed; finalization incomplete: {error}",
+                style="warning",
             )
         raise
     finally:
@@ -328,7 +329,8 @@ def finalize_repository(proof: Path, parent: int, token: str) -> None:
             except OSError as error:
                 if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
                     raise
-    print(f"Repository removed: {repository}", file=sys.stderr, flush=True)
+    terminal = _load_peer("_uninstall_terminal")
+    terminal.result_line("Repository removed", repository, style="success")
     cleanup_staging(proof.parent.parent)
 
 
@@ -392,6 +394,7 @@ def cleanup_staging(staging: Path) -> None:
         terminal.result_line(
             f"Warning: uninstall completed, but temporary cleanup failed ({error})",
             staging,
+            style="warning",
         )
 
 

@@ -456,3 +456,111 @@ def test_doctor_does_not_catch_provider_programming_errors(
     result = CliRunner().invoke(app, ["app", "doctor", "--verbose", "--json"])
 
     assert isinstance(result.exception, RuntimeError)
+
+
+def test_cache_preview_and_results_follow_the_output_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_root = tmp_path / "app"
+    cache = app_root / "cache"
+    target = cache / "[entry]"
+    skipped = cache / "in-use"
+
+    def plan(path: Path) -> RemovalPlan:
+        return RemovalPlan("cache", path, (target, skipped), "revision")
+
+    def apply(_plan: RemovalPlan) -> RemovalResult:
+        target.unlink()
+        return RemovalResult(removed=(target,), skipped=(skipped,))
+
+    app, declaration = _app(
+        app_root,
+        handlers=MaintenanceHandlers(
+            cache=CacheOperations(prune=RemovalOperation(plan, apply))
+        ),
+    )
+    declaration.ensure_path("cache")
+    target.write_text("remove")
+    skipped.write_text("keep")
+    runner = CliRunner()
+    command = ["app", "cache", "prune"]
+    stdout = typer.get_text_stream
+
+    def terminal_stream(name):
+        stream = stdout(name)
+        if name == "stdout":
+            monkeypatch.setattr(stream, "isatty", lambda: True)
+        return stream
+
+    redirected = runner.invoke(app, [*command, "--dry-run"], color=True)
+    assert redirected.exit_code == 0, redirected.output
+    expected = json.loads(redirected.stdout)
+    assert expected["plans"][0]["targets"] == [str(target), str(skipped)]
+    monkeypatch.setattr(typer, "get_text_stream", terminal_stream)
+    explicit = runner.invoke(app, [*command, "--dry-run", "--json"], color=True)
+    assert explicit.exit_code == 0 and json.loads(explicit.stdout) == expected
+    assert "\x1b[" not in explicit.stdout
+
+    monkeypatch.setenv("NO_COLOR", "")
+    preview = runner.invoke(app, [*command, "--dry-run"], color=True)
+    assert preview.exit_code == 0, preview.output
+    assert "Cache prune preview" in preview.stdout
+    assert f"Delete {target}" in preview.stdout
+    assert "\x1b[" not in preview.stdout
+    assert target.is_file() and skipped.is_file()
+
+    attempted = runner.invoke(app, [*command, "--yes"], color=True)
+    assert attempted.exit_code == 1, attempted.output
+    assert attempted.stdout.index("Delete") < attempted.stdout.index("Applying")
+    assert f"Removed: {target}" in attempted.stdout
+    assert f"Skipped: {skipped}" in attempted.stdout
+    assert "complete." not in attempted.stdout
+    assert not target.exists() and skipped.is_file()
+
+
+def test_workspace_terminal_report_preserves_json_and_redirected_registry_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    declaration = rc.AppRC(
+        app_id="workspace-report",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "app"),
+        workspaces=rc.Workspaces(),
+    )
+    manager = declaration.workspaces(environment={})
+    live_root = tmp_path / "[selected]"
+    archived_root = tmp_path / "[archived]"
+    archive = tmp_path / "[archive].apprc.tar.xz"
+    manager.register_workspace("current", live_root)
+    manager.register_workspace("previous", archived_root)
+    manager.archive_workspace("previous", archive)
+    manager.select_workspace("current")
+    registry_path = manager.registry_path()
+    before = registry_path.read_bytes()
+    app = typer.Typer(context_settings={"color": True})
+    rc.cli.mount_app_cli(app, declaration)
+    runner = CliRunner()
+    redirected = runner.invoke(app, ["workspace", "list"])
+    assert redirected.exit_code == 0, redirected.output
+    payload = json.loads(redirected.stdout)
+    stdout = typer.get_text_stream
+
+    def terminal_stream(name):
+        stream = stdout(name)
+        if name == "stdout":
+            monkeypatch.setattr(stream, "isatty", lambda: True)
+        return stream
+
+    monkeypatch.setattr(typer, "get_text_stream", terminal_stream)
+    explicit = runner.invoke(app, ["workspace", "list", "--json"], color=True)
+    assert explicit.exit_code == 0, explicit.output
+    assert json.loads(explicit.stdout) == payload
+    assert "\x1b[" not in explicit.stdout
+    report = runner.invoke(app, ["workspace", "list"], color=True)
+    assert report.exit_code == 0, report.output
+    assert "Workspaces" in report.stdout and "(selected)" in report.stdout
+    for path in (registry_path, live_root, archive, archived_root):
+        assert f"\x1b[36m{path}" in report.stdout
+    assert registry_path.read_bytes() == before
+    assert live_root.is_dir() and archived_root.is_dir() and archive.is_file()

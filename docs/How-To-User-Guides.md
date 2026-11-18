@@ -1136,6 +1136,19 @@ relocation, not a scan of other users' directories.
 
 ## Inspect or repair installation
 
+On a terminal, AppRC shows color and status labels for setup, installation,
+and uninstall. Set `NO_COLOR` to suppress styling while keeping the
+human-readable layout. Color never carries the only indication of success,
+warnings, failures, or items selected for removal.
+
+The repair, migration, resource maintenance, and workspace list commands
+show human-readable results on a terminal. Where offered, use `--json` for
+structured output. Redirected output keeps its existing format. Use
+`--dry-run` where offered to review the exact targets without applying changes.
+A dry run shows a preview and does not print a completion message for work
+that did not run.
+
+
 ```shell
 demo app paths --json
 demo app doctor --verbose --json

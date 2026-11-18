@@ -6,7 +6,6 @@ import sys
 
 # == 3rd Party ===============================
 import typer
-from rich.console import Console
 
 # == Internal ================================
 from apprc.definition.resolution import ResolveOptions
@@ -28,6 +27,7 @@ def run_config_setup(
     config_group_name: str = "config",
     maintenance_group_name: str = "app",
     show_next_step: bool = False,
+    ctx: typer.Context | None = None,
 ) -> None:
     """Initialize the declared config directory and user dotenv.
 
@@ -42,6 +42,7 @@ def run_config_setup(
     :param config_group_name: Config command group name used in guidance.
     :param maintenance_group_name: Mounted maintenance group used in guidance.
     :param show_next_step: Whether to print the declaration's next step.
+    :param ctx: Color context when invoked through a mounted command.
     :raises typer.BadParameter: If setup inputs or managed files are invalid.
     """
     if not apprc.schema.paths.config:
@@ -59,6 +60,19 @@ def run_config_setup(
             "Set up missing required settings now?", default=False
         ):
             return
+    from apprc.interfaces._terminal_console import (
+        cli_console,
+        cli_line,
+        human_report,
+    )
+    from apprc.interfaces._terminal_styles import (
+        PATH_STYLE,
+        SUCCESS_STYLE,
+        style_literals,
+    )
+
+    if human_report():
+        cli_line(ctx, "1. Initializing Configuration", style="stage")
     try:
         result = active_manager.setup(adopt=adopt)
     except (OSError, ValueError) as exc:
@@ -66,17 +80,21 @@ def run_config_setup(
             raise app_path_bad_parameter(exc) from exc
         raise typer.BadParameter(str(exc), param_hint="setup") from exc
     if not assume_yes:
-        _prompt_required_fields(active_manager)
+        _prompt_required_fields(active_manager, ctx=ctx)
     paths = active_manager.paths
-    Console(soft_wrap=True).print(
-        setup_finish_text(
-            apprc,
-            paths=paths,
-            user_dotenv=result.user_dotenv,
-            config_group_name=config_group_name,
-            maintenance_group_name=maintenance_group_name,
-        )
+    message = setup_finish_text(
+        apprc,
+        paths=paths,
+        user_dotenv=result.user_dotenv,
+        config_group_name=config_group_name,
+        maintenance_group_name=maintenance_group_name,
     )
+    completion = message.split("\n", 1)[0]
+    styled = {completion: SUCCESS_STYLE}
+    for path in (paths.config_dir, result.user_dotenv):
+        if path is not None:
+            styled[str(path)] = PATH_STYLE
+    cli_console(ctx).print(style_literals(message, styled))
     if show_next_step:
         _print_setup_next_step(apprc)
 
@@ -113,7 +131,9 @@ def _missing_required_fields(
     )
 
 
-def _prompt_required_fields(manager: ConfigManager) -> None:
+def _prompt_required_fields(
+    manager: ConfigManager, *, ctx: typer.Context | None = None
+) -> None:
     """Save active missing values through the same manager as other editors.
 
     :param manager: Manager bound to the location initialized by setup.
@@ -123,9 +143,13 @@ def _prompt_required_fields(manager: ConfigManager) -> None:
         return
     from prompt_toolkit import prompt
 
+    from apprc.interfaces._terminal_console import cli_line, human_report
+
+    if human_report():
+        cli_line(ctx, "2. Saving Required Settings", style="stage")
     for item in fields:
         key = item.owner.env_key(item.field.name)
-        typer.echo(item.issue)
+        cli_line(ctx, item.issue or "", style="warning")
         while True:
             try:
                 value = prompt(
@@ -143,14 +167,16 @@ def _prompt_required_fields(manager: ConfigManager) -> None:
                     if field.owner.env_key(field.field.name) == key
                 )
                 if current.issue is not None:
-                    typer.echo(current.issue, err=True)
+                    cli_line(ctx, current.issue, style="error", error=True)
                     continue
                 manager.apply_edit(plan)
                 break
             except (OSError, ValueError) as exc:
-                typer.echo(
+                cli_line(
+                    ctx,
                     f"Could not save {key}. Check its value and private file permissions."
                     if item.field.secret
                     else str(exc),
-                    err=True,
+                    style="error",
+                    error=True,
                 )

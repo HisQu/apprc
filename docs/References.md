@@ -878,6 +878,12 @@ resolution error without changing otherwise valid saved authority. An explicit
 invocation layout does not erase captured installation errors or rewrite the
 record.
 
+Repair, migration, resource maintenance, and workspace list output is
+human-readable when stdout is a terminal and `--json` is absent. Explicit
+`--json` and redirected output retain their existing formats. Color never
+selects the format. AppRC respects `NO_COLOR`, explicit Click color settings,
+and the active stream's terminal capability.
+
 `app paths --json` without a category preserves
 `{layout, root, source, paths: {config, appdata, cache, state, logs}, exists: {config, appdata, cache, state, logs}}`.
 Disabled entries are `null`; missing enabled directories have `exists=false`.

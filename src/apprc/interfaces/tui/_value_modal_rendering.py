@@ -119,11 +119,7 @@ def source_value_text(
     if spec.secret:
         return Text(
             "<secret>",
-            style=(
-                EFFECTIVE_SOURCE_STYLE
-                if source.key == "effective"
-                else SECRET_STYLE
-            ),
+            style=SECRET_STYLE,
         )
     return Text(source.raw_value, style=_source_style(source, spec=spec))
 
@@ -200,8 +196,6 @@ def _source_style(
     spec: ConfigField | None = None,
 ) -> str:
     """Return the style used for one source cell."""
-    if source.key == "effective":
-        return EFFECTIVE_SOURCE_STYLE
     if spec is None:
         return LABEL_STYLE
     return value_style(spec)

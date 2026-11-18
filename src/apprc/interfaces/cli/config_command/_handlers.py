@@ -48,4 +48,5 @@ class ConfigCommandHandlers(
             config_group_name=self.config_group_name,
             maintenance_group_name=self.maintenance_group_name,
             show_next_step=True,
+            ctx=ctx,
         )

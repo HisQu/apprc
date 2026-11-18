@@ -45,6 +45,7 @@ def test_project_metadata_keeps_app_distribution_and_import_identity_distinct(
             "apprc-reference = 'unimportable_package.config:MyRC'\n"
             "command-name = 'fixture-command'\n"
             "runtime-python = '3.13'\n"
+            "install-next-step = 'Open a terminal and run fixture-command.'\n"
         ),
     )
 
@@ -58,6 +59,17 @@ def test_project_metadata_keeps_app_distribution_and_import_identity_distinct(
         metadata.identity.apprc_reference == "unimportable_package.config:MyRC"
     )
     assert metadata.runtime_python_requirement == ">=3.12,==3.13.*"
+
+
+def test_install_next_step_must_be_text(tmp_path: Path) -> None:
+    _write_project(
+        tmp_path,
+        settings="[tool.apprc.distribution]\ninstall-next-step = true\n",
+    )
+    with pytest.raises(
+        ValueError, match="must be text|must be strings|install-next-step"
+    ):
+        read_project_metadata(tmp_path)
 
 
 def test_distribution_spec_captures_capabilities_hooks_and_launch_setting(

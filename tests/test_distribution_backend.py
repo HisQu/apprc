@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import os
 import stat
 import sys
 import zipfile
@@ -97,6 +98,61 @@ def test_existing_shortcuts_report_each_validated_path(tmp_path, monkeypatch):
     assert [(event.status, event.path) for event in events] == [
         ("EXISTING", path) for path in paths
     ]
+
+
+def test_windows_shortcut_stages_a_new_lnk_and_records_ownership(
+    tmp_path, monkeypatch
+):
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
+    destination = tmp_path / "fixture.lnk"
+    command = tmp_path / "fixture.exe"
+    monkeypatch.setattr(
+        _os_integration, "os", SimpleNamespace(name="nt", replace=os.replace)
+    )
+    monkeypatch.setattr(
+        _os_integration,
+        "_shortcut_destination",
+        lambda *args, **kwargs: (destination,),
+    )
+    client = ModuleType("win32com.client")
+
+    def create_shortcut(path):
+        staging = Path(path)
+        assert staging.suffix == ".lnk"
+        assert not staging.exists()
+        return SimpleNamespace(Save=lambda: staging.write_bytes(b"shortcut"))
+
+    monkeypatch.setattr(
+        client,
+        "Dispatch",
+        lambda name: SimpleNamespace(CreateShortcut=create_shortcut),
+        raising=False,
+    )
+    monkeypatch.setitem(sys.modules, "win32com.client", client)
+
+    def publish():
+        return _os_integration.publish_shortcuts(
+            command,
+            identity,
+            display_name="Fixture",
+            start_menu=False,
+            desktop=True,
+            launch_enabled=False,
+        )
+
+    assert publish() == (
+        OwnedOutput(
+            "shortcut",
+            str(destination),
+            hashlib.sha256(b"shortcut").hexdigest(),
+        ),
+    )
+    assert list(tmp_path.iterdir()) == [destination]
+    with pytest.raises(InstallationError, match="unowned shortcut"):
+        publish()
+    assert destination.read_bytes() == b"shortcut"
 
 
 class _RegistryKey:

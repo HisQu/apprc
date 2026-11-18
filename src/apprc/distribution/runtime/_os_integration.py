@@ -529,6 +529,19 @@ def _shortcut_destination(
     return tuple(destinations)
 
 
+def desktop_shortcut_available(identity: InstallationIdentity) -> bool:
+    """Return whether a desktop location is available for an optional prompt."""
+    try:
+        return any(
+            path is not None and path.parent.is_dir()
+            for path in _shortcut_destination(
+                identity, start_menu=False, desktop=True
+            )
+        )
+    except (OSError, InstallationError):
+        return False
+
+
 def publish_shortcuts(
     command: Path,
     identity: InstallationIdentity,
@@ -569,14 +582,10 @@ def publish_shortcuts(
                     )
                 report("result", "Shortcut", "EXISTING", destination)
                 continue
-            descriptor, temporary_name = tempfile.mkstemp(
-                prefix=f".{destination.name}.",
-                suffix=".apprc-tmp",
-                dir=destination.parent,
-            )
-            os.close(descriptor)
-            temporary = Path(temporary_name)
-            try:
+            with tempfile.TemporaryDirectory(
+                prefix=f".{destination.name}.", dir=destination.parent
+            ) as staging:
+                temporary = Path(staging) / destination.name
                 if os.name == "nt":
                     from win32com.client import Dispatch
 
@@ -602,8 +611,6 @@ def publish_shortcuts(
                         0o755 if destination.parent.name == "Desktop" else 0o644
                     )
                 os.replace(temporary, destination)
-            finally:
-                temporary.unlink(missing_ok=True)
             outputs.append(
                 OwnedOutput(
                     "shortcut", str(destination), ut.sha256_file(destination)

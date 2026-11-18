@@ -309,7 +309,8 @@ With `AppRCRootGroup`, root help lists `dist` under **AppRC: Commands**.
 Use `-t` for the current native target. The checkout can also hand off
 `app install` to its verified native setup.
 
-Managed installations use locked, non-editable runtime slots. The stable native
+Managed installations use locked, non-editable runtime slots. Setup can offer a
+desktop shortcut and show an application-defined next step. The stable native
 command handles installation diagnostics, repair and removal independently of
 the application's environment, and forwards normal commands—including
 `launch`—to the recorded active slot. Run a newer setup executable to update

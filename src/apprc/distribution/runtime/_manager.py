@@ -108,9 +108,46 @@ def _install(
     executable: Path,
     args: tuple[str, ...],
 ) -> int:
-    """Install or transactionally update the binding's embedded project."""
-    import argparse
+    """Render native setup progress and report its terminal outcome."""
+    from apprc.distribution.runtime._install_progress import (
+        InstallProgress,
+        installation_progress,
+    )
+    from apprc.interfaces.cli._installation_output import (
+        InstallationProgressOutput,
+    )
+    from apprc.interfaces.cli.installation_command import (
+        _installation_error_message,
+    )
 
+    output = InstallationProgressOutput(None, binding.display_name, "managed")
+    output(InstallProgress("stage", "Preparing Runtime"))
+    try:
+        with installation_progress(output):
+            _install_managed(binding, manager, executable, args)
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        subprocess.CalledProcessError,
+    ) as error:
+        output.failed(_installation_error_message(error))
+        return 1
+    output.complete()
+    return 0
+
+
+def _install_managed(
+    binding: NativeBinding,
+    manager: InstallationManager,
+    executable: Path,
+    args: tuple[str, ...],
+) -> None:
+    """Install or update the embedded project and offer optional setup."""
+    import argparse
+    import logging
+
+    from apprc.distribution.runtime._install_progress import warn
     from apprc.definition.resolution import ResolveOptions
     from apprc.distribution.runtime.installation import (
         install_application,
@@ -210,29 +247,39 @@ def _install(
         publish_optional_shortcuts,
     )
 
+    if options.start_menu or options.desktop:
+        try:
+            inspection = publish_optional_shortcuts(
+                manager,
+                manager.directory
+                / (binding.command_name + (".exe" if os.name == "nt" else "")),
+                binding.identity,
+                display_name=binding.display_name,
+                start_menu=options.start_menu,
+                desktop=options.desktop,
+                launch_enabled=binding.launch_enabled,
+            )
+        except (OSError, ValueError) as error:
+            warn(
+                logging.getLogger(__name__),
+                "Optional shortcuts were not updated",
+                error,
+            )
+    inspection.require_usable()
     try:
-        inspection = publish_optional_shortcuts(
-            manager,
-            manager.directory
-            / (binding.command_name + (".exe" if os.name == "nt" else "")),
-            binding.identity,
-            display_name=binding.display_name,
-            start_menu=options.start_menu,
-            desktop=options.desktop,
-            launch_enabled=binding.launch_enabled,
+        offer_configuration_setup(
+            inspection,
+            skip=options.skip_setup,
+            runtime_options=captured_options,
+            environment=environment,
+            raise_on_failure=True,
         )
-    except (OSError, ValueError) as error:
-        print(
-            f"Warning: optional shortcuts were not updated: {error}",
-            file=sys.stderr,
+    except (OSError, subprocess.CalledProcessError) as error:
+        warn(
+            logging.getLogger(__name__),
+            f"Configuration setup failed. Run `{binding.command_name} config setup` to retry",
+            error,
         )
-    offer_configuration_setup(
-        inspection,
-        skip=options.skip_setup,
-        runtime_options=captured_options,
-        environment=environment,
-    )
-    return 0
 
 
 def _owned_manager_invocation(

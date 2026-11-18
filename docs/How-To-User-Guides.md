@@ -1017,6 +1017,14 @@ demo app install -e
 Alternatively, without activating the environment, run
 `uv run --locked demo app install -e` from the checkout.
 
+AppRC reports live progress as it validates your checkout, reuses its
+environment, initializes resources, publishes the command, and saves the
+installation record. Managed setup instead reports preparation of its own
+runtime, including dependency synchronization when needed. Each route shows
+the paths involved and ends with an explicit completion message on success.
+Optional setup or Windows metadata failures are reported separately so you can
+tell whether the app itself was installed.
+
 On Windows, successful installation also attempts to set the global executable's
 product version and add an entry to Windows Settings → Installed apps. Editable
 checkouts appear there too. Selecting Uninstall uses the existing confirmation

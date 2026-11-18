@@ -92,6 +92,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Editable registration and managed setup now show live installation stages, resolved paths, and an explicit completion result.
+
 ### 🛠️ Changed
 
 ### 🗑️ Deprecated

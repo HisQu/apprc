@@ -20,6 +20,10 @@ from apprc.definition.installation import (
     OperationStep,
 )
 from apprc.distribution.runtime import installation
+from apprc.distribution.runtime._install_progress import (
+    InstallProgress,
+    installation_progress,
+)
 from apprc.services.installation import InstallationManager
 
 
@@ -82,8 +86,10 @@ def test_candidate_rebuild_budget(
         (slot / "source").mkdir(parents=True)
         (slot / ".venv").mkdir()
     counts = {"build": 0, "probe": 0}
+    events: list[InstallProgress] = []
 
     def rebuild(*args, **kwargs):
+        assert any(event.status == "VERIFIED" for event in events)
         counts["build"] += 1
         (slot / "source").mkdir(exist_ok=True)
         (slot / ".venv").mkdir(exist_ok=True)
@@ -100,9 +106,12 @@ def test_candidate_rebuild_budget(
     monkeypatch.setattr(installation, "_rebuild_candidate_runtime", rebuild)
     monkeypatch.setattr(installation, "_probe_runtime_observations", probe)
     monkeypatch.setattr(
-        installation, "_initialize_runtime", lambda *args, **kwargs: None
+        installation, "_initialize_runtime", lambda *args, **kwargs: ()
     )
-    with installation.installation_lock(manager.directory):
+    with (
+        installation_progress(events.append),
+        installation.installation_lock(manager.directory),
+    ):
         if probe_fails and not (prepared and directories):
             with pytest.raises(
                 InstallationError, match="unrelated probe failure"
@@ -127,4 +136,8 @@ def test_candidate_rebuild_budget(
                 manager_executable=tmp_path / "manager",
             )
             assert result == observed
+            assert any(event.status == "VALIDATED" for event in events)
+            assert any(event.status == "REUSED" for event in events) == (
+                builds == 0
+            )
     assert counts == {"build": builds, "probe": probes}

@@ -110,8 +110,11 @@ def versioned_executable(content: bytes, version: str) -> bytes:
                 raise ValueError("product version read-back failed")
             return result
     except Exception as error:
-        logging.getLogger(__name__).warning(
-            "Windows executable version was not updated; installation continues: %s",
+        from apprc.distribution.runtime._install_progress import warn
+
+        warn(
+            logging.getLogger(__name__),
+            "Windows executable version was not updated; installation continues",
             error,
         )
         return content

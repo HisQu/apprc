@@ -34,6 +34,10 @@ from apprc.definition.installation import (
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime.backend import runtime_environment
 from apprc.distribution.runtime import _os_integration
+from apprc.distribution.runtime._install_progress import (
+    InstallProgress,
+    installation_progress,
+)
 
 
 from apprc.distribution.runtime._os_integration import (
@@ -55,6 +59,44 @@ from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
 )
+
+
+def test_existing_shortcuts_report_each_validated_path(tmp_path, monkeypatch):
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
+    paths = (
+        tmp_path / "menu" / "fixture.desktop",
+        tmp_path / "desktop" / "fixture.desktop",
+    )
+    previous = []
+    for path in paths:
+        path.parent.mkdir()
+        content = b"existing owned shortcut"
+        path.write_bytes(content)
+        previous.append(
+            OwnedOutput(
+                "shortcut", str(path), hashlib.sha256(content).hexdigest()
+            )
+        )
+    monkeypatch.setattr(
+        _os_integration, "_shortcut_destination", lambda *args, **kwargs: paths
+    )
+    events: list[InstallProgress] = []
+    with installation_progress(events.append):
+        created = _os_integration.publish_shortcuts(
+            tmp_path / "fixture",
+            identity,
+            display_name="Fixture",
+            start_menu=True,
+            desktop=True,
+            launch_enabled=False,
+            previous=tuple(previous),
+        )
+    assert created == ()
+    assert [(event.status, event.path) for event in events] == [
+        ("EXISTING", path) for path in paths
+    ]
 
 
 class _RegistryKey:

@@ -65,6 +65,7 @@ def _prepare(
     *,
     environment: Mapping[str, str],
     manager_executable: Path,
+    resources: installation._ResourceSnapshot,
 ) -> tuple[RuntimeSlot, str]:
     """Replace dependency acquisition while exercising real lifecycle writes."""
     slot = manager.directory / "runtimes" / str(runtime.slot_id)
@@ -401,11 +402,11 @@ def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
     monkeypatch.setattr(
         installation,
         "_probe_runtime_observations",
-        lambda *args, **kwargs: (runtime, {}),
+        lambda *args, **kwargs: (runtime, {"version": "1.0"}),
     )
 
     def initialize(*args, **kwargs):
-        manager.initialize(context=args[4])
+        return manager.initialize(context=args[4]).paths
 
     monkeypatch.setattr(installation, "_initialize_runtime", initialize)
 

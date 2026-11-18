@@ -39,6 +39,7 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.definition.paths import ResourceKind
+from apprc.distribution.runtime._install_progress import report, warn
 from apprc.distribution.runtime._os_integration import (
     command_is_owned,
     publish_global_command,
@@ -672,7 +673,7 @@ def _initialize_runtime(
     expected_revision: str,
     manager_executable: Path | None,
     expected_observations: dict[str, object],
-) -> None:
+) -> tuple[Path, ...]:
     hooks = runtime.hooks
     if identity.apprc_reference is None:
         if any(
@@ -687,9 +688,9 @@ def _initialize_runtime(
             raise InstallationError(
                 "Lifecycle hooks require an AppRC declaration."
             )
-        manager.initialize(context=context)
+        initialized = manager.initialize(context=context)
         _validate_selected_resource_ownership(identity, context.placement)
-        return
+        return initialized.paths
     result = application_bridge(
         manager.directory,
         identity,
@@ -768,6 +769,7 @@ def _initialize_runtime(
             "Initialized resource paths differ from the selected placement."
         )
     _validate_selected_resource_ownership(identity, context.placement)
+    return tuple(Path(path) for path in paths)
 
 
 def _retire_recorded_runtimes(
@@ -847,6 +849,22 @@ def _resource_snapshot(placement: InstallationPlacement) -> _ResourceSnapshot:
             ),
         )
     return tuple(captured.values())
+
+
+def _report_resources(
+    snapshot: _ResourceSnapshot, initialized: tuple[Path, ...]
+) -> None:
+    labels: dict[ResourceKind | None, str] = {
+        "config": "Configuration",
+        "appdata": "Application data",
+        "cache": "Cache",
+        "state": "State",
+        None: "Logs",
+    }
+    for root, category, existed, _ in snapshot:
+        if root in initialized:
+            status = "EXISTING" if existed else "CREATED"
+            report("result", labels[category], status, root)
 
 
 def _rollback_resources(
@@ -939,9 +957,7 @@ def _finish_installation(
             else inspection
         )
     except Exception as error:
-        LOG.warning(
-            "Installation succeeded; cleanup remains pending: %s", error
-        )
+        warn(LOG, "Installation succeeded; cleanup remains pending", error)
         return inspection
 
 
@@ -985,8 +1001,15 @@ def _failed_operation(
             and record.active_runtime is not None
             and _matches_candidate(plan.target.runtime, record.active_runtime)
         ):
-            LOG.warning(
-                "Installation succeeded despite activation read-back error: %s",
+            report(
+                "result",
+                "Installation record",
+                "RECORDED",
+                manager.directory / "installation.json",
+            )
+            warn(
+                LOG,
+                "Installation succeeded despite activation read-back error",
                 error,
             )
             return _finish_installation(manager, latest)
@@ -1284,11 +1307,13 @@ def _install_managed_candidate(
             uv,
             environment=manager.environment,
             manager_executable=manager_executable,
+            resources=resources,
         )
         from apprc.distribution.runtime._windows_version import (
             versioned_executable,
         )
 
+        report("stage", "Publishing Command")
         content = versioned_executable(
             manager_executable.read_bytes(), observed.version or ""
         )
@@ -1313,6 +1338,7 @@ def _install_managed_candidate(
                 previous=authority,
             )
         ]
+        report("result", "Native executable", "PUBLISHED", stable)
         for item in publication[1:]:
             source = (
                 Path(item.intended.link_target)
@@ -1322,6 +1348,7 @@ def _install_managed_candidate(
             outputs.append(
                 publish_global_command(item.path, source, previous=authority)
             )
+            report("result", "Global command", "PUBLISHED", item.path)
         paths = {item.path for item in outputs}
         outputs.extend(item for item in prior_outputs if item.path not in paths)
         for step in (
@@ -1330,12 +1357,19 @@ def _install_managed_candidate(
         ):
             current = _checkpoint(manager, plan.operation_id, revision, step)
             revision = current.revision or ""
+        report("stage", "Saving Installation Record")
         activation_started = True
         result = manager.commit_install(
             operation_id=plan.operation_id,
             expected_revision=revision,
             observed=observed,
             owned_outputs=tuple(outputs),
+        )
+        report(
+            "result",
+            "Installation record",
+            "RECORDED",
+            directory / "installation.json",
         )
         from apprc.distribution.runtime._windows_registration import (
             publish_registration,
@@ -1450,10 +1484,13 @@ def _rebuild_candidate_runtime(
                 shutil.rmtree(target)
         source_root.mkdir(mode=0o700)
         materialize_project_snapshot(archive, source_root, runtime.source)
+        report("detail", "Synchronizing dependencies with uv...")
         with claim.authorize_bridge():
             sync_runtime_slot(
                 uv, directory, identity, runtime, environment=environment
             )
+        report("result", "Python environment", "CREATED", environment_path)
+        report("result", "Dependencies", "SYNCED")
     finally:
         claim.close()
 
@@ -1467,6 +1504,7 @@ def _prepare_candidate(
     *,
     environment: Mapping[str, str],
     manager_executable: Path,
+    resources: _ResourceSnapshot = (),
 ) -> tuple[RuntimeSlot, str]:
     directory = manager.directory
     identity = plan.target.identity
@@ -1510,6 +1548,7 @@ def _prepare_candidate(
     source_root = slot_directory / "source"
     environment_path = slot_directory / ".venv"
     expected_version = _snapshot_metadata(archive_path, runtime, identity)
+    report("result", "Project snapshot", "VERIFIED")
     rebuilt = False
     if OperationStep.RUNTIME_PREPARED not in steps:
         _rebuild_candidate_runtime(
@@ -1565,6 +1604,7 @@ def _prepare_candidate(
             uv,
             environment,
         )
+        rebuilt = True
         inspection = manager.inspect()
         revision = inspection.revision or revision
         observed, observations = _probe_runtime_observations(
@@ -1584,6 +1624,10 @@ def _prepare_candidate(
         raise InstallationError(
             "Installed distribution version differs from the immutable project snapshot."
         )
+    if not rebuilt:
+        report("result", "Python environment", "REUSED", environment_path)
+    report("result", "Installed runtime", "VALIDATED")
+    report("version", expected_version)
     current = _checkpoint(
         manager,
         operation_id,
@@ -1595,7 +1639,9 @@ def _prepare_candidate(
     context = _context(
         directory, operation_id, generation_id, plan.target.placement
     )
-    _initialize_runtime(
+    if resources:
+        report("stage", "Initializing Resources")
+    initialized = _initialize_runtime(
         manager,
         identity,
         runtime,
@@ -1608,6 +1654,7 @@ def _prepare_candidate(
     current = _checkpoint(
         manager, operation_id, revision, OperationStep.RESOURCES_READY
     )
+    _report_resources(resources, initialized)
     return observed, current.revision or ""
 
 
@@ -1939,7 +1986,13 @@ def register_editable_application(
                 plan.generation_id,
                 plan.target.placement,
             )
-            _initialize_runtime(
+            report("result", "Checkout", "REUSED", project)
+            report("result", "Environment", "REUSED", environment_path)
+            report("detail", "Dependencies: not modified")
+            report("version", str(observations["version"]))
+            if resources:
+                report("stage", "Initializing Resources")
+            initialized = _initialize_runtime(
                 manager,
                 identity,
                 runtime,
@@ -1953,6 +2006,8 @@ def register_editable_application(
                 manager, operation_id, revision, OperationStep.RESOURCES_READY
             )
             revision = current.revision or ""
+            _report_resources(resources, initialized)
+            report("stage", "Publishing Command")
             from apprc.distribution.runtime._windows_version import (
                 versioned_executable,
             )
@@ -1991,6 +2046,7 @@ def register_editable_application(
                     ),
                     previous=(*prior_outputs, *publication_authority),
                 )
+            report("result", "Global command", "PUBLISHED", output.path)
             outputs = [
                 *(item for item in prior_outputs if item.path != output.path),
                 output,
@@ -2009,12 +2065,19 @@ def register_editable_application(
                 OperationStep.REGISTRATION_READY,
             )
             revision = current.revision or ""
+            report("stage", "Saving Installation Record")
             activation_started = True
             result = manager.commit_install(
                 operation_id=operation_id,
                 expected_revision=revision,
                 observed=observed,
                 owned_outputs=tuple(outputs),
+            )
+            report(
+                "result",
+                "Installation record",
+                "RECORDED",
+                manager.directory / "installation.json",
             )
             from apprc.distribution.runtime._windows_registration import (
                 publish_registration,
@@ -2162,6 +2225,8 @@ def publish_optional_shortcuts(
     from apprc.distribution.runtime._os_integration import publish_shortcuts
     from apprc.user_files.installation.operations import record_owned_outputs
 
+    if start_menu or desktop:
+        report("stage", "Publishing Shortcuts")
     directory = manager.directory
     with installation_lock(directory):
         inspection = manager.inspect()
@@ -2172,9 +2237,7 @@ def publish_optional_shortcuts(
             or inspection.revision is None
             or record.identity != identity
         ):
-            print(
-                "Warning: optional shortcuts were not updated.", file=sys.stderr
-            )
+            warn(LOG, "Optional shortcuts were not updated")
             return inspection
         previous = tuple(
             item for item in record.owned_outputs if item.kind == "shortcut"
@@ -2199,13 +2262,16 @@ def publish_optional_shortcuts(
                 )
                 + created
             )
-            return record_owned_outputs(
+            result = record_owned_outputs(
                 directory,
                 app_id=identity.app_id,
                 expected_revision=inspection.revision,
                 generation_id=record.generation_id,
                 owned_outputs=outputs,
             )
+            for output in created:
+                report("result", "Shortcut", "PUBLISHED", output.path)
+            return result
         except Exception as error:
             from apprc.distribution.runtime._os_integration import (
                 remove_owned_command,
@@ -2216,8 +2282,5 @@ def publish_optional_shortcuts(
                     remove_owned_command(output)
                 except InstallationError:
                     pass
-            print(
-                f"Warning: optional shortcuts were not updated: {error}",
-                file=sys.stderr,
-            )
+            warn(LOG, "Optional shortcuts were not updated", error)
             return manager.inspect()

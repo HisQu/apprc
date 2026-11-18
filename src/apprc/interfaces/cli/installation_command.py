@@ -120,52 +120,45 @@ def mount_installation_group(
                     raise typer.BadParameter(
                         "Editable installation requires AppRC installation management."
                     )
+                from apprc.distribution.runtime._install_progress import (
+                    InstallProgress,
+                    installation_progress,
+                )
+                from apprc.interfaces.cli._installation_output import (
+                    InstallationProgressOutput,
+                )
+
+                context = _inspection(ctx)
+                output = InstallationProgressOutput(
+                    ctx, context.manager.spec.display_name, "editable"
+                )
+                output(InstallProgress("stage", "Reusing Runtime"))
                 try:
-                    result = _register_editable(
-                        ctx,
-                        command_directory=command_directory,
-                        assume_yes=assume_yes,
-                    )
+                    with installation_progress(output):
+                        result = _register_editable(
+                            ctx,
+                            command_directory=command_directory,
+                            assume_yes=assume_yes,
+                        )
                 except OSError as exc:
-                    typer.echo(
-                        f"Installation failed: {_installation_error_message(exc)}",
-                        err=True,
-                    )
+                    output.failed(_installation_error_message(exc))
                     raise typer.Exit(code=2) from exc
                 except ValueError as exc:
                     raise typer.BadParameter(
                         _installation_error_message(exc)
                     ) from exc
-                record = result.record
+                record = result.require_usable()
                 if record is None or not isinstance(
                     record.active_runtime, EditableCheckout
                 ):
                     raise ClickException(
                         "Installation did not return an editable checkout."
                     )
-                command = next(
-                    output.path
-                    for output in reversed(record.owned_outputs)
-                    if output.kind == "command"
-                    and Path(output.path).name
-                    == record.command_name + (".exe" if os.name == "nt" else "")
-                )
-                from apprc.interfaces.cli._installation_output import (
-                    print_installation_path,
-                )
-
-                print_installation_path(
-                    ctx, "Global command available", command
-                )
-                print_installation_path(
-                    ctx, "Checkout", record.active_runtime.project
-                )
                 try:
                     from apprc.distribution.runtime.installation import (
                         offer_configuration_setup,
                     )
 
-                    context = _inspection(ctx)
                     offer_configuration_setup(
                         result,
                         skip=skip_setup,
@@ -175,11 +168,15 @@ def mount_installation_group(
                         raise_on_failure=True,
                     )
                 except (OSError, subprocess.CalledProcessError) as exc:
-                    typer.echo(
-                        f"The global command is available, but {record.command_name} {config_group_name} setup failed: {exc}\nRun `{record.command_name} {config_group_name} setup` to retry.",
-                        err=True,
+                    output(
+                        InstallProgress(
+                            "warning",
+                            f"The global command is available, but {record.command_name} {config_group_name} setup failed: {exc}\nRun `{record.command_name} {config_group_name} setup` to retry.",
+                        )
                     )
+                    output.complete()
                     raise typer.Exit(code=1) from exc
+                output.complete()
                 return
             if installer_entrypoint is None:
                 command = (
@@ -196,7 +193,13 @@ def mount_installation_group(
                 for token in ctx.meta["apprc.installation.arguments"]
                 if token != "--"
             )
-            raise typer.Exit(code=installer_entrypoint(arguments))
+            from apprc.distribution.runtime._install_progress import (
+                installation_color_override,
+            )
+
+            with installation_color_override(ctx.color):
+                status = installer_entrypoint(arguments)
+            raise typer.Exit(code=status)
 
     @child.command("migrate")
     def migrate(

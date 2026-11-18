@@ -774,7 +774,7 @@ following existing controls remain supported:
 | `config_group_name` | `"config"` | Name of the enabled config group. |
 | `state_type` | `DefaultConfigCliState` | Type of application-owned runtime state; a custom type requires a factory. |
 | `state_factory` | `None` | Build host state after ordinary AppRC resolution; the high-level factory receives `CliRuntimeContext`. |
-| `args_provider` | `None` | Supply invocation tokens for embedded use; otherwise use the current invocation. |
+| `args_provider` | `None` | Supply invocation tokens for embedded use or an [application-owned default action](Development.md#choose-a-default-action-for-an-installed-command). The default uses the current invocation. |
 | `runtime_policy` | `None` | `ConfigRuntimePolicy` or `CliRuntimePolicy` for additional runtime-independent host command paths. |
 | `workspace_required` | `False` | Require a workspace for ordinary business execution; requires a Workspaces declaration. |
 | `handlers` | `MaintenanceHandlers()` | Explicit supported appdata, cache, and state operations. |

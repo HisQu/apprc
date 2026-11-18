@@ -540,6 +540,55 @@ Windows self-removal, leases, registration and shortcuts require separately
 authorized native Windows evidence. Never run Windows test executables through
 WSL interop or weaken ownership/ACL/link checks to make a fixture pass.
 
+### Choose a default action for an installed command
+
+An application can opt into a default action by choosing what its CLI runs
+when it receives zero arguments. AppRC forwards an empty invocation of the
+installed native command to the active runtime. The application owns the
+default at its CLI entry point, so typing the bare command, double-clicking
+its Windows executable, and invoking it from an editable checkout share the
+same behavior. Double-clicking the installer runs setup.
+
+Choose an existing command as the default, such as `serve` for a local web
+application. In the following entry-point excerpt, `APP_RC` is the existing
+AppRC declaration and `serve` is the application's command handler.
+
+```python
+import sys
+
+import typer
+
+from apprc.cli import mount_app_cli
+
+
+def main() -> None:
+    args = sys.argv[1:] or ["serve"]
+    app = typer.Typer()
+    app.command("serve")(serve)
+    mount_app_cli(app, APP_RC, args_provider=lambda: args)
+    app(args=args)
+```
+
+Customize the default by replacing `["serve"]` with the command and any fixed
+argument tokens. Apply the fallback only to an empty list so that explicit
+commands, `--help`, and `--version` reach the usual parser. If the application
+owns its root callback and uses `CliRuntime` directly, have its
+`args_provider` return the same effective arguments that Typer receives.
+Keep the command's business imports inside its handler so help stays lightweight.
+
+On Windows, pass `--start-menu` or `--desktop` to the installer to create a
+shortcut. With `launch-enabled = false` (the default), the shortcut invokes the
+installed command without arguments and uses the application's default action.
+To offer the Textual menu, mount a `LauncherSpec` and set `launch-enabled = true`
+under `[tool.apprc.distribution]`. The shortcut then passes `launch`. When
+constructing a `DistributionSpec` directly, use the same value for its
+`launch_enabled` field.
+
+Verify that the bare command and explicit default command start the same
+action, then check help, version where available, and an unrelated subcommand.
+For a Windows installer build, verify double-clicking the installed command
+and any requested shortcut from Windows itself.
+
 ## Release procedure
 
 `RELEASE_REQUIRE_CI` controls whether release automation requires hosted CI.

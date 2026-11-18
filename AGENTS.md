@@ -4,6 +4,7 @@
 - Warn me if the paths below appear outdated.
 - Reuse existing helpers and utilities before adding new helper functions.
 - Before changing CLI composition, facades, or help, follow [lightweight CLI startup](docs/Development.md#lightweight-cli-startup). Check transitive parent-package imports; declarations must not load editors, prompt engines, or host business implementations. Verify with a fresh-process help test before publishing.
+- For an app that opts into a no-argument launch, follow the [application-owned default action](docs/Development.md#choose-a-default-action-for-an-installed-command) convention.
 - For editable installation paths, follow the [checkout registration contract](docs/How-To-User-Guides.md#install-from-a-checkout). Distinguish filesystem identity from path spelling, preserve Windows UNC authorities, retain ownership/link safeguards, and include expected/actual paths in errors. Add guidance once at the CLI boundary.
 - For installation failure recovery, reuse recorded publication before-images, revision-checked authority transitions, and existing runtime/resource locks. Capture state before mutation, restore authority last, and distinguish a committed activation from cleanup failure. Application callbacks own database compatibility and external effects; installer rollback must not claim to undo them.
 - Check these modules first:

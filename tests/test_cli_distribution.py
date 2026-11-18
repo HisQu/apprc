@@ -145,6 +145,46 @@ assert "prompt_toolkit" not in sys.modules
         )
     else:
         assert "--target-current" in result.stdout
+        assert "--olis-repo" in result.stdout
+
+
+@pytest.mark.parametrize("flag", [None, "-o", "--olis-repo"])
+def test_distribution_build_olis_override(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch, flag: str | None
+) -> None:
+    from apprc.distribution import project
+    from apprc.interfaces.cli import _distribution_command as command
+
+    backend = ModuleType("authoring_fixture")
+    calls: list[dict[str, str]] = []
+
+    def build(
+        root: Path, *, revision: str, targets: tuple[str, ...], **options: str
+    ) -> None:
+        calls.append(options)
+
+    monkeypatch.setattr(backend, "build", build, raising=False)
+    monkeypatch.setattr(
+        backend,
+        "check",
+        lambda root, **kwargs: (root / "setup",),
+        raising=False,
+    )
+    monkeypatch.setitem(sys.modules, backend.__name__, backend)
+    monkeypatch.setattr(command, "_revision", lambda root: _REVISION)
+    monkeypatch.setattr(project, "_git", lambda *args: "")
+    monkeypatch.delenv("RELEASE_REPO_OLIS", raising=False)
+
+    args = ["dist", "build"]
+    if flag is not None:
+        args.extend((flag, "owner/selected"))
+        monkeypatch.setenv("RELEASE_REPO_OLIS", "owner/default")
+    result = CliRunner().invoke(_app(args), args)
+    assert result.exit_code == 0, result.output
+    assert calls == (
+        [{}] if flag is None else [{"olis_repo": "owner/selected"}]
+    )
+    assert ("OLIS generation skipped" in result.output) == (flag is None)
 
 
 def test_distribution_check_runs_without_resolving_app_state(

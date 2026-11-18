@@ -36,7 +36,12 @@ class _Backend(Protocol):
     """The build and check functions provided by one authoring module."""
 
     def build(
-        self, root: Path, *, revision: str, targets: tuple[NativeTarget, ...]
+        self,
+        root: Path,
+        *,
+        revision: str,
+        targets: tuple[NativeTarget, ...],
+        olis_repo: str | None = None,
     ) -> None: ...
 
     def check(
@@ -199,6 +204,8 @@ def _build(
     root: Path,
     revision: str,
     targets: tuple[NativeTarget, ...],
+    *,
+    olis_repo: str | None = None,
 ) -> None:
     from apprc.distribution.project import _git
     from apprc.interfaces._terminal_console import cli_line
@@ -209,7 +216,12 @@ def _build(
             "The setup uses the committed revision. Uncommitted edits are excluded.",
             error=True,
         )
-    backend.build(root, revision=revision, targets=targets)
+    if olis_repo is None:
+        backend.build(root, revision=revision, targets=targets)
+    else:
+        backend.build(
+            root, revision=revision, targets=targets, olis_repo=olis_repo
+        )
 
 
 def distribution_group() -> None:
@@ -236,6 +248,15 @@ def build_authoring_group(
                 "--target-current", "-t", help="Build only for this platform."
             ),
         ] = False,
+        olis_repo: Annotated[
+            str | None,
+            typer.Option(
+                "--olis-repo",
+                "-o",
+                metavar="OWNER/REPO",
+                help="GitHub release source for the scripts. Overrides RELEASE_REPO_OLIS.",
+            ),
+        ] = None,
     ) -> None:
         """Build verified setup executables from the committed checkout."""
         from apprc.distribution import (
@@ -254,11 +275,23 @@ def build_authoring_group(
                 )
             except (MissingNativeArtifact, StaleNativeArtifact):
                 pass
-            _build(backend, authoring.root, revision, targets)
+            _build(
+                backend, authoring.root, revision, targets, olis_repo=olis_repo
+            )
             for path in _check(
                 backend, authoring.root, revision=revision, targets=targets
             ):
                 cli_line(ctx, "Built", path=path)
+            if not (
+                os.environ.get("RELEASE_REPO_OLIS")
+                if olis_repo is None
+                else olis_repo
+            ):
+                cli_line(
+                    ctx,
+                    "Native installers built. OLIS generation skipped. "
+                    "Set RELEASE_REPO_OLIS or pass --olis-repo OWNER/REPO.",
+                )
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             raise ClickException(str(exc)) from exc
 

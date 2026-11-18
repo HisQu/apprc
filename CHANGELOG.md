@@ -92,7 +92,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
-- Native builds can generate one-line install scripts (OLIS) for public or private GitHub Releases. Each OLIS verifies and runs the native setup executable.
+- Native builds can generate one-line install scripts (OLIS) for public or private GitHub Releases. Select the release source with `dist build --olis-repo` (`-o`) or `RELEASE_REPO_OLIS`. Each OLIS verifies and runs the native setup executable.
 
 - Opted-in checkout `dist test` guides editable installation, managed installation and genuine managed updates on native Linux/Windows x86-64, with normal uninstall previews, manual observations and reports under `.cache/apprc/dist-test/`. Unattended runs preserve NOT VERIFIED status for human checks and reject pre-existing personal installations.
 

@@ -73,7 +73,7 @@ def test_configured_build_generates_both_olis_for_one_native_target(
             args, 0, "uv 99.0.0\n"
         ),
     )
-    environment = {"RELEASE_REPOSITORY": _REPOSITORY, "RELEASE_PUBLIC": public}
+    environment = {"RELEASE_REPO_OLIS": _REPOSITORY, "RELEASE_PUBLIC": public}
     identity = InstallationIdentity(
         "fixture", "fixture", "fixture", None, ("fixture",)
     )
@@ -125,9 +125,9 @@ def test_configured_build_generates_both_olis_for_one_native_target(
     ("settings", "fails_write"),
     [
         ({}, False),
-        ({"RELEASE_REPOSITORY": "Example/../bad"}, False),
-        ({"RELEASE_REPOSITORY": _REPOSITORY, "RELEASE_PUBLIC": "TRUE"}, False),
-        ({"RELEASE_REPOSITORY": _REPOSITORY}, True),
+        ({"RELEASE_REPO_OLIS": "Example/../bad"}, False),
+        ({"RELEASE_REPO_OLIS": _REPOSITORY, "RELEASE_PUBLIC": "TRUE"}, False),
+        ({"RELEASE_REPO_OLIS": _REPOSITORY}, True),
     ],
 )
 def test_olis_problems_only_warn_and_leave_native_outputs_intact(
@@ -151,11 +151,20 @@ def test_olis_problems_only_warn_and_leave_native_outputs_intact(
 
     frontends._write_olis(tmp_path, "fixture", settings)
 
-    assert (
-        "Native build succeeded. OLIS files may be missing or stale"
-        in caplog.text
-    )
+    assert "Existing OLIS files may be stale" in caplog.text
+    assert ("OLIS generation failed" in caplog.text) == bool(settings)
     assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before
+
+
+def test_unconfigured_build_with_no_olis_does_not_warn(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    frontends._write_olis(
+        tmp_path, "fixture", {"RELEASE_REPOSITORY": _REPOSITORY}
+    )
+
+    assert not caplog.records
+    assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.skipif(
@@ -228,7 +237,7 @@ def test_linux_olis_checks_before_running_and_cleans_up(
     frontends._write_olis(
         tmp_path,
         "fixture",
-        {"RELEASE_PUBLIC": public, "RELEASE_REPOSITORY": _REPOSITORY},
+        {"RELEASE_PUBLIC": public, "RELEASE_REPO_OLIS": _REPOSITORY},
     )
     marker = tmp_path / "setup-ran"
     script = tmp_path / _OUTPUTS[0]

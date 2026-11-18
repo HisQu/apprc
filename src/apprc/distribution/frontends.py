@@ -583,26 +583,34 @@ def _write_olis(
     :param app_id: Validated application ID used in native setup filenames.
     :param environment: Authoring settings used only to select and render OLIS.
     """
+    repository = environment.get("RELEASE_REPO_OLIS", "")
+    variants = (("sh", "linux-x86_64"), ("ps1", "windows-x86_64.exe"))
+    existing = False
     try:
-        repository = environment.get("RELEASE_REPOSITORY", "")
-        if not repository:
-            raise ValueError(
-                "Export RELEASE_REPOSITORY=OWNER/REPO to generate OLIS."
+        existing = any(
+            path.exists() or path.is_symlink()
+            for path in (
+                dist / f"install_from_github.{ext}" for ext, _ in variants
             )
+        )
+        if not repository:
+            if existing:
+                logger.warning(
+                    "Existing OLIS files may be stale. Set RELEASE_REPO_OLIS or pass "
+                    "--olis-repo OWNER/REPO to refresh them."
+                )
+            return
         if not re.fullmatch(
             r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+", repository
         ) or repository.rsplit("/", 1)[1] in {".", ".."}:
-            raise ValueError("RELEASE_REPOSITORY must be a GitHub OWNER/REPO.")
+            raise ValueError("RELEASE_REPO_OLIS must be a GitHub OWNER/REPO.")
         visibility = environment.get("RELEASE_PUBLIC", "") or "false"
         if visibility not in {"true", "false"}:
             raise ValueError("RELEASE_PUBLIC must be true or false.")
         mode = "public" if visibility == "true" else "private"
         templates = files("apprc.distribution").joinpath("_templates")
         outputs = []
-        for extension, setup_suffix in (
-            ("sh", "linux-x86_64"),
-            ("ps1", "windows-x86_64.exe"),
-        ):
+        for extension, setup_suffix in variants:
             content = templates.joinpath(
                 f"github_{mode}.{extension}"
             ).read_text(encoding="utf-8")
@@ -616,9 +624,10 @@ def _write_olis(
             _write_atomic(output, content, executable=output.suffix == ".sh")
     except (OSError, ValueError) as error:
         logger.warning(
-            "Native build succeeded. OLIS files may be missing or stale: %s",
-            error,
+            "Native build succeeded. OLIS generation failed: %s", error
         )
+        if existing:
+            logger.warning("Existing OLIS files may be stale.")
 
 
 def build_native_distribution(

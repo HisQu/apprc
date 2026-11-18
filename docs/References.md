@@ -272,7 +272,10 @@ The importable backend module provides `build(root, *, revision, targets)`
 and `check(root, *, revision, targets)`. `root` is the verified editable project
 directory, `revision` is the full Git commit, and `targets` is a tuple of
 `NativeTarget` values. `build` publishes the selected setups and returns
-`None`. `check` returns the verified setup paths and should use
+`None`. To support `dist build --olis-repo`, accept the optional keyword
+`olis_repo: str | None = None` and put that value in `RELEASE_REPO_OLIS` in the
+environment mapping passed to `build_native_distribution()`. `check` returns
+the verified setup paths and should use
 `check_native_distribution()`. Its `MissingNativeArtifact` and
 `StaleNativeArtifact` errors allow a rebuild. Integrity failures stop the command
 and leave the existing files available for investigation.
@@ -297,7 +300,8 @@ An explicit `installer_entrypoint` continues to take precedence.
 
 | Build setting | Effect |
 | --- | --- |
-| `RELEASE_REPOSITORY` | GitHub release repository in `OWNER/REPO` form. Without it, native setup executables still build and OLIS generation is skipped with a warning. |
+| `--olis-repo` / `-o` | GitHub repository in `OWNER/REPO` form that contains the native setup releases. An explicit flag overrides `RELEASE_REPO_OLIS`. |
+| `RELEASE_REPO_OLIS` | Default GitHub release source when the flag is absent. If both are omitted, the build skips OLIS generation and warns if existing scripts may be stale. |
 | `RELEASE_PUBLIC` | `true` selects the public templates. `false`, an empty value, or an unset value selects the private templates. Invalid settings warn without failing the native build. |
 
 The build reads these settings from its authoring environment. A configured

@@ -1033,11 +1033,13 @@ From a checkout that provides `dist build`, pass the release repository and
 access mode to the build. For example, with an application command named `demo`:
 
 ```bash
-RELEASE_PUBLIC=true RELEASE_REPOSITORY=OWNER/REPO uv run --locked demo dist build
+RELEASE_PUBLIC=true uv run --locked demo dist build --olis-repo OWNER/REPO
 ```
 
 Replace `OWNER/REPO` with the GitHub repository that holds the native setup
-executables and `SHA256SUMS`. Set `RELEASE_PUBLIC=false` for a private release.
+executables and `SHA256SUMS`. Use `-o` as shorthand or export
+`RELEASE_REPO_OLIS=OWNER/REPO` to set a default for builds. Set
+`RELEASE_PUBLIC=false` for a private release.
 A configured build writes `install_from_github.sh` and
 `install_from_github.ps1` to `dist/`.
 

@@ -960,7 +960,8 @@ used for diagnosis, repair and uninstall—no separate PowerShell/CMD launcher.
 
 If the application declares an [authoring backend](References.md#distribution-generation),
 run `uv run --locked <app> dist build` and `uv run --locked <app> dist check`
-from the checkout. Add `-t` for just the current platform. With installation
+from the checkout. With `AppRCRootGroup`, root help lists `dist` under
+**AppRC: Commands**. Add `-t` for just the current platform. With installation
 management enabled, `uv run --locked <app> app install` verifies and runs the
 current-platform setup. Builds use the committed tree, so commit changes you
 want to include before building. If a setup and its manifest disagree, inspect

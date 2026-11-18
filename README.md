@@ -300,6 +300,7 @@ in `.cache/apprc/`, never in application source directories.
 
 Applications with an opted-in [authoring backend](docs/References.md#distribution-generation)
 provide `dist build` and `dist check` from their editable checkout environment.
+With `AppRCRootGroup`, root help lists `dist` under **AppRC: Commands**.
 Use `-t` for the current native target. The checkout can also hand off
 `app install` to its verified native setup.
 

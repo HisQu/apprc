@@ -669,7 +669,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 installation_management=installation_management,
             )
             staging.add_typer(
-                dist_app, name="dist", rich_help_panel="AppRC: Development"
+                dist_app, name="dist", rich_help_panel=maintenance_help_panel
             )
             mounted["dist"] = dist_app
 

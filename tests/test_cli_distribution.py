@@ -15,7 +15,7 @@ import typer
 from typer.testing import CliRunner
 
 from apprc import AppRC
-from apprc.cli import mount_app_cli
+from apprc.cli import AppRCRootGroup, mount_app_cli
 
 _COMMAND = "dist-fixture"
 _REVISION = "1" * 40
@@ -62,7 +62,7 @@ backend = "authoring_fixture"
 def _app(
     args: list[str], *, installation_management: bool = False
 ) -> typer.Typer:
-    app = typer.Typer()
+    app = typer.Typer(cls=AppRCRootGroup)
     mount_app_cli(
         app,
         AppRC(app_id=_COMMAND, command_name=_COMMAND),
@@ -72,7 +72,12 @@ def _app(
     return app
 
 
-def test_distribution_help_is_lazy_in_a_fresh_process(checkout: Path) -> None:
+@pytest.mark.parametrize(
+    "help_args", [("--help",), ("dist", "build", "--help")]
+)
+def test_distribution_help_is_lazy_in_a_fresh_process(
+    checkout: Path, help_args: tuple[str, ...]
+) -> None:
     result = subprocess.run(
         [
             sys.executable,
@@ -90,17 +95,22 @@ class NoAuthoringDependencies(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, NoAuthoringDependencies())
 sys.path.insert(0, sys.argv[1])
 sys.prefix = str(Path(sys.argv[1]) / "checkout" / ".venv")
-sys.argv = ["dist-fixture", "dist", "build", "--help"]
+sys.argv = ["dist-fixture", *sys.argv[2:]]
 import typer
 from apprc import AppRC
-from apprc.cli import mount_app_cli
+from apprc.cli import AppRCRootGroup, mount_app_cli
 
 def forbidden(*args, **kwargs):
     raise AssertionError("help resolved application paths or installation authority")
 
 AppRC.paths = AppRC.installation = forbidden
-app = typer.Typer()
+app = typer.Typer(cls=AppRCRootGroup)
 mount_app_cli(app, AppRC(app_id="dist-fixture", command_name="dist-fixture"))
+
+@app.command()
+def serve():
+    pass
+
 try:
     app()
 except SystemExit as exc:
@@ -108,8 +118,10 @@ except SystemExit as exc:
 assert "authoring_fixture" not in sys.modules
 assert "apprc.distribution.native" not in sys.modules
 assert "textual" not in sys.modules
+assert "prompt_toolkit" not in sys.modules
 """,
             str(checkout.parent),
+            *help_args,
         ],
         cwd=checkout.parent,
         env={**os.environ, "NO_COLOR": "1"},
@@ -118,7 +130,21 @@ assert "textual" not in sys.modules
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "--target-current" in result.stdout
+    if help_args == ("--help",):
+        host_help, apprc_help = result.stdout.split("AppRC: Commands", 1)
+        assert any(
+            line.split()[:2] == ["│", "serve"]
+            for line in host_help.splitlines()
+        )
+        assert all(
+            line.split()[:2] != ["│", "dist"] for line in host_help.splitlines()
+        )
+        assert any(
+            line.split()[:2] == ["│", "dist"]
+            for line in apprc_help.splitlines()
+        )
+    else:
+        assert "--target-current" in result.stdout
 
 
 def test_distribution_check_runs_without_resolving_app_state(
@@ -162,7 +188,9 @@ def test_noneditable_interpreter_does_not_enable_distribution(
     args = ["--help"]
     result = CliRunner().invoke(_app(args), args)
     assert result.exit_code == 0, result.output
-    assert "AppRC: Development" not in result.output
+    assert all(
+        line.split()[:2] != ["│", "dist"] for line in result.output.splitlines()
+    )
 
 
 @pytest.mark.parametrize("existing", ["verified", "missing", "corrupt"])

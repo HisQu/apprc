@@ -94,7 +94,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 - Opted-in checkout `dist test` guides editable installation, managed installation and genuine managed updates on native Linux/Windows x86-64, with normal uninstall previews, manual observations and reports under `.cache/apprc/dist-test/`. Unattended runs preserve NOT VERIFIED status for human checks and reject pre-existing personal installations.
 
-- Opted-in editable checkouts provide `dist build` and `dist check` for committed native setups, with `-t` for the current platform. Checkout `app install` can hand off to a verified native setup.
+- Opted-in editable checkouts provide `dist build` and `dist check` for committed native setups, with `-t` for the current platform. AppRC root help lists `dist` under **AppRC: Commands**. Checkout `app install` can hand off to a verified native setup.
 
 - Editable registration and managed setup now show live installation stages, resolved paths, and an explicit completion result.
 

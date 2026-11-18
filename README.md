@@ -299,8 +299,9 @@ snapshots. Final artifacts belong in ignored `dist/`; build intermediates stay
 in `.cache/apprc/`, never in application source directories.
 
 Native builds can also generate [one-line install scripts (OLIS)](docs/How-To-User-Guides.md#generate-one-line-install-scripts).
-An OLIS downloads and verifies the native setup executable from a GitHub
-Release, then runs it.
+Use `dist build --olis-repo OWNER/REPO` or set `RELEASE_REPO_OLIS` to choose the
+GitHub repository that contains the setup releases. Each OLIS downloads and
+verifies the native setup executable, then runs it.
 
 Applications with an opted-in [authoring backend](docs/References.md#distribution-generation)
 provide `dist build` and `dist check` from their editable checkout environment.

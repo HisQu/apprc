@@ -499,10 +499,11 @@ loader.
 
 ### Guided installation validation
 
-Opted-in editable checkouts also expose `dist test`. The runner uses the
-checkout's existing Python environment and launches installers and published
-commands in child processes. Native managed profiles support Linux x86-64 and
-Windows x86-64; run Windows validation in native Windows.
+Opted-in editable checkouts with installation management also expose
+`dist test`. The runner uses the checkout's existing Python environment and
+launches installers and published commands in child processes. Native release
+installation profiles support Linux and Windows x86-64. Run Windows validation
+on native Windows.
 
 | Invocation | Profile |
 | --- | --- |

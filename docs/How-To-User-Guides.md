@@ -674,7 +674,8 @@ remain supported, and nested help uses normal Typer formatting. AppRC's seven ru
 `--env-file`, `--env-file-overrides-os-environ`/`-o`,
 `--skip-dotenv-layers`/`-s`, `--workspace`, `--layout`, `--app-root`, and
 `--log-level`. `-o` changes explicit-file versus OS-environment priority;
-`-s` skips managed dotenv layers, not explicit files. Layout and root overrides
+`-s` skips dotenv setting values, including values from explicit files. Those
+files still participate in path and workspace selection. Layout and root overrides
 apply to this invocation only. Log-level handling still occurs before resolution.
 
 The mount adds `app doctor` and `app paths` even without config or resource
@@ -1009,9 +1010,10 @@ this is not an offline installer guarantee.
 
 ## Validate installation on your machine
 
-Run the guided validation from the distribution-enabled checkout's existing
-environment. Editable registration is the default. Select `--managed/-m` to
-test a release installation, or supply an older setup with `--update-from/-u`
+Run the guided validation from a checkout with distribution authoring and
+installation management enabled, using its existing environment. Editable
+registration is the default. Select `--managed/-m` to test a release
+installation, or supply an older setup with `--update-from/-u`
 to test an update. `--update-from` implies `--managed` and cannot be combined
 with `--editable/-e`.
 

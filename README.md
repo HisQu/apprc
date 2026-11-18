@@ -319,9 +319,10 @@ to build a release package from a committed, locked project snapshot. The
 application supplies a build backend. Final executables and `SHA256SUMS` go
 in ignored `dist/`. Build intermediates stay in `.cache/apprc/`.
 
-In an opted-in source checkout, the host command provides `dist build`,
-`dist check`, and `dist test`. Use `-t` with build or check for the current
-platform, and `dist test --managed` for guided testing of a release installation.
+In an opted-in source checkout, the host command provides `dist build` and
+`dist check`. Installation management also enables `dist test`. Use `-t` with
+build or check for the current platform, and `dist test --managed` for guided
+testing of a release installation.
 With `AppRCRootGroup`, these commands live under **AppRC: Commands**.
 
 Configure [One-line installer (OLI) generation](docs/How-To-User-Guides.md#generate-one-line-install-scripts)

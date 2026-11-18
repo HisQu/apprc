@@ -230,22 +230,25 @@ def _uninstall(
     flags = ["--keep-config"] if keep_config else []
     if assume_yes:
         flags.append("--yes")
-    _run(
-        [str(command), *root_arguments, group, "uninstall", *flags],
-        cwd=root,
-        environment={
-            **environment,
-            "_APPRC_DIST_TEST_UNINSTALL_REVISION": expected.revision,
-            **dict.fromkeys(("TMPDIR", "TMP", "TEMP"), str(parent)),
-        },
-    )
-    result = _await_uninstall(
-        manager, parent, expected.record, publication, group
-    )
-    if not any(parent.iterdir()):
-        parent.rmdir()
-    report.pop("uninstall_recovery")
-    return result
+    try:
+        _run(
+            [str(command), *root_arguments, group, "uninstall", *flags],
+            cwd=root,
+            environment={
+                **environment,
+                "_APPRC_DIST_TEST_UNINSTALL_REVISION": expected.revision,
+                **dict.fromkeys(("TMPDIR", "TMP", "TEMP"), str(parent)),
+            },
+        )
+        return _await_uninstall(
+            manager, parent, expected.record, publication, group
+        )
+    finally:
+        # > A declined preview has no handoff or recovery files.
+        if not any(parent.glob("apprc-uninstall-*")):
+            report.pop("uninstall_recovery")
+            if not any(parent.iterdir()):
+                parent.rmdir()
 
 
 def _verify_runtime(

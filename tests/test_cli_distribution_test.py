@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
@@ -341,8 +343,9 @@ def test_guided_uninstall_child_rejects_changed_authority(
     assert preview.call_count == (0 if changed_at == "initial" else 1)
 
 
+@pytest.mark.parametrize("declined", [False, True])
 def test_uninstall_child_carries_accepted_revision_and_root_options(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declined: bool
 ) -> None:
     manager = _manager(tmp_path)
     record = installation_record()
@@ -376,28 +379,37 @@ def test_uninstall_child_carries_accepted_revision_and_root_options(
         command: list[str], *, cwd: Path, environment: dict[str, str]
     ) -> str:
         calls.append((command, environment))
+        if declined:
+            raise subprocess.CalledProcessError(1, command)
         return ""
 
     monkeypatch.setattr(guide, "_run", execute)
-    guide._uninstall(
-        tmp_path / "checkout-command",
-        "app",
-        manager,
-        expected,
-        tmp_path / "published",
-        (),
-        keep_config=True,
-        assume_yes=True,
-        root=tmp_path,
-        environment={},
-        report={},
-        root_arguments=(
-            "--layout",
-            "single-root",
-            "--app-root",
-            str(tmp_path / "resources"),
-        ),
+    report: dict[str, object] = {}
+    outcome = (
+        pytest.raises(subprocess.CalledProcessError)
+        if declined
+        else nullcontext()
     )
+    with outcome:
+        guide._uninstall(
+            tmp_path / "checkout-command",
+            "app",
+            manager,
+            expected,
+            tmp_path / "published",
+            (),
+            keep_config=True,
+            assume_yes=not declined,
+            root=tmp_path,
+            environment={},
+            report=report,
+            root_arguments=(
+                "--layout",
+                "single-root",
+                "--app-root",
+                str(tmp_path / "resources"),
+            ),
+        )
     ((command, environment),) = calls
     assert command == [
         str(tmp_path / "checkout-command"),
@@ -408,9 +420,11 @@ def test_uninstall_child_carries_accepted_revision_and_root_options(
         "app",
         "uninstall",
         "--keep-config",
-        "--yes",
+        *([] if declined else ["--yes"]),
     ]
     assert environment["_APPRC_DIST_TEST_UNINSTALL_REVISION"] == "accepted"
+    assert "uninstall_recovery" not in report
+    assert not Path(environment["TMPDIR"]).exists()
 
 
 def test_distribution_capture_keeps_selectors_without_resolving_paths(

@@ -74,8 +74,9 @@ Treat this as the parking lot for actionable problems discovered while working b
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
 2. [2026-11-18](#2026-11-18)
-   1. [P3 / E3 \[Bug risk\] - *Verify managed desktop shortcuts on Windows*](#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows)
-   2. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
+   1. [P3 / E3 \[Docs drift\] - *Refresh command examples in the example package README*](#p3--e3-docs-drift---refresh-command-examples-in-the-example-package-readme)
+   2. [P3 / E3 \[Bug risk\] - *Verify managed desktop shortcuts on Windows*](#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows)
+   3. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
 3. [2026-11-16](#2026-11-16)
    1. [P1 / E1 \[Bug risk\] - *Uninstall cleanup can race with new resource leases*](#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
    2. [P2 / E2 \[Bug risk\] - *Literal secret interpolation needs an explicit contract*](#p2--e2-bug-risk---literal-secret-interpolation-needs-an-explicit-contract)
@@ -88,6 +89,15 @@ Treat this as the parking lot for actionable problems discovered while working b
 <br>
 
 # 2026-11-18
+
+## P3 / E3 [Docs drift] - *Refresh command examples in the example package README*
+- **Area:** `examples/example_apps/README.md`
+- **Observed while:** Reviewing the example catalog and its links.
+- **Why deferred:** The documentation overhaul changes the six primary docs and their entry points. The separate example package guide has its own command matrix.
+- **Evidence:** The example package guide suggests root `paths` and `purge --all --dry-run` and lists flat resource groups. The mounted CLI exposes `app paths` and only the nested resource operations each app supplies.
+- **Suggested next step:** Check each example's mounted help and update the command snippets and availability table together.
+
+<br>
 
 ## P3 / E3 [Bug risk] - *Verify managed desktop shortcuts on Windows*
 - **Area:** `src/apprc/distribution/runtime/_manager.py` and `src/apprc/distribution/runtime/_os_integration.py`.

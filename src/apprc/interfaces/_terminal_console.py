@@ -13,19 +13,18 @@ if TYPE_CHECKING:
     from rich.console import Console as RichConsole
     from typer import Context
 
-# > Load renderer dependencies before standalone cleanup removes their sources.
+if __package__:
+    from . import _terminal_styles as styles
+else:
+    import _terminal_styles as styles  # type: ignore[reportMissingImports]
+
+# > Load optional Rich dependencies before standalone cleanup removes their sources.
 try:
     from rich.console import Console
     from rich.text import Text
-
-    if __package__:
-        from . import _terminal_styles as styles
-    else:
-        import _terminal_styles as styles  # type: ignore[reportMissingImports]
 except ImportError:
     Console = None
     Text = None
-    styles = None
 
 _COLOR_OVERRIDE = "_APPRC_TERMINAL_COLOR"
 
@@ -40,6 +39,20 @@ def color_environment(
     return result
 
 
+def _color_enabled(
+    stream: TextIO, color: bool | None, terminal: bool | None = None
+) -> bool:
+    if "NO_COLOR" in os.environ:
+        return False
+    if color is None:
+        override = os.environ.get(_COLOR_OVERRIDE)
+        if override in {"1", "0"}:
+            color = override == "1"
+    if color is None:
+        return stream.isatty() if terminal is None else terminal
+    return color
+
+
 def terminal_console(
     stream: TextIO,
     *,
@@ -50,13 +63,7 @@ def terminal_console(
     """Use the caller's color override and the actual terminal's capability."""
     if Console is None:
         raise ImportError("Rich terminal rendering is unavailable.")
-    if color is None:
-        override = os.environ.get(_COLOR_OVERRIDE)
-        if override in {"1", "0"}:
-            color = override == "1"
-    if color is None:
-        color = stream.isatty() if terminal is None else terminal
-    color = color and "NO_COLOR" not in os.environ
+    color = _color_enabled(stream, color, terminal)
     return Console(
         file=stream,
         width=width,
@@ -80,6 +87,41 @@ def cli_console(
     )
 
 
+def _supports_basic_color(stream: TextIO) -> bool:
+    """Avoid sending escape sequences to a legacy Windows console."""
+    if os.name != "nt" or not stream.isatty():
+        # > Redirected streams reach this branch only with an explicit override.
+        return True
+    import ctypes
+    import msvcrt
+
+    try:
+        handle = msvcrt.get_osfhandle(stream.fileno())
+        mode = ctypes.c_uint32()
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        return bool(
+            kernel.GetConsoleMode(ctypes.c_void_p(handle), ctypes.byref(mode))
+            and mode.value & 0x0004
+        )
+    except (OSError, ValueError):
+        return False
+
+
+_BASIC_ANSI = {
+    "dim": 2,
+    "red": 31,
+    "green": 32,
+    "yellow": 33,
+    "magenta": 35,
+    "cyan": 36,
+}
+
+
+def _basic_style(text: str, style: str) -> str:
+    code = _BASIC_ANSI.get(style)
+    return f"\x1b[{code}m{text}\x1b[0m" if text and code is not None else text
+
+
 def write_line(
     stream: TextIO,
     message: str,
@@ -89,16 +131,16 @@ def write_line(
     prefix: str = "",
     color: bool | None = None,
 ) -> None:
-    """Write one literal result, with a plain fallback when Rich is unavailable."""
+    """Write one literal result, including from stdlib-only finalization."""
     separator = ": " if message and path is not None else ""
-    if Text is None or styles is None:
+    if Text is None:
+        path_value = str(path) if path is not None else ""
+        if _color_enabled(stream, color) and _supports_basic_color(stream):
+            prefix = _basic_style(prefix, styles.SUCCESS_STYLE)
+            message = _basic_style(message, styles.RESULT_STYLES.get(style, ""))
+            path_value = _basic_style(path_value, styles.PATH_STYLE)
         print(
-            prefix
-            + message
-            + separator
-            + (str(path) if path is not None else ""),
-            file=stream,
-            flush=True,
+            prefix + message + separator + path_value, file=stream, flush=True
         )
         return
     line = Text.assemble(

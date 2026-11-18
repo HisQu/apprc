@@ -281,6 +281,8 @@ readiness and exit-handshake pipes; attach human-facing output to that console
 without replacing the control channels. The finalizer owns completion and Enter
 acknowledgement. Stage the shared terminal renderer and styles with the finalizer so results
 retain their styling after the application and staging directory are removed.
+The standalone process can emit basic terminal colors with the standard library
+when Rich is unavailable and the stream supports them.
 
 Final cleanup runs from a surviving working directory. After the originating
 handoff process exits, an external finalizer removes private staging files so

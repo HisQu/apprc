@@ -622,7 +622,10 @@ def test_temporary_cleanup_failure_warns_without_failing_uninstall(
     assert staging.exists()
 
 
-def test_staged_results_keep_colors_without_application_package(tmp_path):
+@pytest.mark.parametrize("rich_available", [True, False])
+def test_staged_results_keep_colors_without_application_package(
+    tmp_path, rich_available
+):
     import os
     import subprocess
     import sys
@@ -638,11 +641,12 @@ def test_staged_results_keep_colors_without_application_package(tmp_path):
     environment = color_environment(os.environ, True)
     environment.pop("NO_COLOR", None)
     environment["TERM"] = "xterm"
+    block_rich = "" if rich_available else "sys.modules['rich'] = None; "
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            f"import sys, shutil; sys.path.insert(0, {str(staging)!r}); sys.modules['apprc'] = None; import _uninstall_terminal; shutil.rmtree({str(staging)!r}); _uninstall_terminal.result_line('Uninstall completed.', style='success'); _uninstall_terminal.result_line('Retained configuration', '/example/[settings]'); _uninstall_terminal.result_line('Temporary cleanup failed.', style='warning')",
+            f"import sys, shutil; sys.path.insert(0, {str(staging)!r}); sys.modules['apprc'] = None; {block_rich}import _uninstall_terminal; shutil.rmtree({str(staging)!r}); _uninstall_terminal.result_line('Uninstall completed.', style='success'); _uninstall_terminal.result_line('Retained configuration', '/example/[settings]'); _uninstall_terminal.result_line('Temporary cleanup failed.', style='warning')",
         ],
         cwd=tmp_path,
         env=environment,

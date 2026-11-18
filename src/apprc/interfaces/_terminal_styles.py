@@ -6,9 +6,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-# == 3rd Party ===============================
-from rich.markup import escape
-from rich.text import Text
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 PATH_STYLE = "cyan"
 WORKSPACE_NAME_STYLE = "bold"
@@ -44,6 +45,8 @@ def path_text(path: str | Path) -> Text:
     :param path: Filesystem path or already-rendered path text.
     :return: Styled Rich text.
     """
+    from rich.text import Text
+
     return Text(str(path), style=PATH_STYLE)
 
 
@@ -56,6 +59,8 @@ def path_markup(path: str | Path) -> str:
     :param path: Filesystem path or already-rendered path text.
     :return: Markup string with the canonical path style.
     """
+    from rich.markup import escape
+
     return f"[{PATH_STYLE}]{escape(str(path))}[/]"
 
 
@@ -65,6 +70,8 @@ def workspace_name_text(name: str) -> Text:
     :param name: Workspace selector shown to the user.
     :return: Styled Rich text.
     """
+    from rich.text import Text
+
     return Text(name, style=WORKSPACE_NAME_STYLE)
 
 
@@ -74,6 +81,8 @@ def env_key_text(env_key: str) -> Text:
     :param env_key: Environment variable name.
     :return: Styled Rich text.
     """
+    from rich.text import Text
+
     return Text(env_key, style=ENV_KEY_STYLE)
 
 
@@ -84,6 +93,8 @@ def label_value_text(label: str, value: str | Text) -> Text:
     :param value: Plain text or Rich text value.
     :return: Styled label/value line.
     """
+    from rich.text import Text
+
     rendered = Text.assemble((label, LABEL_STYLE), ": ")
     if isinstance(value, Text):
         rendered.append_text(value)
@@ -98,6 +109,8 @@ def lines_text(*lines: str | Text) -> Text:
     :param lines: Lines to join with newline separators.
     :return: One Rich text block.
     """
+    from rich.text import Text
+
     rendered = Text()
     for index, line in enumerate(lines):
         if index:
@@ -120,6 +133,8 @@ def style_literals(text: str, styles: Mapping[str, str]) -> Text:
     :param styles: Literal text mapped to Rich style names.
     :return: Rich text with matching literal spans styled.
     """
+    from rich.text import Text
+
     rendered = Text(text)
     for literal, style in sorted(
         styles.items(),

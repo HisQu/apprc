@@ -1404,13 +1404,14 @@ def _install_managed_candidate(
         )
         from apprc.distribution.runtime._icons import ready_icon
 
-        result, icon = ready_icon(result, publish=True)
+        result, icon, icon_resolved = ready_icon(result, publish=True)
         result = publish_registration(
             result,
             observed.version or "",
             stable,
             _MAINTENANCE_GROUP.get(),
             icon=icon,
+            preserve_icon=not icon_resolved,
         )
         return _finish_installation(manager, result)
     except BaseException as error:
@@ -2413,7 +2414,7 @@ def publish_optional_shortcuts(
         )
         created: tuple[OwnedOutput, ...] = ()
         try:
-            _, icon = ready_icon(inspection)
+            _, icon, _ = ready_icon(inspection)
             created = publish_shortcuts(
                 command,
                 identity,

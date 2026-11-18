@@ -1012,6 +1012,20 @@ def test_optional_app_list_update_recovers_partial_writes(
         for item in result.record.owned_outputs
     )
 
+    result = metadata.publish_registration(
+        result, "1.2.5", tmp_path / "fixture.exe", "app", preserve_icon=True
+    )
+    assert result.record is not None
+    output = next(
+        item for item in result.record.owned_outputs if item.kind == "hkcu"
+    )
+    assert dict(output.values)["DisplayIcon"] == expected_icon
+    assert dict(output.values)["DisplayVersion"] == "1.2.5"
+    assert registry_entry.values["DisplayIcon"] == (
+        expected_icon,
+        windows_registry.REG_SZ,
+    )
+
     delete = windows_registry.DeleteValue
 
     def delete_then_fail(key, name):
@@ -1021,7 +1035,7 @@ def test_optional_app_list_update_recovers_partial_writes(
     with monkeypatch.context() as interrupted:
         interrupted.setattr(windows_registry, "DeleteValue", delete_then_fail)
         metadata.publish_registration(
-            result, "1.2.5", tmp_path / "fixture.exe", "app"
+            result, "1.2.6", tmp_path / "fixture.exe", "app"
         )
     with installation_lock(tmp_path):
         recovered = metadata.recover_registration(
@@ -1036,7 +1050,7 @@ def test_optional_app_list_update_recovers_partial_writes(
             tuple(
                 (name, value)
                 for name, value in sorted(
-                    dict(output.values, DisplayVersion="1.2.5").items()
+                    dict(output.values, DisplayVersion="1.2.6").items()
                 )
                 if name != "DisplayIcon"
             ),

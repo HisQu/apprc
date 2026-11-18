@@ -29,11 +29,12 @@ LOG = logging.getLogger(__name__)
 
 def ready_icon(
     inspection: InstallationInspection, *, publish: bool = False
-) -> tuple[InstallationInspection, Path | None]:
+) -> tuple[InstallationInspection, Path | None, bool]:
     """Resolve the active product's owned icon under the lifecycle lock.
 
     Only managed project snapshots supply artwork. Publication records the exact
     digest before writing the file, so an interrupted write can be retried.
+    The final value distinguishes a resolved icon or omission from a failure.
     """
     record = inspection.require_usable()
     if (
@@ -42,7 +43,7 @@ def ready_icon(
         or not isinstance(record.active_runtime, RuntimeSlot)
         or sys.platform not in {"win32", "linux"}
     ):
-        return inspection, None
+        return inspection, None, True
 
     runtime = record.active_runtime
     directory = inspection.directory
@@ -51,22 +52,23 @@ def ready_icon(
     platform = "windows" if sys.platform == "win32" else "linux"
     try:
         assert_no_links(archive)
-        with archive.open("rb") as stream, zipfile.ZipFile(stream) as snapshot:
-            document = tomllib.loads(
-                snapshot.read((source / "pyproject.toml").as_posix()).decode(
-                    "utf-8"
-                )
-            )
-            relative = _icon_paths(document).get(platform)
-            if relative is None:
-                return inspection, None
-            stream.seek(0)
+        with archive.open("rb") as stream:
             if (
                 hashlib.file_digest(stream, "sha256").hexdigest()
                 != runtime.source.digest
             ):
                 raise ValueError("Retained icon source archive was modified.")
-            content = snapshot.read((source / relative).as_posix())
+            stream.seek(0)
+            with zipfile.ZipFile(stream) as snapshot:
+                document = tomllib.loads(
+                    snapshot.read(
+                        (source / "pyproject.toml").as_posix()
+                    ).decode("utf-8")
+                )
+                relative = _icon_paths(document).get(platform)
+                if relative is None:
+                    return inspection, None, True
+                content = snapshot.read((source / relative).as_posix())
         digest = hashlib.sha256(content).hexdigest()
         output = OwnedOutput(
             "support", f"icon-{digest}{relative.suffix.lower()}", digest
@@ -82,9 +84,9 @@ def ready_icon(
                 raise ValueError(
                     "Icon conflicts with an unowned or modified support file."
                 )
-            return inspection, destination
+            return inspection, destination, True
         if not publish:
-            return inspection, None
+            return inspection, None, False
         if output not in record.owned_outputs:
             inspection = record_owned_outputs(
                 directory,
@@ -94,7 +96,7 @@ def ready_icon(
                 owned_outputs=(*record.owned_outputs, output),
             )
         write_bytes_atomic(destination, content)
-        return inspection, destination
+        return inspection, destination, True
     except (OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
         warn(LOG, "Application icon was not installed", error)
-        return inspection, None
+        return inspection, None, False

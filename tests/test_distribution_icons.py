@@ -78,19 +78,21 @@ def test_managed_icon_reuses_identical_bytes_and_uninstall_removes_its_outputs(
     with installation_lock(tmp_path):
         write_record(tmp_path, _record(tmp_path), expected_revision=None)
         ready = inspect_installation(tmp_path, app_id="fixture")
-        ready, original = _icons.ready_icon(ready, publish=True)
+        ready, original, resolved = _icons.ready_icon(ready, publish=True)
+        assert resolved
         assert original is not None and original.read_bytes() == b"original"
-        assert _icons.ready_icon(ready) == (ready, original)
-        assert _icons.ready_icon(ready, publish=True) == (ready, original)
+        assert _icons.ready_icon(ready) == (ready, original, True)
+        assert _icons.ready_icon(ready, publish=True) == (ready, original, True)
 
         assert ready.record is not None
         updated = replace(
             ready.record, active_runtime=_runtime(tmp_path, b"updated")
         )
         write_record(tmp_path, updated, expected_revision=ready.revision)
-        ready, latest = _icons.ready_icon(
+        ready, latest, resolved = _icons.ready_icon(
             inspect_installation(tmp_path, app_id="fixture"), publish=True
         )
+        assert resolved
         assert latest is not None and latest.read_bytes() == b"updated"
         assert original.read_bytes() == b"original"
         assert ready.record is not None
@@ -122,9 +124,10 @@ def test_icon_publication_failure_preserves_a_usable_install(
                     raise OSError("Controlled icon write failure")
 
                 failed.setattr(_icons, "write_bytes_atomic", fail)
-            result, icon = _icons.ready_icon(ready, publish=True)
+            result, icon, resolved = _icons.ready_icon(ready, publish=True)
         assert result.status == "ready"
         assert icon is None
+        assert not resolved
         assert "Application icon was not installed" in caplog.text
         if failure == "collision":
             assert result == ready
@@ -137,4 +140,42 @@ def test_icon_publication_failure_preserves_a_usable_install(
             assert _icons.ready_icon(result, publish=True) == (
                 result,
                 destination,
+                True,
             )
+
+
+@pytest.mark.parametrize("tampered", [False, True])
+def test_missing_icon_declaration_must_come_from_the_recorded_snapshot(
+    tmp_path, monkeypatch, tampered, caplog
+):
+    monkeypatch.setattr(_icons, "sys", SimpleNamespace(platform="linux"))
+    record = _record(tmp_path)
+    runtime = record.active_runtime
+    assert isinstance(runtime, RuntimeSlot)
+    archive = tmp_path / "runtimes" / str(runtime.slot_id) / "project.zip"
+    with ZipFile(archive, "w") as snapshot:
+        snapshot.writestr(
+            "member/pyproject.toml", "[project]\nname = 'fixture'\n"
+        )
+    if not tampered:
+        record = replace(
+            record,
+            active_runtime=replace(
+                runtime,
+                source=replace(
+                    runtime.source,
+                    digest=hashlib.sha256(archive.read_bytes()).hexdigest(),
+                ),
+            ),
+        )
+    with installation_lock(tmp_path):
+        write_record(tmp_path, record, expected_revision=None)
+        ready = inspect_installation(tmp_path, app_id="fixture")
+        assert _icons.ready_icon(ready, publish=True) == (
+            ready,
+            None,
+            not tampered,
+        )
+    assert (
+        "Retained icon source archive was modified" in caplog.text
+    ) == tampered

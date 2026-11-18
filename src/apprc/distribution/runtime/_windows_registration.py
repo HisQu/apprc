@@ -170,6 +170,7 @@ def publish_registration(
     group: str,
     *,
     icon: Path | None = None,
+    preserve_icon: bool = False,
 ) -> InstallationInspection:
     """Best-effort publication after the application has activated.
 
@@ -178,6 +179,7 @@ def publish_registration(
     :param command: Installed command used for interactive uninstall.
     :param group: Application maintenance command group.
     :param icon: Installed app-owned icon for the Windows entry, if configured.
+    :param preserve_icon: Retain the previous icon after an optional icon failure.
     :return: Latest usable installation authority, even when metadata fails.
     """
     if os.name != "nt":
@@ -249,6 +251,8 @@ def publish_registration(
             }
             if icon is not None:
                 desired["DisplayIcon"] = f'"{icon}",0'
+            elif preserve_icon and "DisplayIcon" in old:
+                desired["DisplayIcon"] = old["DisplayIcon"]
             path = inspection.directory / _JOURNAL
             assert_no_links(path)
             data = json.dumps(

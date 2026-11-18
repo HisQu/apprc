@@ -52,6 +52,7 @@ class InstallationProgressOutput:
         self._name = name
         self._mode = mode
         self._stage = 0
+        self.stage = ""
         self._version = ""
         title = (
             "Repair installation"
@@ -87,6 +88,7 @@ class InstallationProgressOutput:
             self._version = event.message
         elif event.kind == "stage":
             self._stage += 1
+            self.stage = event.message
             self._write(f"\n{self._stage}. {event.message}", style="stage")
         elif event.kind == "result":
             self._write(
@@ -94,7 +96,10 @@ class InstallationProgressOutput:
             )
         elif event.kind == "warning":
             self._write(
-                f"Warning: {event.message}", style="warning", error=True
+                f"Warning: {event.message}",
+                style="warning",
+                error=True,
+                path=event.path,
             )
         else:
             self._write(f"   {event.message}", style="detail")

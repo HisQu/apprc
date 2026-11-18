@@ -102,6 +102,12 @@ def _manager_uv() -> Path:
     return executable
 
 
+def _setup_launch() -> dict[str, bool]:
+    """Return the startup state supplied by the Windows Python loader."""
+    state = globals().get("_APPRC_SETUP_LAUNCH")
+    return cast(dict[str, bool], state) if isinstance(state, dict) else {}
+
+
 def _install(
     binding: NativeBinding,
     manager: InstallationManager,
@@ -120,6 +126,7 @@ def _install(
         _installation_error_message,
     )
 
+    _setup_launch()["install"] = True
     output = InstallationProgressOutput(None, binding.display_name, "managed")
     output(InstallProgress("stage", "Preparing Runtime"))
     try:
@@ -132,6 +139,19 @@ def _install(
         subprocess.CalledProcessError,
     ) as error:
         output.failed(_installation_error_message(error))
+        if os.name == "nt":
+            from apprc.distribution.runtime._setup_terminal import (
+                setup_diagnostic,
+            )
+            from apprc.interfaces._terminal_console import cli_line
+
+            diagnostic = setup_diagnostic(
+                output.stage or "Preparing Runtime", error
+            )
+            if diagnostic is not None:
+                cli_line(
+                    None, "Setup diagnostic log", path=diagnostic, error=True
+                )
         return 1
     output.complete()
     return 0
@@ -190,6 +210,35 @@ def _install_managed(
         raise RuntimeError(
             "Saved installation belongs to another native product."
         )
+    from apprc.definition.installation import (
+        EditableCheckout,
+        InstallationError,
+    )
+
+    if (
+        _setup_launch().get("dedicated", False)
+        and not options.yes
+        and previous is not None
+        and previous.status == "ready"
+        and previous.operation is None
+        and isinstance(previous.active_runtime, EditableCheckout)
+    ):
+        import typer
+        from apprc.interfaces._terminal_console import cli_line
+
+        cli_line(
+            None,
+            "Existing editable checkout",
+            path=previous.active_runtime.project,
+        )
+        if not typer.confirm(
+            "Switch to a managed installation and keep the checkout files?",
+            default=False,
+        ):
+            raise InstallationError(
+                "Setup cancelled. The editable installation was kept."
+            )
+        options.yes = True
     if previous is not None:
         placement = previous.placement
     else:
@@ -422,6 +471,8 @@ def _forward(
 def main() -> int:
     """Dispatch manager-only handoff before loading product/application code."""
     argv = list(sys.argv[1:])
+    if argv and argv[0].startswith("--apprc-"):
+        _setup_launch()["dispatched"] = True
     if argv and argv[0] == "--apprc-execute-handoff":
         if len(argv) != 2:
             raise ValueError("Native uninstall handoff arguments are invalid.")
@@ -456,6 +507,7 @@ def main() -> int:
         application.schema, environment=dict(os.environ)
     )
     owned = _owned_manager_invocation(executable, manager, binding)
+    _setup_launch()["dispatched"] = True
     group = binding.maintenance_group_name
     core_actions = {
         "doctor",

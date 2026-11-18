@@ -497,6 +497,21 @@ toolchain. Windows x86-64 cross-compilation uses Cargo-xwin 0.23.1,
 executable but does not execute it from WSL or establish native Windows behavior.
 macOS remains deferred; do not introduce platform runners implicitly.
 
+For deferred native Windows verification, use the exact checksummed setup
+artifact in a normal user session. Double-click a fresh setup and confirm that
+the result stays visible. Open PowerShell from Windows and run `Get-Command pdb`
+(or the app's command). Confirm Windows Installed apps shows the expected
+version, uninstall with configuration retained, then reinstall. Check a
+controlled failed setup for a visible error and local diagnostic log. Also
+verify that starting setup from an existing PowerShell session returns its
+exit code without waiting for Enter.
+
+Test default command publication without `--command-directory`. The guided
+`dist test -m` workflow supplies a command directory and does not exercise this
+default. A Windows PE build or an automated registry test is not native
+execution evidence.
+
+
 Final application outputs are `dist/<app-id>-setup-linux-x86_64`,
 `dist/<app-id>-setup-windows-x86_64.exe` and `dist/SHA256SUMS`. Intermediates,
 source archives, reports and Cargo workspaces belong in ignored `.cache/apprc/`.

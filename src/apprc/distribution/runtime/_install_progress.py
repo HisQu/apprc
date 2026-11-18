@@ -70,12 +70,18 @@ def report(
 
 
 def warn(
-    logger: logging.Logger, message: str, error: BaseException | None = None
+    logger: logging.Logger,
+    message: str,
+    error: BaseException | None = None,
+    *,
+    path: Path | None = None,
 ) -> None:
     """Use one warning channel, falling back to logging outside the CLI."""
     if error is not None:
         message = f"{message}: {error}"
     if _reporter.get() is None:
-        logger.warning("%s", message)
+        logger.warning(
+            "%s", f"{message}: {path}" if path is not None else message
+        )
     else:
-        report("warning", message)
+        report("warning", message, path=path)

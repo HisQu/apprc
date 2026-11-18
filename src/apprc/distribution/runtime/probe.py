@@ -312,53 +312,61 @@ def application_bridge(
             check=False,
             **spawn_options,
         )
-        try:
-            response: Any = json.loads(result.stdout)
-        except json.JSONDecodeError as error:
-            raise InstallationError(
-                f"Application bridge returned invalid {action} JSON."
-            ) from error
-        if (
-            not isinstance(response, dict)
-            or set(response) != {"action", "result"}
-            or response["action"] != action
-            or not isinstance(response["result"], dict)
-        ):
-            raise InstallationError(
-                f"Application bridge returned an invalid {action} envelope."
-            )
-        if result.stderr:
-            sys.stderr.write(result.stderr)
-        payload = response["result"]
-        if action == "doctor":
-            checks = payload.get("checks")
-            if (
-                not isinstance(payload.get("status"), str)
-                or not isinstance(checks, list)
-                or any(
-                    not isinstance(check, dict)
-                    or not isinstance(check.get("status"), str)
-                    for check in checks
-                )
-            ):
-                raise InstallationError(
-                    "Application doctor returned invalid failure JSON."
-                )
-            if result.returncode == 1 and payload["status"] != "error":
-                raise InstallationError(
-                    "Application doctor failed without valid failure checks."
-                )
-        elif result.returncode != 0:
-            raise InstallationError(
-                f"Application bridge {action} failed: {result.stderr.strip()}"
-            )
-        return payload
+        return _bridge_response(result, action)
     finally:
         import shutil
 
         shutil.rmtree(request_path.parent, ignore_errors=True)
         if lease is not None and close_lease:
             lease.close()
+
+
+def _bridge_response(
+    result: subprocess.CompletedProcess[str], action: str
+) -> dict[str, Any]:
+    """Surface child diagnostics even when the protocol response is absent."""
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+        sys.stderr.flush()
+    try:
+        response: Any = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise InstallationError(
+            f"Application bridge returned invalid {action} JSON (exit {result.returncode})."
+        ) from error
+    if (
+        not isinstance(response, dict)
+        or set(response) != {"action", "result"}
+        or response["action"] != action
+        or not isinstance(response["result"], dict)
+    ):
+        raise InstallationError(
+            f"Application bridge returned an invalid {action} envelope (exit {result.returncode})."
+        )
+    payload = response["result"]
+    if action == "doctor":
+        checks = payload.get("checks")
+        if (
+            not isinstance(payload.get("status"), str)
+            or not isinstance(checks, list)
+            or any(
+                not isinstance(check, dict)
+                or not isinstance(check.get("status"), str)
+                for check in checks
+            )
+        ):
+            raise InstallationError(
+                "Application doctor returned invalid failure JSON."
+            )
+        if result.returncode == 1 and payload["status"] != "error":
+            raise InstallationError(
+                "Application doctor failed without valid failure checks."
+            )
+    elif result.returncode != 0:
+        raise InstallationError(
+            f"Application bridge {action} failed: {result.stderr.strip()}"
+        )
+    return payload
 
 
 def _probe_runtime_observations(

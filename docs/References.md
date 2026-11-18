@@ -403,6 +403,20 @@ interaction with `--yes`. Ordinary `config setup` keeps explicit initialization
 and prompting. Native setup installs its embedded
 release; updates use newer setup, not `--main`, `--version` or wheel/index input.
 
+On Windows, managed setup publishes the global command by default, including
+with `--yes`. It reuses a previously owned command directory on PATH when
+available, then uses the shared user bin resolved by uv. It adds the shared bin
+to the current user's PATH only after successful activation. It leaves machine
+PATH and existing PATH entries intact. An explicit `--command-directory`
+still requires an existing directory on PATH. PATH write failures produce a
+warning and the full executable path. Uninstall leaves the shared PATH entry.
+
+A dedicated Windows setup console waits for acknowledgement after the result.
+Setup invoked from an existing terminal or with arguments returns normally
+with its exit code. Failure logs are written to `%LOCALAPPDATA%\AppRC\setup-logs`
+when that directory is available. Logging starts when PyApp reaches the Python
+loader.
+
 ### Guided installation validation
 
 Opted-in editable checkouts also expose `dist test`. The runner uses the

@@ -477,3 +477,91 @@ def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
     assert (
         configuration.read_bytes() if configuration.exists() else None
     ) == environment_bytes
+
+
+@pytest.mark.parametrize(
+    "scenario", ["commit", "rollback", "path-failure", "occupied", "update"]
+)
+def test_windows_default_command_is_transactional(
+    native_case, monkeypatch, tmp_path, scenario
+):
+    import os
+    from types import SimpleNamespace
+
+    from apprc.distribution.runtime import _os_integration
+    from apprc.distribution.runtime import _windows_command_path as windows
+    from apprc.distribution.runtime._install_progress import (
+        installation_progress,
+    )
+
+    bin_dir = tmp_path / "shared-bin"
+    command = bin_dir / installation._command_filename("fixture")
+    monkeypatch.setattr(windows, "enabled", lambda: True)
+    monkeypatch.setattr(
+        _os_integration, "os", SimpleNamespace(**(vars(os) | {"name": "nt"}))
+    )
+    monkeypatch.setattr(windows, "is_user_directory", lambda *args: True)
+    monkeypatch.setattr(
+        installation, "_default_command_directory", lambda *args: bin_dir
+    )
+
+    changes = []
+
+    def persist(path, environment):
+        assert command.is_file()
+        assert native_case.manager.inspect().status == "ready"
+        changes.append(path)
+        if scenario == "path-failure":
+            raise OSError("Registry denied")
+        return True
+
+    monkeypatch.setattr(windows, "ensure_user_path", persist)
+    monkeypatch.setattr(windows, "notify_path_change", lambda: None)
+    if scenario == "rollback":
+
+        def fail(*args, **kwargs):
+            raise OSError("Controlled activation failure")
+
+        monkeypatch.setattr(InstallationManager, "commit_install", fail)
+    if scenario == "occupied":
+        bin_dir.mkdir()
+        command.write_bytes(b"foreign")
+    events = []
+    with installation_progress(events.append):
+        if scenario in {"rollback", "occupied"}:
+            with pytest.raises((OSError, InstallationError)):
+                native_case.install()
+            assert not changes
+            if scenario == "rollback":
+                assert native_case.manager.inspect().status == "missing"
+                assert not command.exists()
+            else:
+                assert command.read_bytes() == b"foreign"
+            return
+        assert native_case.install().status == "ready"
+    if scenario == "update":
+        monkeypatch.setattr(windows, "is_on_path", lambda *args: True)
+        monkeypatch.setattr(
+            installation,
+            "_default_command_directory",
+            lambda *args: pytest.fail("Reuse the existing bin"),
+        )
+        assert native_case.install().status == "ready"
+    assert changes == [bin_dir] * (2 if scenario == "update" else 1)
+    assert any(
+        event.status == "PUBLISHED" and Path(event.path) == command
+        for event in events
+        if event.path is not None
+    )
+    if scenario == "path-failure":
+        assert any(
+            event.kind == "warning"
+            and event.path == command
+            and "Registry denied" in event.message
+            for event in events
+        )
+    else:
+        assert any(
+            event.status == "UPDATED" and event.message == "User PATH"
+            for event in events
+        )

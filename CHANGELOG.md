@@ -98,7 +98,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 - Opted-in editable checkouts provide `dist build` and `dist check` for committed native setups, with `-t` for the current platform. AppRC root help lists `dist` under **AppRC: Commands**. Checkout `app install` can hand off to a verified native setup.
 
-- Editable registration and managed setup now show live installation stages, resolved paths, and an explicit completion result.
+- Editable registration and managed setup now show live installation stages, resolved paths, and an explicit completion result. The native setup banner reads **Installing or updating**.
 
 ### 🛠️ Changed
 

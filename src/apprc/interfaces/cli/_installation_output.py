@@ -54,11 +54,12 @@ class InstallationProgressOutput:
         self._stage = 0
         self.stage = ""
         self._version = ""
-        title = (
-            "Repair installation"
-            if mode == "repair"
-            else f"{mode.title()} installation"
-        )
+        if mode == "managed":
+            title = "Installing or updating"
+        elif mode == "repair":
+            title = "Repair installation"
+        else:
+            title = f"{mode.title()} installation"
         self._write(f"{name} · {title}")
 
     def _write(

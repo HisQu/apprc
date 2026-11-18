@@ -311,7 +311,8 @@ Use `-t` for the current native target. The checkout can also hand off
 Managed installations use locked, non-editable runtime slots. The stable native
 command handles installation diagnostics, repair and removal independently of
 the application's environment, and forwards normal commands—including
-`launch`—to the recorded active slot. Updates use a newer setup executable.
+`launch`—to the recorded active slot. Run a newer setup executable to update
+a managed installation in place.
 
 For development, run `<app> app install -e` from the checkout with its `.venv`
 activated. This registers the existing environment and initializes declared

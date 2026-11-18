@@ -425,6 +425,9 @@ interaction with `--yes`. Ordinary `config setup` keeps explicit initialization
 and prompting. Native setup installs its embedded
 release; updates use newer setup, not `--main`, `--version` or wheel/index input.
 
+The native setup banner reads **Installing or updating**. Stages report progress
+through preparation and activation, and completion confirms the usable runtime.
+
 On Windows, managed setup publishes the global command by default, including
 with `--yes`. It reuses a previously owned command directory on PATH when
 available, then uses the shared user bin resolved by uv. It adds the shared bin

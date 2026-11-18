@@ -149,6 +149,7 @@ def test_managed_install_delegate_honors_click_color(
     )
     result = CliRunner().invoke(app, ["install"], color=color)
     assert result.exit_code == 0, result.output
+    assert f"{binding.display_name} · Installing or updating" in result.output
     for code in (32, 35, 36):
         assert (f"\x1b[{code}m" in result.output) is expected
     assert "managed installation complete" in result.output

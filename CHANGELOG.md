@@ -92,6 +92,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Apps can supply icons for new managed desktop and application menu shortcuts
+  on Linux and Windows, and for Windows Installed apps.
+
 - Fresh interactive managed installations offer a desktop shortcut. Applications
   can supply an `install-next-step` message for successful managed setup.
 

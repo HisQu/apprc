@@ -551,6 +551,7 @@ def publish_shortcuts(
     desktop: bool,
     launch_enabled: bool,
     previous: tuple[OwnedOutput, ...] = (),
+    icon: Path | None = None,
 ) -> tuple[OwnedOutput, ...]:
     """Publish requested OS shortcuts and return exact output ownership."""
     outputs: list[OwnedOutput] = []
@@ -596,6 +597,8 @@ def publish_shortcuts(
                     shortcut.Arguments = "launch" if launch_enabled else ""
                     shortcut.WorkingDirectory = str(command.parent)
                     shortcut.Description = display_name
+                    if icon is not None:
+                        shortcut.IconLocation = str(icon)
                     shortcut.Save()
                 else:
                     command_line = _desktop_path(command)
@@ -606,6 +609,8 @@ def publish_shortcuts(
                         f"Name={_desktop_escape(display_name)}\n"
                         f"Exec={command_line}\nTerminal=false\n"
                     )
+                    if icon is not None:
+                        content += f"Icon={_desktop_escape(str(icon))}\n"
                     temporary.write_text(content, encoding="utf-8")
                     temporary.chmod(
                         0o755 if destination.parent.name == "Desktop" else 0o644

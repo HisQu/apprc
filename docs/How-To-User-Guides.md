@@ -1136,6 +1136,11 @@ when a desktop directory is available. Use `--desktop` to request the shortcut
 explicitly. Apps that supply a next step display it below the successful
 installation summary, including when optional configuration is skipped.
 
+Applications can provide an icon for newly created shortcuts. Windows Installed
+apps uses the configured Windows icon on install, update, or repair. Existing
+shortcuts keep their appearance. AppRC keeps the icon files those shortcuts may
+still use until uninstall. [Icon configuration](References.md#distribution-generation)
+
 At the end, AppRC offers `config setup` only when active, editable user settings
 are required, have no fallback, and remain missing after configuration resolution.
 Workspace-only and already supplied settings do not trigger the offer.

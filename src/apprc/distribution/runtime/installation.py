@@ -1402,9 +1402,16 @@ def _install_managed_candidate(
         from apprc.distribution.runtime._windows_registration import (
             publish_registration,
         )
+        from apprc.distribution.runtime._icons import ready_icon
 
+        result, icon, icon_resolved = ready_icon(result, publish=True)
         result = publish_registration(
-            result, observed.version or "", stable, _MAINTENANCE_GROUP.get()
+            result,
+            observed.version or "",
+            stable,
+            _MAINTENANCE_GROUP.get(),
+            icon=icon,
+            preserve_icon=not icon_resolved,
         )
         return _finish_installation(manager, result)
     except BaseException as error:
@@ -2384,6 +2391,7 @@ def publish_optional_shortcuts(
     launch_enabled: bool,
 ) -> InstallationInspection:
     """Publish optional shortcuts after Ready and persist only owned outputs."""
+    from apprc.distribution.runtime._icons import ready_icon
     from apprc.distribution.runtime._os_integration import publish_shortcuts
     from apprc.user_files.installation.operations import record_owned_outputs
 
@@ -2406,6 +2414,7 @@ def publish_optional_shortcuts(
         )
         created: tuple[OwnedOutput, ...] = ()
         try:
+            _, icon, _ = ready_icon(inspection)
             created = publish_shortcuts(
                 command,
                 identity,
@@ -2414,6 +2423,7 @@ def publish_optional_shortcuts(
                 desktop=desktop,
                 launch_enabled=launch_enabled,
                 previous=previous,
+                icon=icon,
             )
             created_paths = {item.path for item in created}
             outputs = (

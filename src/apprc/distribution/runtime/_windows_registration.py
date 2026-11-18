@@ -138,6 +138,12 @@ def recover_registration(
             )
         for name, value in desired.items():
             winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
+        if (
+            "DisplayIcon" in old
+            and "DisplayIcon" in current
+            and "DisplayIcon" not in desired
+        ):
+            winreg.DeleteValue(key, "DisplayIcon")
     output = OwnedOutput("hkcu", expected_path, None, tuple(desired.items()))
     # > Retain the journal as owned support until all filesystem cleanup succeeds.
     result = _record(
@@ -158,7 +164,13 @@ def recover_registration(
 
 
 def publish_registration(
-    inspection: InstallationInspection, version: str, command: Path, group: str
+    inspection: InstallationInspection,
+    version: str,
+    command: Path,
+    group: str,
+    *,
+    icon: Path | None = None,
+    preserve_icon: bool = False,
 ) -> InstallationInspection:
     """Best-effort publication after the application has activated.
 
@@ -166,6 +178,8 @@ def publish_registration(
     :param version: Full validated application version.
     :param command: Installed command used for interactive uninstall.
     :param group: Application maintenance command group.
+    :param icon: Installed app-owned icon for the Windows entry, if configured.
+    :param preserve_icon: Retain the previous icon after an optional icon failure.
     :return: Latest usable installation authority, even when metadata fails.
     """
     if os.name != "nt":
@@ -235,6 +249,10 @@ def publish_registration(
                 "InstallLocation": str(inspection.directory),
                 "UninstallString": f'"{command}" {group} uninstall --wait',
             }
+            if icon is not None:
+                desired["DisplayIcon"] = f'"{icon}",0'
+            elif preserve_icon and "DisplayIcon" in old:
+                desired["DisplayIcon"] = old["DisplayIcon"]
             path = inspection.directory / _JOURNAL
             assert_no_links(path)
             data = json.dumps(

@@ -256,6 +256,17 @@ Set `install-next-step = "Open a new terminal and run demo."` in
 installation or update. AppRC reads the text from the embedded project snapshot.
 Use `setup_next_step` for guidance after explicit `config setup`.
 
+To supply native presentation icons, add an optional `icons` table:
+
+```toml
+[tool.apprc.distribution.icons]
+windows = "assets/app.ico"
+linux = "assets/app.png"
+```
+
+Each entry is a path relative to the selected project. Commit the icon assets
+with the project before building. An omitted platform uses its default icon.
+
 | API | Result / contract |
 | --- | --- |
 | `read_project_metadata(project_root)` | Packaging, import, app and console-command identities remain distinct. |

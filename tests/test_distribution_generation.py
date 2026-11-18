@@ -9,6 +9,7 @@ import pytest
 from apprc import AppRC, Paths
 from apprc.definition.installation import InstallationHooks
 from apprc.distribution.metadata import (
+    _validate_project_declaration,
     inspect_capabilities,
     read_distribution_spec,
     read_project_metadata,
@@ -70,6 +71,42 @@ def test_install_next_step_must_be_text(tmp_path: Path) -> None:
         ValueError, match="must be text|must be strings|install-next-step"
     ):
         read_project_metadata(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "true",
+        "{ macos = 'app.png' }",
+        "{ windows = 'app.png' }",
+        "{ linux = '../app.png' }",
+        "{ linux = '/app.png' }",
+    ],
+)
+def test_invalid_distribution_icon_declaration(tmp_path, declaration):
+    _write_project(
+        tmp_path, settings=f"[tool.apprc.distribution]\nicons = {declaration}\n"
+    )
+    with pytest.raises(ValueError, match="icon|Unsafe relative artifact path"):
+        read_project_metadata(tmp_path)
+
+
+def test_distribution_icon_must_exist_in_committed_project(tmp_path):
+    authored, committed = (
+        tmp_path / name for name in ("authored", "committed")
+    )
+    settings = (
+        "[tool.apprc.distribution]\nicons = { linux = 'assets/app.png' }\n"
+    )
+    for root in (authored, committed):
+        _write_project(root, settings=settings)
+    spec = read_distribution_spec(authored)
+    asset = committed / "assets" / "app.png"
+    asset.parent.mkdir()
+    with pytest.raises(ValueError, match="missing from the committed project"):
+        _validate_project_declaration(spec, committed)
+    asset.write_bytes(b"image")
+    _validate_project_declaration(spec, committed)
 
 
 def test_distribution_spec_captures_capabilities_hooks_and_launch_setting(

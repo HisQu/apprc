@@ -28,25 +28,26 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [\[0.36.0\] - 2026-11-17](#0360---2026-11-17)
-4. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
-5. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
-6. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
-7. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
-8. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
-9. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
-10. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
-11. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
-12. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
-13. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
-14. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
-15. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
-16. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
-17. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
-18. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
-19. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
-20. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
-21. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
+3. [\[0.37.0\] - 2026-11-18](#0370---2026-11-18)
+4. [\[0.36.0\] - 2026-11-17](#0360---2026-11-17)
+5. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
+6. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
+7. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
+8. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
+9. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
+10. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
+11. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
+12. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
+13. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
+14. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
+15. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
+16. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
+17. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
+18. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
+19. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
+20. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
+21. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
+22. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -54,7 +55,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.36.1...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/HisQu/apprc/compare/v0.36.1...v0.37.0
 [0.36.1]: https://github.com/HisQu/apprc/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/HisQu/apprc/compare/v0.35.1...v0.36.0
 [0.35.1]: https://github.com/HisQu/apprc/compare/v0.35.0...v0.35.1
@@ -92,6 +94,22 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+### 🛠️ Changed
+
+### 🗑️ Deprecated
+
+### 🔥 Removed
+
+### 🐛 Fixed
+
+### 🔒 Security
+
+<br>
+
+## [0.37.0] - 2026-11-18
+
+### ✨ Added
+
 - Fresh interactive editable installs offer a desktop shortcut. Editable
   installs use app artwork for new shortcuts and Windows Installed apps.
   A separate uninstall window can display the icon in the classic Windows console.
@@ -119,19 +137,11 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 - Setup, diagnostics, maintenance, and uninstall use the shared terminal colors. Repair, migration, resource maintenance, and workspace listings show human-readable terminal reports while preserving redirected and JSON output.
 
-
-### 🗑️ Deprecated
-
-### 🔥 Removed
-
 ### 🐛 Fixed
 
 - Apply the private Windows ACL before extracting a managed runtime's project, so a fresh setup can proceed past source staging.
 - Windows managed setup publishes its command by default, reports user PATH updates and setup failures, and keeps its dedicated result window visible until acknowledged.
 - Keep the double-clicked Windows setup window open when PyApp launches Python through the Windows virtual-environment redirector.
-
-
-### 🔒 Security
 
 <br>
 

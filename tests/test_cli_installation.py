@@ -1070,7 +1070,7 @@ def test_uninstall_path_tree_shares_windows_parents_and_preserves_unc():
             unc: ("Keep", "settings"),
         },
     )
-    console = Console(width=250)
+    console = Console(width=250, color_system=None)
     with console.capture() as captured:
         console.print(root)
     output = captured.get()

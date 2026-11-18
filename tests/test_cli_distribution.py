@@ -24,6 +24,8 @@ _REVISION = "1" * 40
 @pytest.fixture
 def checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Supply installed console metadata for an independently located checkout."""
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("NO_COLOR", "1")
     root = tmp_path / "checkout"
     root.mkdir()
     (root / "pyproject.toml").write_text(

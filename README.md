@@ -311,8 +311,9 @@ Use `-t` for the current native target. The checkout can also hand off
 
 Managed installations use locked, non-editable runtime slots. Setup can offer a
 desktop shortcut and show an application-defined next step. Setup also supports
-[app-provided icons](docs/References.md#distribution-generation). The stable native
-command handles installation diagnostics, repair and removal independently of
+[app-provided icons](docs/References.md#distribution-generation). Editable
+registration can also create a branded desktop shortcut with `--desktop`.
+The stable native command handles installation diagnostics, repair and removal independently of
 the application's environment, and forwards normal commands—including
 `launch`—to the recorded active slot. Run a newer setup executable to update
 a managed installation in place.

@@ -1131,15 +1131,20 @@ When double-clicking setup, read the result before pressing Enter. On failure,
 the result can include a local diagnostic log path. Running setup in an
 existing terminal lets you read the failure and check its exit code there.
 
-A fresh interactive managed install can ask **Add Desktop shortcut? [y/N]**
-when a desktop directory is available. Use `--desktop` to request the shortcut
-explicitly. Apps that supply a next step display it below the successful
+A fresh interactive managed or editable install can ask **Add Desktop
+shortcut? [y/N]** when a desktop directory is available. For an already
+registered checkout, run `demo app install -e --desktop` to create the
+shortcut. A managed installer accepts `--desktop` directly.
+Apps that supply a managed next step display it below the successful
 installation summary, including when optional configuration is skipped.
 
 Applications can provide an icon for newly created shortcuts. Windows Installed
 apps uses the configured Windows icon on install, update, or repair. Existing
 shortcuts keep their appearance. AppRC keeps the icon files those shortcuts may
 still use until uninstall. [Icon configuration](References.md#distribution-generation)
+
+On Windows, AppRC uses the installed icon in a separate classic-console uninstall
+window. Windows Terminal displays the icon for its selected profile.
 
 At the end, AppRC offers `config setup` only when active, editable user settings
 are required, have no fallback, and remain missing after configuration resolution.

@@ -114,6 +114,13 @@ def mount_installation_group(
                     help="Skip the optional configuration setup prompt.",
                 ),
             ] = False,
+            desktop: Annotated[
+                bool,
+                typer.Option(
+                    "--desktop",
+                    help="Create a desktop shortcut without prompting.",
+                ),
+            ] = False,
         ) -> None:
             """Register the existing checkout or invoke an authored installer."""
             if editable:
@@ -157,7 +164,9 @@ def mount_installation_group(
                     )
                 try:
                     from apprc.distribution.runtime.installation import (
+                        confirm_desktop_shortcut,
                         offer_configuration_setup,
+                        publish_optional_shortcuts,
                     )
 
                     from apprc.interfaces._terminal_console import (
@@ -183,6 +192,31 @@ def mount_installation_group(
                     )
                     output.complete()
                     raise typer.Exit(code=1) from exc
+                if desktop or (
+                    context.inspection.record is None
+                    and confirm_desktop_shortcut(
+                        record.identity, assume_yes=assume_yes
+                    )
+                ):
+                    command = next(
+                        (
+                            Path(item.path)
+                            for item in reversed(record.owned_outputs)
+                            if item.kind == "command"
+                        ),
+                        None,
+                    )
+                    if command is not None:
+                        with installation_progress(output):
+                            publish_optional_shortcuts(
+                                context.manager,
+                                command,
+                                record.identity,
+                                display_name=context.manager.spec.display_name,
+                                start_menu=False,
+                                desktop=True,
+                                launch_enabled=False,
+                            )
                 output.complete()
                 return
             if installer_entrypoint is None:

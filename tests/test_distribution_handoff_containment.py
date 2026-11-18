@@ -1047,6 +1047,10 @@ def test_successful_delegation_transfers_wait_to_finalizer(
 
 def test_result_window_launch_keeps_handshake_pipes(tmp_path, monkeypatch):
     import subprocess
+    from apprc.distribution.runtime import _icons
+    from apprc.distribution.runtime._uninstall_terminal import (
+        RESULT_ICON_FILENAME,
+    )
 
     directory, _ = _installed_zero_capability_scenario(tmp_path, monkeypatch)
     preparation = prepare_uninstall(directory)
@@ -1059,6 +1063,9 @@ def test_result_window_launch_keeps_handshake_pipes(tmp_path, monkeypatch):
         lambda: str(staging_parent),
     )
     launched = []
+    monkeypatch.setattr(
+        _icons, "registered_icon", lambda path, record: b"window artwork"
+    )
 
     def launch(command, **options):
         launched.append(options)
@@ -1073,3 +1080,6 @@ def test_result_window_launch_keeps_handshake_pipes(tmp_path, monkeypatch):
     assert launched[0]["stdout"] == subprocess.PIPE
     assert launched[0]["env"]["_APPRC_UNINSTALL_RESULT_WINDOW"] == "1"
     assert uninstall_handoff._parse_plan(handoff.plan_file)["wait"] is True
+    assert (
+        handoff.plan_file.parent / RESULT_ICON_FILENAME
+    ).read_bytes() == b"window artwork"

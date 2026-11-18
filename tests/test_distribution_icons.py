@@ -12,6 +12,7 @@ from zipfile import ZipFile
 import pytest
 
 from apprc.definition.installation import (
+    EditableCheckout,
     InstallationIdentity,
     InstallationPlacement,
     InstallationRecord,
@@ -69,6 +70,54 @@ def _record(directory: Path) -> InstallationRecord:
         "ready",
         active_runtime=_runtime(directory, b"original"),
     )
+
+
+def test_editable_icon_copies_checkout_artwork_into_owned_support(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(_icons, "sys", SimpleNamespace(platform="win32"))
+    directory = tmp_path / "installation"
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text(
+        "[tool.apprc.distribution]\nicons = { windows = 'fixture.ico' }\n",
+        encoding="utf-8",
+    )
+    asset = checkout / "fixture.ico"
+    asset.write_bytes(b"artwork")
+    with installation_lock(directory):
+        record = InstallationRecord(
+            3,
+            InstallationIdentity(
+                "fixture", "fixture", "fixture", None, ("fixture",)
+            ),
+            "fixture",
+            uuid4(),
+            "1",
+            InstallationPlacement(Layout.native()),
+            "ready",
+            active_runtime=EditableCheckout(checkout, checkout / ".venv"),
+        )
+        write_record(directory, record, expected_revision=None)
+        ready, icon, resolved = _icons.ready_icon(
+            inspect_installation(directory, app_id="fixture"), publish=True
+        )
+        assert resolved and icon is not None
+        assert icon.parent == directory
+        assert ready.record is not None
+        registry = OwnedOutput(
+            "hkcu",
+            "HKCU\\fixture",
+            None,
+            (("DisplayIcon", _icons.windows_icon_location(icon)),),
+        )
+        installed = replace(
+            ready.record, owned_outputs=(*ready.record.owned_outputs, registry)
+        )
+        asset.write_bytes(b"changed checkout artwork")
+        assert _icons.registered_icon(directory, installed) == b"artwork"
+        icon.write_bytes(b"changed installation artwork")
+        assert _icons.registered_icon(directory, installed) is None
 
 
 def test_managed_icon_reuses_identical_bytes_and_uninstall_removes_its_outputs(

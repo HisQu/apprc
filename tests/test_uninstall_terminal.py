@@ -50,7 +50,9 @@ def test_result_path_is_literal_and_no_color(
     assert "\x1b[" not in result
 
 
-def test_result_window_preserves_readiness_and_exit_pipes(monkeypatch):
+def test_result_window_preserves_readiness_and_exit_pipes(
+    monkeypatch, tmp_path
+):
     control_input, control_output = io.StringIO("EXIT\n"), io.StringIO()
     display = io.StringIO()
     monkeypatch.setattr(
@@ -66,7 +68,11 @@ def test_result_window_preserves_readiness_and_exit_pipes(monkeypatch):
         "builtins.open",
         lambda path, *args, **kwargs: display if path == "CONOUT$" else None,
     )
-    terminal.prepare_result_window()
+    icons = []
+    monkeypatch.setattr(terminal, "apply_result_icon", icons.append)
+    icon = tmp_path / "uninstall.ico"
+    terminal.prepare_result_window(icon)
+    assert icons == [icon]
     assert terminal.sys.stdin is control_input
     assert terminal.sys.stdout is control_output
     assert terminal.sys.stderr is display
@@ -74,3 +80,37 @@ def test_result_window_preserves_readiness_and_exit_pipes(monkeypatch):
     terminal.sys.stderr.write("Uninstall completed.\n")
     assert "Uninstall completed" in display.getvalue()
     assert control_output.getvalue() == ""
+
+
+@pytest.mark.parametrize("visible", [False, True])
+def test_result_icon_targets_only_a_visible_window(
+    monkeypatch, tmp_path, visible
+):
+    import ctypes
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(
+        terminal,
+        "os",
+        SimpleNamespace(
+            name="nt", environ={"_APPRC_UNINSTALL_RESULT_WINDOW": "1"}
+        ),
+    )
+    icon = tmp_path / "uninstall.ico"
+    icon.write_bytes(b"artwork")
+    kernel = SimpleNamespace(GetConsoleWindow=Mock(return_value=10))
+    user = SimpleNamespace(
+        IsWindowVisible=Mock(return_value=visible),
+        LoadImageW=Mock(return_value=20),
+        SendMessageTimeoutW=Mock(),
+    )
+    monkeypatch.setattr(
+        ctypes,
+        "WinDLL",
+        lambda name, **kwargs: {"kernel32": kernel, "user32": user}[name],
+        raising=False,
+    )
+    terminal.apply_result_icon(icon)
+    assert [
+        call.args[:4] for call in user.SendMessageTimeoutW.call_args_list
+    ] == ([(10, 0x80, 0, 20), (10, 0x80, 1, 20)] if visible else [])

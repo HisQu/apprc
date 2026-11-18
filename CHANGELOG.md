@@ -92,6 +92,10 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Fresh interactive editable installs offer a desktop shortcut. Editable
+  installs use app artwork for new shortcuts and Windows Installed apps.
+  A separate uninstall window can display the icon in the classic Windows console.
+
 - Apps can supply icons for new managed desktop and application menu shortcuts
   on Linux and Windows, and for Windows Installed apps.
 

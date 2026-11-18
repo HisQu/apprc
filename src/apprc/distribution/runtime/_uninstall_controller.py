@@ -909,6 +909,21 @@ def start_uninstall_handoff(
         write_bytes_atomic(plan_file, b"", private=True)
         if manager is not None and manager_copy is not None:
             _copy_handoff_manager(manager, manager_copy)
+        if result_window:
+            from apprc.distribution.runtime._icons import registered_icon
+            from apprc.distribution.runtime._uninstall_terminal import (
+                RESULT_ICON_FILENAME,
+            )
+
+            try:
+                icon = registered_icon(directory, record)
+                if icon is not None:
+                    write_bytes_atomic(
+                        staging / RESULT_ICON_FILENAME, icon, private=True
+                    )
+            except (OSError, ValueError):
+                # > Optional window artwork must not prevent the uninstall.
+                pass
         handoff_inputs = (
             staging,
             recovery_directory,

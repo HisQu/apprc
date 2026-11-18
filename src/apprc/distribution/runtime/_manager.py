@@ -311,6 +311,7 @@ def _install_managed(
             )
 
     from apprc.distribution.runtime.installation import (
+        confirm_desktop_shortcut,
         offer_configuration_setup,
         publish_optional_shortcuts,
     )
@@ -335,26 +336,10 @@ def _install_managed(
             error,
         )
 
-    if (
-        previous is None
-        and not options.desktop
-        and not options.yes
-        and sys.platform in {"linux", "win32"}
-        and sys.stdin is not None
-        and sys.stdin.isatty()
-    ):
-        import typer
-        from apprc.distribution.runtime._os_integration import (
-            desktop_shortcut_available,
+    if previous is None and not options.desktop:
+        options.desktop = confirm_desktop_shortcut(
+            binding.identity, assume_yes=options.yes
         )
-
-        if desktop_shortcut_available(binding.identity):
-            try:
-                options.desktop = typer.confirm(
-                    "Add Desktop shortcut?", default=False
-                )
-            except typer.Abort:
-                options.desktop = False
     if options.start_menu or options.desktop:
         try:
             publish_optional_shortcuts(

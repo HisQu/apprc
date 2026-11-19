@@ -471,9 +471,17 @@ cleanup/migration rather than silently succeeding.
 `app install -e` is available for installation-enabled application CLIs.
 `--command-directory` chooses an existing PATH directory without editing shell
 profiles; `--yes` confirms the reviewed operation and `--skip-setup` skips only
-the optional post-Ready configuration offer. The offer runs only for interactive
+the optional configuration offer after installation commits. Exit 0 means
+installation committed. A failed optional step warns and can be retried
+separately. The configuration offer runs only for interactive
 input with missing, editable required user settings that have no fallback;
 already supplied values and workspace-only fields do not trigger it.
+For a native installer that runs a custom configuration group, set
+`config-group-name` in `[tool.apprc.distribution]` or supply
+`DistributionSpec(config_group_name=...)`. Match the name passed to
+`mount_app_cli` or `CliRuntime`. Setup uses that name for the configuration
+offer and its retry command. Bindings that omit it use `config`.
+
 `config setup --offer-missing` uses the same conditional behavior and skips
 interaction with `--yes`. Ordinary `config setup` keeps explicit initialization
 and prompting. Native setup installs its embedded

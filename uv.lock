@@ -78,7 +78,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0,<4" },
     { name = "rich" },
     { name = "textual" },
-    { name = "typer" },
+    { name = "typer", specifier = ">=0.26.5" },
 ]
 
 [[package]]

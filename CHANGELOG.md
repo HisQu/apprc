@@ -94,6 +94,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Native setup accepts `config-group-name` for applications with a custom
+  configuration command group.
+
 ### 🛠️ Changed
 
 ### 🗑️ Deprecated
@@ -101,6 +104,11 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 ### 🔥 Removed
 
 ### 🐛 Fixed
+
+- Keep guided `dist test` usable with newer Typer versions and declare the
+  minimum supported version in the SDK metadata.
+- Report a committed editable install as successful when optional configuration
+  fails. Print the retry command and continue with independent shortcuts.
 
 ### 🔒 Security
 

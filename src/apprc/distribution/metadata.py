@@ -173,6 +173,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "icons",
         "bootstrap-env-prefix",
         "maintenance-group-name",
+        "config-group-name",
         "launch-enabled",
         "hooks",
         "authoring",
@@ -326,6 +327,7 @@ def read_distribution_spec(project_root: Path) -> DistributionSpec:
         settings.get("maintenance-group-name", "app"),
         hooks,
         settings.get("launch-enabled", False),
+        config_group_name=settings.get("config-group-name", "config"),
     )
 
 

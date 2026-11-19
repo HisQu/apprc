@@ -75,6 +75,7 @@ class DistributionSpec:
     maintenance_group_name: str = "app"
     hooks: InstallationHooks = InstallationHooks()
     launch_enabled: bool = False
+    config_group_name: str = "config"
 
     def __post_init__(self) -> None:
         """Reject ambiguous commands and invalid portable declaration values."""
@@ -108,6 +109,11 @@ class DistributionSpec:
             raise ValueError(
                 "maintenance_group_name must be one CLI command name."
             )
+        if (
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", self.config_group_name)
+            is None
+        ):
+            raise ValueError("config_group_name must be one CLI command name.")
         if self.layout.root is not None:
             raise ValueError(
                 "Native products cannot embed an author's absolute layout root."
@@ -130,6 +136,7 @@ class NativeBinding:
     maintenance_group_name: str = "app"
     hooks: InstallationHooks = InstallationHooks()
     launch_enabled: bool = False
+    config_group_name: str = "config"
 
     def __post_init__(self) -> None:
         """Reject inconsistent product identity and author-specific locations."""
@@ -155,6 +162,11 @@ class NativeBinding:
             is None
         ):
             raise ValueError("Invalid native maintenance command.")
+        if (
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", self.config_group_name)
+            is None
+        ):
+            raise ValueError("config_group_name must be one CLI command name.")
 
 
 def encode_native_binding(binding: NativeBinding) -> bytes:
@@ -167,12 +179,10 @@ def encode_native_binding(binding: NativeBinding) -> bytes:
 
 def decode_native_binding(data: bytes) -> NativeBinding:
     """Decode only the exact SDK binding schema, rejecting unknown fields."""
-    return cast(
-        NativeBinding,
-        _decode(
-            json.loads(data, object_pairs_hook=_pairs), NativeBinding, "binding"
-        ),
-    )
+    binding = json.loads(data, object_pairs_hook=_pairs)
+    if isinstance(binding, dict):
+        binding.setdefault("config_group_name", "config")
+    return cast(NativeBinding, _decode(binding, NativeBinding, "binding"))
 
 
 @dataclass(frozen=True, slots=True)

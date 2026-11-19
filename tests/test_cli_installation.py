@@ -823,6 +823,7 @@ def test_editable_install_reports_rollback_notes_and_guidance_once(
     ("setup_fails", "shortcut_mode"),
     [
         (True, "fresh"),
+        (True, "explicit"),
         (False, "fresh"),
         (False, "existing"),
         (False, "explicit"),
@@ -897,20 +898,18 @@ def test_editable_install_reports_outcome(
     elif shortcut_mode == "unattended":
         args.append("--yes")
     result = CliRunner().invoke(_app(args=args), args, terminal_width=1000)
-    assert result.exit_code == (1 if setup_fails else 0), result.output
+    assert result.exit_code == 0, result.output
     assert "1. Reusing Runtime" in result.output
     assert result.output.rstrip().endswith("editable installation complete.")
     if setup_fails:
         assert "config setup failed" in result.output
     assert prompts == (
         [shortcut_mode == "unattended"]
-        if not setup_fails and shortcut_mode in {"fresh", "unattended"}
+        if shortcut_mode in {"fresh", "unattended"}
         else []
     )
     assert shortcuts == (
-        [command]
-        if not setup_fails and shortcut_mode in {"fresh", "explicit"}
-        else []
+        [command] if shortcut_mode in {"fresh", "explicit"} else []
     )
 
 

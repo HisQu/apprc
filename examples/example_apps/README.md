@@ -58,23 +58,26 @@ after an interruption or command failure.
 > A workspace path that you explicitly choose outside the printed lab root is
 > not lab-owned and is not deleted.
 
-Directly running an example is intentionally realistic: commands with declared
-managed features can create persistent files at the selected paths. Use
-`paths` and `purge --all --dry-run` to inspect cleanup scope before removal.
-The grouped `config`, `appdata`, `cache`, and `workspace` commands appear only
-when the matching capability is declared.
+Run commands inside the lab to keep their managed files in the temporary root.
+Use `app paths` to inspect locations and `app doctor` to check their status.
+The lab removes its own resources when you exit.
 
 ## Command Availability
 
-| Surface | Process env | User dotenv | Workspace | Cache only |
-|---|---:|---:|---:|---:|
-| Grouped `--help` | Yes | Yes | Yes | Yes |
-| Root env-file and logging options | Yes | Yes | Yes | Yes |
-| Root `--workspace NAME_OR_PATH` | No | No | Yes | No |
-| `config` group | Yes | Yes | Yes | No |
-| `appdata` group | No | No | No | No |
-| `workspace` group | No | No | Yes | No |
-| `cache` group | No | No | No | Yes |
+The following groups and commands come from the mounted help. Each example
+has `app paths` and `app doctor`. Nested resource maintenance commands such
+as `app cache clear` require the corresponding provider operation.
+
+| Example | `config` | `workspace` | `launch` |
+|---|:---:|:---:|:---:|
+| `process-env` | Yes | | |
+| `user-dotenv` | Yes | | Yes |
+| `workspace` | Yes | Yes | |
+| `cache-only` | | | |
+| `user-dotenv-with-workspace` | Yes | Yes | |
+| `explicit-env-precedence` | Yes | Yes | |
+| `cli-runtime` | Yes | Yes | |
+| `library-client` | Yes | | |
 
 The advanced `cli_runtime` example also exposes app-owned `status`, `--workdir`,
 `--model`, and `--dry-run` behavior.

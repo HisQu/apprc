@@ -28,7 +28,7 @@ from apprc.distribution.runtime._uninstall_controller import (
     UninstallPreparation,
 )
 from apprc.interfaces.cli import _distribution_test as guide
-from apprc.interfaces.cli._distribution_command import CheckoutAuthoring
+from apprc.interfaces.cli._distribution_authoring import CheckoutAuthoring
 from apprc.services.installation import InstallationManager
 from tests.support_installation import installation_record
 

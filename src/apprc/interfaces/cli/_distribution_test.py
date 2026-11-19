@@ -15,8 +15,6 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import typer
-from typer._click import ClickException
-from typer._types import TyperChoice
 
 import apprc.utils as ut
 from apprc.definition.installation import (
@@ -37,11 +35,12 @@ from apprc.distribution.runtime._os_integration import (
 from apprc.distribution.runtime._uninstall_controller import prepare_uninstall
 from apprc.distribution.runtime.installation import _command_directory
 from apprc.interfaces._terminal_console import cli_line
-from apprc.interfaces.cli._distribution_command import (
+from apprc.interfaces.cli._distribution_authoring import (
     _check,
     _revision,
     _targets,
 )
+from apprc.interfaces.cli._typer_utils import click
 from apprc.interfaces.cli.context import cli_runtime_options_to_args
 from apprc.user_files.app_home.locations import (
     assert_no_links,
@@ -55,11 +54,18 @@ from apprc.user_files.installation.planning import resource_roots
 
 if TYPE_CHECKING:
     from apprc.distribution.models import NativeBinding
-    from apprc.interfaces.cli._distribution_command import CheckoutAuthoring
+    from apprc.interfaces.cli._distribution_authoring import CheckoutAuthoring
     from apprc.public.app_rc import AppRC
     from apprc.services.installation import InstallationManager
 
 _TIMEOUT = 300
+
+
+def _manual_observation(answer: str) -> str:
+    """Validate the manual observation using Typer's public prompt callback."""
+    if answer not in {"pass", "fail", "skip"}:
+        raise typer.BadParameter("Choose pass, fail, or skip.")
+    return answer
 
 
 def _windows_entry(
@@ -587,7 +593,7 @@ def run_distribution_test(
             choice = typer.prompt(
                 "Application launch and functional check (pass/fail/skip)",
                 default="skip",
-                type=TyperChoice(["pass", "fail", "skip"]),
+                value_proc=_manual_observation,
             )
             report["manual_observation"] = (
                 "not verified" if choice == "skip" else choice
@@ -623,7 +629,7 @@ def run_distribution_test(
         raise
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         report["error_type"] = type(error).__name__
-        raise ClickException(str(error)) from error
+        raise click.ClickException(str(error)) from error
     finally:
         write_bytes_atomic(
             report_file,

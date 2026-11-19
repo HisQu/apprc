@@ -581,9 +581,11 @@ class CliRuntime(Generic[OptionsT, StateT]):
         if launcher_handlers is not None and launcher_spec is None:
             raise ValueError("launcher_handlers requires launcher_spec.")
 
+        from apprc.interfaces.cli._distribution_authoring import (
+            discover_checkout_authoring,
+        )
         from apprc.interfaces.cli._distribution_command import (
             build_authoring_group,
-            discover_checkout_authoring,
         )
 
         staging = typer.Typer()

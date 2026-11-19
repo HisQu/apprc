@@ -225,6 +225,7 @@ def _sdk_archive(
         spec.maintenance_group_name,
         spec.hooks,
         spec.launch_enabled,
+        config_group_name=spec.config_group_name,
     )
     project_bytes = project.archive.read_bytes()
     if hashlib.sha256(project_bytes).hexdigest() != project.source.digest:

@@ -12,7 +12,7 @@ build-backend = "uv_build"
 [project]
 name        = "apprc-core"
 version     = "0.37.0"
-description = "Reusable runtime configuration and config CLI helpers for Python applications."
+description = "Configuration, installation, and lifecycle management for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }
 license     = "MIT"
@@ -22,7 +22,7 @@ keywords = [
     "configuration",
     "dotenv",
     "runtime-config",
-    "typer",
+    "typer>=0.26.5",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

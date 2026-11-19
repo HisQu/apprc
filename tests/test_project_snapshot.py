@@ -97,6 +97,7 @@ def test_native_install_extracts_payload_below_physical_temp_root(
         identity=identity,
         command_name=app_id,
         display_name="Temporary root fixture",
+        config_group_name="preferences",
         version="1.0.0",
         source=source,
         selection=RuntimeSelection(sys.executable),
@@ -174,7 +175,10 @@ def test_native_install_extracts_payload_below_physical_temp_root(
         events.append("shortcut")
         return ready
 
-    def configure(*unused, skip: bool, **kwargs) -> bool:
+    def configure(
+        *unused, skip: bool, config_group_name: str, **kwargs
+    ) -> bool:
+        assert config_group_name == "preferences"
         assert skip == ("--skip-setup" in args)
         events.append("config")
         return False

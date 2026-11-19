@@ -14,8 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
-from typer._click import Context as ClickContext
-from typer._click import ClickException
+from apprc.interfaces.cli._typer_utils import click
 from typer.core import TyperCommand
 
 from apprc.definition.installation import (
@@ -55,7 +54,7 @@ def _installation_error_message(error: BaseException) -> str:
 class _InstallationCommand(TyperCommand):
     """Capture the invocation before Click consumes known installer options."""
 
-    def parse_args(self, ctx: ClickContext, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: typer.Context, args: list[str]) -> list[str]:
         ctx.meta["apprc.installation.arguments"] = tuple(args)
         return super().parse_args(ctx, args)
 
@@ -159,7 +158,7 @@ def mount_installation_group(
                 if record is None or not isinstance(
                     record.active_runtime, EditableCheckout
                 ):
-                    raise ClickException(
+                    raise click.ClickException(
                         "Installation did not return an editable checkout."
                     )
                 try:
@@ -190,8 +189,6 @@ def mount_installation_group(
                             f"The global command is available, but {record.command_name} {config_group_name} setup failed: {exc}\nRun `{record.command_name} {config_group_name} setup` to retry.",
                         )
                     )
-                    output.complete()
-                    raise typer.Exit(code=1) from exc
                 if desktop or (
                     context.inspection.record is None
                     and confirm_desktop_shortcut(
@@ -207,15 +204,23 @@ def mount_installation_group(
                         None,
                     )
                     if command is not None:
-                        with installation_progress(output):
-                            publish_optional_shortcuts(
-                                context.manager,
-                                command,
-                                record.identity,
-                                display_name=context.manager.spec.display_name,
-                                start_menu=False,
-                                desktop=True,
-                                launch_enabled=False,
+                        try:
+                            with installation_progress(output):
+                                publish_optional_shortcuts(
+                                    context.manager,
+                                    command,
+                                    record.identity,
+                                    display_name=context.manager.spec.display_name,
+                                    start_menu=False,
+                                    desktop=True,
+                                    launch_enabled=False,
+                                )
+                        except (OSError, ValueError) as exc:
+                            output(
+                                InstallProgress(
+                                    "warning",
+                                    f"Optional shortcuts were not updated: {exc}",
+                                )
                             )
                 output.complete()
                 return

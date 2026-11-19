@@ -510,6 +510,7 @@ Declare the application Python minor and primary console command:
 [tool.apprc.distribution]
 runtime-python = "3.13"
 command-name = "demo"
+config-group-name = "config"
 ```
 
 The Python selector must satisfy the application's `requires-python`; it is

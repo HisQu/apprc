@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import struct
 from dataclasses import replace
 from pathlib import Path
@@ -42,6 +43,7 @@ def _setup(
     *,
     commit: str = COMMIT,
     bad_project: bool = False,
+    legacy_binding: bool = False,
 ) -> Path:
     lock = b"version = 1\n"
     project = io.BytesIO()
@@ -92,8 +94,13 @@ def _setup(
         name = "fixture-setup-windows-x86_64.exe"
     path = dist / name
     path.write_bytes(header)
+    encoded = encode_native_binding(binding)
+    if legacy_binding:
+        document = json.loads(encoded)
+        del document["config_group_name"]
+        encoded = json.dumps(document).encode()
     with ZipFile(path, "a", ZIP_STORED) as archive:
-        archive.writestr("binding.json", encode_native_binding(binding))
+        archive.writestr("binding.json", encoded)
         archive.writestr("project.zip", payload)
     manifest = dist / "SHA256SUMS"
     previous = manifest.read_text() if manifest.exists() else ""
@@ -175,11 +182,17 @@ def test_publisher_rejects_unlisted_other_target(tmp_path: Path) -> None:
         )
 
 
-def test_old_download_allows_missing_other_platform(tmp_path: Path) -> None:
-    old = _setup(tmp_path, LINUX, commit="b" * 40)
+@pytest.mark.parametrize("legacy_binding", [False, True])
+def test_old_download_allows_missing_other_platform(
+    tmp_path: Path, legacy_binding: bool
+) -> None:
+    old = _setup(
+        tmp_path, LINUX, commit="b" * 40, legacy_binding=legacy_binding
+    )
     windows = _setup(tmp_path, WINDOWS)
     windows.unlink()
     binding = _check_old_setup(old, app_id="fixture", target=LINUX)
+    assert binding.config_group_name == "config"
     assert binding.source.commit == "b" * 40
     with pytest.raises(ValueError, match="does not authenticate"):
         check_native_distribution(

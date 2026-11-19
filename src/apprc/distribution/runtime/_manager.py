@@ -323,6 +323,7 @@ def _install_managed(
         offer_configuration_setup(
             inspection,
             skip=options.skip_setup,
+            config_group_name=binding.config_group_name,
             runtime_options=captured_options,
             environment=color_environment(
                 environment, installation_color.get()
@@ -332,7 +333,7 @@ def _install_managed(
     except (OSError, subprocess.CalledProcessError) as error:
         warn(
             logging.getLogger(__name__),
-            f"Configuration setup failed. Run `{binding.command_name} config setup` to retry",
+            f"Configuration setup failed. Run `{binding.command_name} {binding.config_group_name} setup` to retry",
             error,
         )
 
@@ -660,6 +661,7 @@ def main() -> int:
         app,
         application,
         maintenance_group_name=group,
+        config_group_name=binding.config_group_name,
         installation_management=True,
         native_binding=binding,
         installer_entrypoint=lambda values: _install(

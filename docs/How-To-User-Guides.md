@@ -670,10 +670,11 @@ config directory you control. The edit is saved in
 `AppRCRootGroup` groups root help under `Commands`, `Options`,
 `AppRC: Commands`, `AppRC: Runtime Options`, and `Help & Completion`, in
 that order. AppRC omits empty panels. Ordinary Typer roots
-remain supported, and nested help uses normal Typer formatting. AppRC's seven runtime options are repeatable ordered
-`--env-file`, `--env-file-overrides-os-environ`/`-o`,
-`--skip-dotenv-layers`/`-s`, `--workspace`, `--layout`, `--app-root`, and
-`--log-level`. `-o` changes explicit-file versus OS-environment priority;
+remain supported, and nested help uses normal Typer formatting. Repeat
+`--env-file` to load multiple files in order. The other runtime options are
+`--env-file-overrides-os-environ`/`-o`, `--skip-dotenv-layers`/`-s`,
+`--workspace`, `--layout`, `--app-root`, and `--log-level`.
+`-o` changes explicit-file versus OS-environment priority.
 `-s` skips dotenv setting values, including values from explicit files. Those
 files still participate in path and workspace selection. Layout and root overrides
 apply to this invocation only. Log-level handling still occurs before resolution.
@@ -1227,7 +1228,8 @@ At the end, AppRC offers `config setup` only when active, editable user settings
 are required, have no fallback, and remain missing after configuration resolution.
 Workspace-only and already supplied settings do not trigger the offer.
 Non-interactive installation skips it; `--skip-setup` explicitly skips it too.
-Declining or failing optional setup does not undo successful registration.
+Once installation commits, a failed optional setup prints a retry command and
+installation exits successfully. A requested shortcut can still be created.
 
 Caught failures before activation restore AppRC's installation changes: prior
 registration and commands remain selected, and a failed first registration

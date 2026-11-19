@@ -238,7 +238,7 @@ def test_checkout_install_only_delegates_verified_native_setup(
     checkout: Path, monkeypatch: pytest.MonkeyPatch, existing: str
 ) -> None:
     from apprc.distribution import MissingNativeArtifact
-    from apprc.interfaces.cli import _distribution_command as command
+    from apprc.interfaces.cli import _distribution_authoring as command
 
     backend = ModuleType("authoring_fixture")
     calls: list[str] = []
@@ -359,7 +359,7 @@ def test_unattended_missing_setup_does_not_build_without_yes(
     checkout: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from apprc.distribution import MissingNativeArtifact
-    from apprc.interfaces.cli import _distribution_command as command
+    from apprc.interfaces.cli import _distribution_authoring as command
 
     backend = ModuleType("authoring_fixture")
     builds: list[Path] = []
@@ -381,3 +381,19 @@ def test_unattended_missing_setup_does_not_build_without_yes(
     assert result.exit_code != 0
     assert "app install --yes" in result.output
     assert builds == []
+
+
+def test_dist_test_runs_guided_preflight(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apprc.interfaces.cli import _distribution_test as guide
+
+    monkeypatch.setattr(guide, "_revision", lambda root: _REVISION)
+    args = ["dist", "test", "--yes"]
+    result = CliRunner().invoke(_app(args, installation_management=True), args)
+    assert result.exit_code == 1, result.output
+    assert (
+        "The checkout console command and uv must be available" in result.output
+    )
+    (report,) = (checkout / ".cache" / "apprc" / "dist-test").glob("*.json")
+    assert json.loads(report.read_text())["commit"] == _REVISION

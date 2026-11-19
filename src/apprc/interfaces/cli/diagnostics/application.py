@@ -134,6 +134,96 @@ def _validate_native_runtime_observations(
         )
 
 
+def _build_runtime_diagnostics(
+    ctx: typer.Context,
+    apprc: AppRC,
+    host_diagnostics: Callable[[], Mapping[str, object]] | None,
+    resource_diagnostics: Mapping[
+        Literal["appdata", "cache", "state"],
+        Callable[[Path], Mapping[str, object]],
+    ],
+) -> dict[str, object]:
+    """Collect application-owned diagnostics inside an active runtime."""
+    application_checks: list[dict[str, str]] = []
+    application_details: dict[str, object] = {"resources": {}, "host": {}}
+    runtime = cli_runtime_context_from(ctx)
+    if runtime is not None:
+        if apprc.schema.paths.config or apprc.schema.owners:
+            try:
+                config_manager = apprc._manage_with_paths(
+                    _options(runtime), runtime.environment, runtime.paths
+                )
+                config_payload = build_config_doctor_payload(
+                    apprc, manager=config_manager
+                )
+                application_details["configuration"] = (
+                    config_payload.to_payload()
+                )
+                application_checks.extend(
+                    {
+                        "name": item.name,
+                        "status": item.status,
+                        "message": item.message,
+                    }
+                    for item in config_payload.checks
+                )
+            except (OSError, ValueError) as exc:
+                application_checks.append(
+                    {
+                        "name": "configuration",
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                )
+        application_resources = cast(
+            dict[str, object], application_details["resources"]
+        )
+        for kind, callback in resource_diagnostics.items():
+            path = getattr(runtime.paths, f"{kind}_dir")
+            if path is None or not path.is_dir():
+                continue
+            try:
+                application_resources[kind] = dict(callback(path))
+                application_checks.append(
+                    {
+                        "name": f"resource_{kind}_provider",
+                        "status": "ok",
+                        "message": "Provider inspection completed.",
+                    }
+                )
+            except (OSError, ValueError) as exc:
+                application_checks.append(
+                    {
+                        "name": f"resource_{kind}_provider",
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                )
+    if host_diagnostics is not None:
+        try:
+            application_details["host"] = dict(host_diagnostics())
+        except (OSError, ValueError) as exc:
+            application_checks.append(
+                {
+                    "name": "host_provider",
+                    "status": "error",
+                    "message": str(exc),
+                }
+            )
+    status = (
+        "error"
+        if any(item["status"] == "error" for item in application_checks)
+        else "warning"
+        if any(item["status"] == "warning" for item in application_checks)
+        else "ok"
+    )
+    return {
+        "status": status,
+        "checks": application_checks,
+        "details": application_details,
+    }
+
+
 def build_application_doctor_payload(
     ctx: typer.Context,
     apprc: AppRC,
@@ -148,84 +238,9 @@ def build_application_doctor_payload(
 ) -> dict[str, object]:
     """Aggregate local installation, path, configuration, and provider checks."""
     if _APPLICATION_DIAGNOSTICS.get():
-        application_checks: list[dict[str, str]] = []
-        application_details: dict[str, object] = {"resources": {}, "host": {}}
-        runtime = cli_runtime_context_from(ctx)
-        if runtime is not None:
-            if apprc.schema.paths.config or apprc.schema.owners:
-                try:
-                    config_manager = apprc._manage_with_paths(
-                        _options(runtime), runtime.environment, runtime.paths
-                    )
-                    config_payload = build_config_doctor_payload(
-                        apprc, manager=config_manager
-                    )
-                    application_details["configuration"] = (
-                        config_payload.to_payload()
-                    )
-                    application_checks.extend(
-                        {
-                            "name": item.name,
-                            "status": item.status,
-                            "message": item.message,
-                        }
-                        for item in config_payload.checks
-                    )
-                except (OSError, ValueError) as exc:
-                    application_checks.append(
-                        {
-                            "name": "configuration",
-                            "status": "error",
-                            "message": str(exc),
-                        }
-                    )
-            application_resources = cast(
-                dict[str, object], application_details["resources"]
-            )
-            for kind, callback in resource_diagnostics.items():
-                path = getattr(runtime.paths, f"{kind}_dir")
-                if path is None or not path.is_dir():
-                    continue
-                try:
-                    application_resources[kind] = dict(callback(path))
-                    application_checks.append(
-                        {
-                            "name": f"resource_{kind}_provider",
-                            "status": "ok",
-                            "message": "Provider inspection completed.",
-                        }
-                    )
-                except (OSError, ValueError) as exc:
-                    application_checks.append(
-                        {
-                            "name": f"resource_{kind}_provider",
-                            "status": "error",
-                            "message": str(exc),
-                        }
-                    )
-        if host_diagnostics is not None:
-            try:
-                application_details["host"] = dict(host_diagnostics())
-            except (OSError, ValueError) as exc:
-                application_checks.append(
-                    {
-                        "name": "host_provider",
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                )
-        status = (
-            "error"
-            if any(item["status"] == "error" for item in application_checks)
-            else "warning"
-            if any(item["status"] == "warning" for item in application_checks)
-            else "ok"
+        return _build_runtime_diagnostics(
+            ctx, apprc, host_diagnostics, resource_diagnostics
         )
-        return {
-            "status": status,
-            "checks": application_checks,
-            "details": application_details,
-        }
     from apprc.interfaces.cli.installation_command import _inspection_payload
 
     diagnostic = installation_context(ctx)
@@ -296,8 +311,6 @@ def build_application_doctor_payload(
         installation["diagnostics"] = installation_diagnostics
 
     paths_detail: dict[str, object] | None = None
-    config_detail: dict[str, object] | None = None
-    resources: dict[str, object] = {}
     operations_by_kind: dict[str, list[str]] = {}
     if verbose:
         from apprc.interfaces.cli.runtime import _registered_typer_names
@@ -306,9 +319,115 @@ def build_application_doctor_payload(
             kind: _registered_typer_names(group)
             for kind, group in resource_groups.items()
         }
-    boundaries_safe = True
     if runtime is not None:
         paths_detail = _paths_payload(runtime)
+    resources, config_detail = _inspect_runtime_paths(
+        apprc,
+        runtime,
+        checks,
+        operations_by_kind,
+        resource_diagnostics,
+        verbose=verbose,
+        native_diagnostic=diagnostic is not None
+        and diagnostic.native_binding is not None,
+    )
+    if runtime is not None and diagnostic is None:
+        reported = {
+            (item["code"], item["message"]) for item in installation_diagnostics
+        }
+        for item in runtime.paths.installation.diagnostics:
+            key = (item.code, item.message)
+            if key in reported:
+                continue
+            reported.add(key)
+            installation_diagnostics.append(
+                {
+                    "code": item.code,
+                    "message": item.message,
+                    "recovery": item.recovery,
+                }
+            )
+            checks.append(
+                DiagnosticCheck(
+                    "installation",
+                    ConfigDoctorStatus.ERROR.value,
+                    f"{item.message} Recovery: {item.recovery}",
+                )
+            )
+        installation["diagnostics"] = installation_diagnostics
+
+    details: dict[str, object] | None = None
+    if verbose:
+        host: Mapping[str, object] = {}
+        if host_diagnostics is not None:
+            try:
+                host = host_diagnostics()
+            except (OSError, ValueError) as exc:
+                checks.append(
+                    DiagnosticCheck(
+                        "host_provider",
+                        ConfigDoctorStatus.ERROR.value,
+                        str(exc),
+                    )
+                )
+        details = {
+            "paths": paths_detail,
+            "configuration": config_detail,
+            "resources": resources,
+            "host": dict(host),
+        }
+    status = (
+        ConfigDoctorStatus.ERROR.value
+        if any(
+            check.status == ConfigDoctorStatus.ERROR.value for check in checks
+        )
+        else ConfigDoctorStatus.WARNING.value
+        if any(
+            check.status == ConfigDoctorStatus.WARNING.value for check in checks
+        )
+        else ConfigDoctorStatus.OK.value
+    )
+    if inspection is not None and inspection.status in {
+        "invalid",
+        "provisional",
+        "incomplete",
+    }:
+        status = inspection.status
+    result: dict[str, object] = {
+        "status": status,
+        "checks": [
+            {
+                "name": check.name,
+                "status": check.status,
+                "message": check.message,
+            }
+            for check in checks
+        ],
+        "installation": installation,
+    }
+    if details is not None:
+        result["details"] = details
+    return result
+
+
+def _inspect_runtime_paths(
+    apprc: AppRC,
+    runtime: CliRuntimeContext[Any] | None,
+    checks: list[DiagnosticCheck],
+    operations_by_kind: Mapping[str, list[str]],
+    resource_diagnostics: Mapping[
+        Literal["appdata", "cache", "state"],
+        Callable[[Path], Mapping[str, object]],
+    ],
+    *,
+    verbose: bool,
+    native_diagnostic: bool,
+) -> tuple[dict[str, object], dict[str, object] | None]:
+    """Check path boundaries and ownership before calling resource providers."""
+    resources: dict[str, object] = {}
+    config_detail: dict[str, object] | None = None
+    boundaries_safe = True
+    if runtime is not None:
         if any(
             (
                 apprc.schema.paths.config,
@@ -402,9 +521,9 @@ def build_application_doctor_payload(
                     "ownership": None,
                     "operations": operations_by_kind.get(kind, []),
                 }
-        if (apprc.schema.paths.config or apprc.schema.owners) and not (
-            diagnostic is not None and diagnostic.native_binding is not None
-        ):
+        if (
+            apprc.schema.paths.config or apprc.schema.owners
+        ) and not native_diagnostic:
             try:
                 config_manager = apprc._manage_with_paths(
                     _options(runtime), runtime.environment, runtime.paths
@@ -432,83 +551,7 @@ def build_application_doctor_payload(
                     "ownership": None,
                     "operations": operations_by_kind.get(kind, []),
                 }
-    if runtime is not None and diagnostic is None:
-        reported = {
-            (item["code"], item["message"]) for item in installation_diagnostics
-        }
-        for item in runtime.paths.installation.diagnostics:
-            key = (item.code, item.message)
-            if key in reported:
-                continue
-            reported.add(key)
-            installation_diagnostics.append(
-                {
-                    "code": item.code,
-                    "message": item.message,
-                    "recovery": item.recovery,
-                }
-            )
-            checks.append(
-                DiagnosticCheck(
-                    "installation",
-                    ConfigDoctorStatus.ERROR.value,
-                    f"{item.message} Recovery: {item.recovery}",
-                )
-            )
-        installation["diagnostics"] = installation_diagnostics
-
-    details: dict[str, object] | None = None
-    if verbose:
-        host: Mapping[str, object] = {}
-        if host_diagnostics is not None:
-            try:
-                host = host_diagnostics()
-            except (OSError, ValueError) as exc:
-                checks.append(
-                    DiagnosticCheck(
-                        "host_provider",
-                        ConfigDoctorStatus.ERROR.value,
-                        str(exc),
-                    )
-                )
-        details = {
-            "paths": paths_detail,
-            "configuration": config_detail,
-            "resources": resources,
-            "host": dict(host),
-        }
-    status = (
-        ConfigDoctorStatus.ERROR.value
-        if any(
-            check.status == ConfigDoctorStatus.ERROR.value for check in checks
-        )
-        else ConfigDoctorStatus.WARNING.value
-        if any(
-            check.status == ConfigDoctorStatus.WARNING.value for check in checks
-        )
-        else ConfigDoctorStatus.OK.value
-    )
-    if inspection is not None and inspection.status in {
-        "invalid",
-        "provisional",
-        "incomplete",
-    }:
-        status = inspection.status
-    result: dict[str, object] = {
-        "status": status,
-        "checks": [
-            {
-                "name": check.name,
-                "status": check.status,
-                "message": check.message,
-            }
-            for check in checks
-        ],
-        "installation": installation,
-    }
-    if details is not None:
-        result["details"] = details
-    return result
+    return resources, config_detail
 
 
 def _context(ctx: typer.Context) -> CliRuntimeContext[Any]:

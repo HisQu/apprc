@@ -52,7 +52,7 @@ def generated_files() -> dict[Path, str]:
         + json.dumps(
             [
                 f"apprc-core=={project['version']}",
-                "typer",
+                "typer>=0.26.5",
                 "rich",
                 "prompt-toolkit>=3.0,<4",
                 "textual",

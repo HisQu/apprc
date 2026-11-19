@@ -6,16 +6,16 @@ import hashlib
 import zipfile
 from pathlib import Path
 
-from apprc.distribution.models import NativeBinding, decode_native_binding
+from apprc.distribution.models import NativeBinding, read_native_bindings
 
 
-def read_product(
+def read_products(
     executable: Path,
     expected_size: object,
     expected_digest: object,
     *,
     include_project: bool = False,
-) -> tuple[NativeBinding, bytes | None]:
+) -> tuple[NativeBinding, NativeBinding | None, bytes | None]:
     """Verify the appended archive and optionally load its project snapshot."""
     if (
         type(expected_size) is not int
@@ -38,7 +38,7 @@ def read_product(
     if digest.hexdigest() != expected_digest:
         raise RuntimeError("Native manager archive changed after loading.")
     with zipfile.ZipFile(executable) as archive:
-        binding = decode_native_binding(archive.read("binding.json"))
+        binding, preview = read_native_bindings(archive)
         project = archive.read("project.zip") if include_project else None
     if (
         project is not None
@@ -47,4 +47,4 @@ def read_product(
         raise RuntimeError(
             "Embedded project snapshot differs from its binding."
         )
-    return binding, project
+    return binding, preview, project

@@ -26,6 +26,7 @@
   - [Add a Gradio settings page](#add-a-gradio-settings-page)
 - [Prepare a release package](#prepare-a-release-package)
   - [Build a Windows installer](#build-a-windows-installer)
+  - [Install a preview or run a smoke test](#install-a-preview-or-run-a-smoke-test)
   - [Validate installation on your machine](#validate-installation-on-your-machine)
   - [Generate one-line install scripts](#generate-one-line-install-scripts)
 - [Install and recover applications](#install-and-recover-applications)
@@ -1008,6 +1009,38 @@ this is not an offline installer guarantee.
 > installation, shortcuts, updates or self-removal. Windows/macOS validation is
 > deferred. Never launch native Windows test executables from WSL; follow the
 > separately authorized native validation procedure.
+
+## Install a preview or run a smoke test
+
+An opted-in native setup installs a preview alongside the regular application.
+Use the setup from a verified release and pass `--preview` or `--smoke` as
+the first option.
+
+| Command | Result |
+| --- | --- |
+| `<setup> --preview` | Install or update the preview and leave it installed. |
+| `<setup> --smoke` | Install a fresh preview, verify its runtime, and wait for uninstall to finish. |
+| `<preview-command> app uninstall` | Remove the preview through the ordinary uninstall workflow. |
+
+`-p` and `-s` are the short forms. Combining them runs smoke. A smoke test
+requires an unused preview identity with no retained preview resources. If
+you have preview data you want to keep, leave that preview installed. Preview
+uses fixed native resource paths. On Linux, persistent preview needs an
+existing command directory on PATH. Supply `--command-directory PATH` if the
+default directory is unavailable.
+
+With an updated OLI and release setup, append the setup options to Bash's
+standard-input invocation. In PowerShell, download the script and invoke it
+as a file to supply options.
+
+```bash
+curl -fsSL <PUBLIC_SCRIPT_URL> | bash -s -- --smoke
+```
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri <PUBLIC_SCRIPT_URL> -OutFile .\install_from_github.ps1
+& .\install_from_github.ps1 --smoke
+```
 
 ## Validate installation on your machine
 

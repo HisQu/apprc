@@ -606,12 +606,18 @@ def execute_handoff(
     plan_file: Path,
     *,
     expected_identity: InstallationIdentity | None = None,
+    preview_identity: InstallationIdentity | None = None,
 ) -> None:
     """Validate and resume the exact pending uninstall handoff."""
     global _REPOSITORY_FINALIZER
     _REPOSITORY_FINALIZER = None
     assert_no_links(plan_file)
     value = _parse_plan(plan_file)
+    if (
+        preview_identity is not None
+        and value["app_id"] == preview_identity.app_id
+    ):
+        expected_identity = preview_identity
     if (
         expected_identity is not None
         and expected_identity.app_id != value["app_id"]

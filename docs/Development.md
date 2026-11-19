@@ -15,6 +15,7 @@
 - [Build and release AppRC](#build-and-release-apprc)
   - [Build the three distributions](#build-the-three-distributions)
   - [Native application frontends](#native-application-frontends)
+  - [Verify an opted-in preview identity](#verify-an-opted-in-preview-identity)
   - [Verify an application distribution](#verify-an-application-distribution)
   - [Release procedure](#release-procedure)
 
@@ -568,6 +569,21 @@ install/update/repair/uninstall and child lifetime, not only executable headers.
 Windows self-removal, leases, registration and shortcuts require separately
 authorized native Windows evidence. Never run Windows test executables through
 WSL interop or weaken ownership/ACL/link checks to make a fixture pass.
+
+### Verify an opted-in preview identity
+
+Keep the regular command and application declaration stable. The preview
+entry point and bridge reference must select the same AppRC declaration before
+the CLI, configuration, or hooks load. Supply a distinct app ID, command,
+and bootstrap environment prefix. Keep both identities in the committed
+source snapshot. See [the preview declaration](References.md#preview-identity).
+
+Use the existing native fixture to exercise the same setup with and without
+preview flags. Include a regular installation at custom resource paths, then
+assert its authority, runtime, command, and resources survive preview
+installation and smoke cleanup. On Windows, also check that smoke uses a
+separate uninstall registration and leaves user PATH intact. Record native
+Windows evidence separately from Linux execution and cross-compilation.
 
 ### Choose a default action for an installed command
 

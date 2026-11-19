@@ -35,11 +35,12 @@
         echo "Native setup checksum verification failed. Rerun the one-line install command." >&2
         exit 1
     }
+    # > Forward setup options only after verifying the downloaded executable.
     chmod +x "$temporary/$setup"
     # > Give a piped OLIS's setup access to the terminal for normal prompts.
     if [ -z "${BASH_SOURCE[0]-}" ] && { exec 3</dev/tty; } 2>/dev/null; then
-        "$temporary/$setup" <&3
+        "$temporary/$setup" "$@" <&3
     else
-        "$temporary/$setup"
+        "$temporary/$setup" "$@"
     fi
 )

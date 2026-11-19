@@ -1161,8 +1161,12 @@ def check_protected_removal_paths(
 ) -> None:
     """Reject removals overlapping the runner or retained configuration."""
     for path in deleted:
+        physical_path = path.resolve()
         for survivor in protected:
-            if survivor.is_relative_to(path) or path.is_relative_to(survivor):
+            physical_survivor = survivor.resolve()
+            if physical_survivor.is_relative_to(
+                physical_path
+            ) or physical_path.is_relative_to(physical_survivor):
                 raise InstallationError(
                     f"Removal overlaps a protected path: {survivor}"
                 )

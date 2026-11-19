@@ -208,7 +208,7 @@ def test_linux_olis_checks_before_running_and_cleans_up(
         'file-stdin) read -r response; [ "$response" = supplied ] || exit 88 ;;\n'
         "piped-tty) [ -t 0 ] || exit 88 ;;\n"
         "esac\n"
-        'touch "$OLIS_MARKER"\nexit "$OLIS_SETUP_STATUS"\n',
+        'printf "%s\\n" "$@" > "$OLIS_MARKER"\nexit "$OLIS_SETUP_STATUS"\n',
         encoding="utf-8",
     )
     digest = hashlib.sha256(setup.read_bytes()).hexdigest()
@@ -247,8 +247,17 @@ def test_linux_olis_checks_before_running_and_cleans_up(
         command.append(str(script))
         script_input = b"supplied\n"
     elif scenario == "piped-tty":
-        command = ["script", "-qec", 'cat "$OLIS_SCRIPT" | bash', "/dev/null"]
+        command = [
+            "script",
+            "-qec",
+            'cat "$OLIS_SCRIPT" | bash -s -- --smoke "a space"',
+            "/dev/null",
+        ]
         script_input = b""
+    else:
+        command.extend(("-s", "--"))
+    if scenario != "piped-tty":
+        command.extend(("--smoke", "a space"))
     result = subprocess.run(
         command,
         input=script_input,
@@ -273,4 +282,76 @@ def test_linux_olis_checks_before_running_and_cleans_up(
     assert marker.exists() == (
         scenario in {"ok", "setup", "file-stdin", "piped-tty", "cleanup"}
     )
+    if marker.exists():
+        assert marker.read_text().splitlines() == ["--smoke", "a space"]
     assert list(temporary.iterdir()) == []
+
+
+@pytest.mark.skipif(
+    platform.system() != "Linux" or shutil.which("pwsh") is None,
+    reason="A Linux PowerShell host is needed to run the rendered Windows wrapper with mock downloads.",
+)
+@pytest.mark.parametrize("public", ["true", "false"])
+@pytest.mark.parametrize(
+    ("valid_checksum", "expected"), [(True, 17), (False, 1)]
+)
+def test_powershell_olis_forwards_options_after_checksum(
+    tmp_path: Path, public: str, valid_checksum: bool, expected: int
+) -> None:
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    setup = downloads / "fixture-setup-windows-x86_64.exe"
+    setup.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$@" > "$OLIS_MARKER"\nexit 17\n'
+    )
+    setup.chmod(0o755)
+    digest = (
+        hashlib.sha256(setup.read_bytes()).hexdigest()
+        if valid_checksum
+        else "0" * 64
+    )
+    (downloads / "SHA256SUMS").write_text(f"{digest}  {setup.name}\n")
+    mock_bin = tmp_path / "bin"
+    mock_bin.mkdir()
+    gh = mock_bin / "gh"
+    gh.write_text(
+        '#!/bin/sh\nfor last do :; done\ncp -p "$OLIS_DOWNLOADS/"* "$last/"\n'
+    )
+    gh.chmod(0o755)
+    driver = tmp_path / "invoke.ps1"
+    driver.write_text(
+        "function global:Invoke-WebRequest {\n"
+        "    param([switch]$UseBasicParsing, [string]$Uri, [string]$OutFile)\n"
+        "    $name = ([Uri]$Uri).Segments[-1]\n"
+        "    [IO.File]::Copy((Join-Path $env:OLIS_DOWNLOADS $name), $OutFile)\n"
+        '    if ($name.EndsWith(".exe")) { chmod +x $OutFile }\n'
+        "}\n"
+        '& $env:OLIS_SCRIPT --smoke "a space"\n'
+        "exit $LASTEXITCODE\n"
+    )
+    frontends._write_olis(
+        tmp_path,
+        "fixture",
+        {"RELEASE_PUBLIC": public, "RELEASE_REPO_OLIS": _REPOSITORY},
+    )
+    marker = tmp_path / "marker"
+    output = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(driver)],
+        env={
+            **os.environ,
+            "OS": "Windows_NT",
+            "PROCESSOR_ARCHITECTURE": "AMD64",
+            "PATH": str(mock_bin) + os.pathsep + os.environ["PATH"],
+            "OLIS_DOWNLOADS": str(downloads),
+            "OLIS_MARKER": str(marker),
+            "OLIS_SCRIPT": str(tmp_path / _OUTPUTS[1]),
+        },
+        check=False,
+        capture_output=True,
+        timeout=20,
+    )
+    assert output.returncode == expected, output.stderr
+    if valid_checksum:
+        assert marker.read_text().splitlines() == ["--smoke", "a space"]
+    else:
+        assert not marker.exists()

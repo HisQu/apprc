@@ -75,6 +75,7 @@ from apprc.user_files.app_home.writes import (
 )
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
+from apprc.user_files.installation.planning import resource_roots
 from apprc.user_files.installation.operations import (
     _matches_candidate,
     record_owned_outputs,
@@ -1190,7 +1191,9 @@ def _snapshot_metadata(
         raise InstallationError(
             "Retained snapshot project metadata is invalid."
         ) from error
-    if captured.identity != identity:
+    if captured.identity != identity and (
+        captured.preview is None or captured.preview.identity != identity
+    ):
         raise InstallationError(
             "Verified snapshot identity differs from installation authority."
         )
@@ -1224,11 +1227,16 @@ def _restore_pending_candidate_archive(
             "Manager executable does not match the running product."
         )
 
-    binding, content = _read_product(include_project=True)
     record = manager.inspect().record
+    if record is None:
+        raise InstallationError(
+            "The pending candidate no longer has saved authority."
+        )
+    binding, content = _read_product(
+        include_project=True, identity=record.identity
+    )
     if (
         content is None
-        or record is None
         or binding.identity != record.identity
         or binding.source != runtime.source
         or binding.selection != runtime.selection
@@ -1784,6 +1792,7 @@ def install_application(
     uv: Path,
     command_directory: Path | None = None,
     assume_yes: bool = False,
+    require_fresh: bool = False,
 ) -> InstallationInspection:
     if not manager_executable.is_absolute() or not manager_executable.is_file():
         raise InstallationError(
@@ -1801,6 +1810,23 @@ def install_application(
     environment = manager.environment
     with installation_lock(directory):
         prior = manager.inspect()
+        if require_fresh:
+            if prior.status != "missing" or any(
+                os.path.lexists(path) for _, path in resource_roots(placement)
+            ):
+                raise InstallationError(
+                    "Smoke requires a fresh preview. Remove the existing preview and any retained resources first."
+                )
+            from apprc.distribution.runtime._uninstall_controller import (
+                verify_windows_registration,
+            )
+
+            verify_windows_registration(
+                manager,
+                directory / _command_filename(command_name),
+                None,
+                _MAINTENANCE_GROUP.get(),
+            )
         previous = prior.record
         if previous is not None and previous.operation is not None:
             intended = previous.operation.intended

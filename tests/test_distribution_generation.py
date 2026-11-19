@@ -188,3 +188,51 @@ def test_capability_inspection_does_not_create_installation_state() -> None:
     assert capabilities.paths == Paths(cache=True)
     assert not capabilities.workspaces
     assert not app.installation().directory.exists()
+
+
+def test_preview_keeps_the_regular_installation_identity(
+    tmp_path: Path,
+) -> None:
+    regular = "fixture-command = 'unimportable_package.cli:main'"
+    settings = (
+        "[tool.apprc.distribution]\n"
+        "app-id = 'fixture'\ncommand-name = 'fixture-command'\n"
+        "apprc-reference = 'unimportable_package.config:APP_RC'\n"
+        "bootstrap-env-prefix = 'FIXTURE'\n"
+    )
+    _write_project(tmp_path, scripts=regular, settings=settings)
+    before = read_project_metadata(tmp_path).identity
+    _write_project(
+        tmp_path,
+        scripts=regular
+        + "\nfixture-preview = 'unimportable_package.cli:preview_main'",
+        settings=settings
+        + (
+            "[tool.apprc.distribution.preview]\n"
+            "app-id = 'fixture-preview'\ncommand-name = 'fixture-preview'\n"
+            "apprc-reference = 'unimportable_package.preview:APP_RC'\n"
+            "bootstrap-env-prefix = 'FIXTURE_PREVIEW'\n"
+        ),
+    )
+    product = read_distribution_spec(tmp_path)
+    assert product.metadata.identity == before
+    assert product.metadata.preview is not None
+    assert product.metadata.preview.identity.commands == ("fixture-preview",)
+    assert product.metadata.preview.identity.distribution == before.distribution
+
+
+def test_preview_must_use_a_separate_bootstrap_prefix(tmp_path: Path) -> None:
+    _write_project(
+        tmp_path,
+        scripts="fixture-command = 'unimportable_package.cli:main'\n"
+        "fixture-preview = 'unimportable_package.cli:preview_main'",
+        settings=(
+            "[tool.apprc.distribution]\nbootstrap-env-prefix = 'FIXTURE'\n"
+            "[tool.apprc.distribution.preview]\n"
+            "app-id = 'fixture-preview'\ncommand-name = 'fixture-preview'\n"
+            "apprc-reference = 'unimportable_package.preview:APP_RC'\n"
+            "bootstrap-env-prefix = 'fixture'\n"
+        ),
+    )
+    with pytest.raises(ValueError, match="distinct bootstrap"):
+        read_distribution_spec(tmp_path)

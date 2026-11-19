@@ -226,3 +226,32 @@ def test_old_download_rejects_wrong_target(tmp_path: Path) -> None:
     old = _setup(tmp_path, LINUX)
     with pytest.raises(ValueError, match="canonical"):
         _check_old_setup(old, app_id="fixture", target=WINDOWS)
+
+
+def test_preview_artifact_cannot_select_another_snapshot(
+    tmp_path: Path,
+) -> None:
+    setup = _setup(tmp_path, LINUX)
+    with ZipFile(setup, "a") as archive:
+        from apprc.distribution.models import decode_native_binding
+
+        regular = decode_native_binding(archive.read("binding.json"))
+        preview = replace(
+            regular,
+            identity=replace(
+                regular.identity,
+                app_id="fixture-preview",
+                commands=("fixture-preview",),
+                apprc_reference="fixture:PREVIEW",
+            ),
+            command_name="fixture-preview",
+            bootstrap_env_prefix="FIXTURE_PREVIEW",
+            source=replace(regular.source, commit="b" * 40),
+        )
+        archive.writestr("preview-binding.json", encode_native_binding(preview))
+    manifest = setup.parent / "SHA256SUMS"
+    manifest.write_text(
+        f"{hashlib.sha256(setup.read_bytes()).hexdigest()}  {setup.name}\n"
+    )
+    with pytest.raises(ValueError, match="preview binding"):
+        _check_old_setup(setup, app_id="fixture", target=LINUX)

@@ -12,7 +12,7 @@ closing the PowerShell session. Running this OLIS as a file returns that code.
 #>
 
 & {
-    param([bool]$RunAsFile)
+    param([bool]$RunAsFile, [object[]]$SetupArgs)
     $ErrorActionPreference = 'Stop'
     $PSNativeCommandUseErrorActionPreference = $false
     $temporary = $null
@@ -43,7 +43,8 @@ closing the PowerShell session. Running this OLIS as a file returns that code.
         if ((Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash -ne $expected) {
             throw 'Native setup checksum verification failed. Rerun the one-line install command.'
         }
-        & $executable
+        # > Forward setup options only after verifying the downloaded executable.
+        & $executable @SetupArgs
         $result = $LASTEXITCODE
         if ($result -ne 0) { $failure = "Native setup failed with exit code $result." }
     } catch {
@@ -57,4 +58,4 @@ closing the PowerShell session. Running this OLIS as a file returns that code.
         exit $result
     }
     if ($failure) { throw $failure }
-} ($MyInvocation.MyCommand.CommandType -eq 'ExternalScript')
+} ($MyInvocation.MyCommand.CommandType -eq 'ExternalScript') $args

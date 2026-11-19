@@ -336,6 +336,26 @@ verified current-platform setup and can offer to build a missing or stale one.
 An explicit `installer_entrypoint` continues to take precedence.
 
 
+### Preview identity
+
+An author can opt in to one preview identity under
+`[tool.apprc.distribution.preview]`. Both bindings are included in the same
+native setup. The preview uses the host application's normal Python package
+and lifecycle hooks.
+
+| Field | Contract |
+| --- | --- |
+| `app-id` | Distinct application ID for native paths, installation authority, and OS registration. |
+| `command-name` | Distinct command declared in `[project.scripts]`. Only the preview publishes this command. |
+| `apprc-reference` | Distinct `module:object` reference exposing the host's preview AppRC declaration. |
+| `bootstrap-env-prefix` | Distinct prefix for the preview declaration. |
+| `display-name` | Optional display name. Defaults to the preview app ID. |
+| `install-next-step` | Optional completion text for a persistent preview. |
+
+Use `--preview/-p` to leave the preview installed or `--smoke/-s` to install,
+verify and uninstall a fresh preview. The preview identity is opt-in.
+See [preview usage](How-To-User-Guides.md#install-a-preview-or-run-a-smoke-test).
+
 ### One-line install script reference
 
 | Term | Meaning |

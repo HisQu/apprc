@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import cast
+from zipfile import ZipFile
 
 from apprc.definition.installation import (
     InstallationHooks,
@@ -33,6 +34,17 @@ def relative_destination(value: str | PurePosixPath) -> PurePosixPath:
 
 
 @dataclass(frozen=True, slots=True)
+class PreviewProduct:
+    """The single alternate identity an author may enable in native setup."""
+
+    identity: InstallationIdentity
+    command_name: str
+    display_name: str
+    bootstrap_env_prefix: str
+    install_next_step: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectMetadata:
     """Packaging identity and explicit repository-relative project routing."""
 
@@ -44,6 +56,7 @@ class ProjectMetadata:
     command_name: str | None = None
     python_requirement: str = ">=3.12"
     runtime_python: str | None = None
+    preview: PreviewProduct | None = None
 
     @property
     def runtime_python_requirement(self) -> str:
@@ -118,6 +131,14 @@ class DistributionSpec:
             raise ValueError(
                 "Native products cannot embed an author's absolute layout root."
             )
+        preview = self.metadata.preview
+        if preview is not None and (
+            preview.bootstrap_env_prefix.casefold()
+            == self.bootstrap_env_prefix.casefold()
+        ):
+            raise ValueError(
+                "Preview must use a distinct bootstrap environment prefix."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +204,42 @@ def decode_native_binding(data: bytes) -> NativeBinding:
     if isinstance(binding, dict):
         binding.setdefault("config_group_name", "config")
     return cast(NativeBinding, _decode(binding, NativeBinding, "binding"))
+
+
+def read_native_bindings(
+    archive: ZipFile,
+) -> tuple[NativeBinding, NativeBinding | None]:
+    """Read the regular binding and validate the optional alternate identity."""
+    regular = decode_native_binding(archive.read("binding.json"))
+    if "preview-binding.json" not in archive.namelist():
+        return regular, None
+    preview = decode_native_binding(archive.read("preview-binding.json"))
+    if (
+        preview.identity.app_id.casefold() == regular.identity.app_id.casefold()
+        or preview.identity.distribution != regular.identity.distribution
+        or preview.identity.import_package != regular.identity.import_package
+        or not preview.identity.apprc_reference
+        or preview.identity.apprc_reference == regular.identity.apprc_reference
+        or preview.identity.commands != (preview.command_name,)
+        or preview.command_name.casefold()
+        in {command.casefold() for command in regular.identity.commands}
+        or preview.bootstrap_env_prefix.casefold()
+        == regular.bootstrap_env_prefix.casefold()
+        or preview.layout != Layout.native()
+        or replace(
+            preview,
+            identity=regular.identity,
+            command_name=regular.command_name,
+            display_name=regular.display_name,
+            layout=regular.layout,
+            bootstrap_env_prefix=regular.bootstrap_env_prefix,
+        )
+        != regular
+    ):
+        raise ValueError(
+            "Native preview binding differs from its declared product."
+        )
+    return regular, preview
 
 
 @dataclass(frozen=True, slots=True)

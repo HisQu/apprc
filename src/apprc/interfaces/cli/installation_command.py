@@ -468,8 +468,12 @@ def mount_installation_group(
         try:
             command_context = _inspection(ctx)
             inspection = command_context.inspection
+            from apprc.distribution.runtime._uninstall_controller import (
+                EXPECTED_UNINSTALL_REVISION,
+            )
+
             expected_revision = command_context.environment.get(
-                "_APPRC_DIST_TEST_UNINSTALL_REVISION"
+                EXPECTED_UNINSTALL_REVISION
             )
             if (
                 expected_revision is not None

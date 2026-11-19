@@ -1232,3 +1232,213 @@ def test_editable_uninstall_removes_single_root_inside_preserved_repository(
         ).read_text()
     )
     assert event["generation_id"] == record["generation_id"]
+
+
+def test_native_preview_and_smoke_preserve_regular_installation(
+    tmp_path: Path, native_product: NativeProduct
+) -> None:
+    from apprc.distribution.metadata import read_distribution_spec
+    from apprc.distribution.project import build_project_snapshot
+
+    project_root, uv, legacy_setup, _, _, _ = native_product
+    preview_project = tmp_path / "preview-project"
+    shutil.copytree(
+        project_root,
+        preview_project,
+        ignore=shutil.ignore_patterns(".git", ".venv", ".cache", "dist"),
+    )
+    metadata = preview_project / "pyproject.toml"
+    metadata.write_text(
+        metadata.read_text()
+        .replace(
+            "[project.scripts]\n",
+            "[project.scripts]\nfixture-preview = 'fixture_preview:main'\n",
+        )
+        .replace("'fixture_config']", "'fixture_config', 'fixture_preview']")
+        + "\n[tool.apprc.distribution.preview]\n"
+        "app-id = 'fixture-preview'\n"
+        "command-name = 'fixture-preview'\n"
+        "apprc-reference = 'fixture_preview:APP_RC'\n"
+        "bootstrap-env-prefix = 'FIXTURE_PREVIEW'\n"
+    )
+    (preview_project / "fixture_preview.py").write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "import apprc as rc\n"
+        "APP_RC = rc.AppRC(app_id='fixture-preview', command_name='fixture-preview', "
+        "paths=rc.Paths(config=True, appdata=True), bootstrap_env_prefix='FIXTURE_PREVIEW')\n"
+        "def main():\n"
+        " if sys.argv[1:] != ['--version']: raise SystemExit(3)\n"
+        " if os.environ.get('FIXTURE_FAIL_PREVIEW_VERSION'):\n"
+        "  bin_path = Path(os.environ['PATH'].split(os.pathsep)[1])\n"
+        "  if bin_path.name.startswith('apprc-preview-smoke-'):\n"
+        "   (bin_path / 'fixture-preview').unlink()\n"
+        "  raise SystemExit(4)\n"
+        " print('Preview entry point ran')\n"
+    )
+    author = {
+        **authoring_environment(),
+        "GIT_AUTHOR_NAME": "AppRC native fixture",
+        "GIT_COMMITTER_NAME": "AppRC native fixture",
+        "GIT_AUTHOR_EMAIL": "native-fixture@example.invalid",
+        "GIT_COMMITTER_EMAIL": "native-fixture@example.invalid",
+    }
+    run([str(uv), "lock"], environment=author, cwd=preview_project)
+    for command in (
+        ["git", "init", "-q"],
+        ["git", "add", "."],
+        [
+            "git",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "preview fixture",
+        ],
+    ):
+        run(command, environment=author, cwd=preview_project)
+    spec = read_distribution_spec(preview_project)
+    snapshot = build_project_snapshot(
+        spec, revision="HEAD", destination=tmp_path / "preview.zip"
+    )
+    product = build_native_distribution(
+        spec,
+        snapshot,
+        uv=uv,
+        workspace=tmp_path / "build",
+        environment=author,
+        extras=("native-feature",),
+        targets=("x86_64-unknown-linux-gnu",),
+    )
+    setup = product.artifacts[0].path
+    environment, commands = _host(tmp_path / "host")
+
+    def invoke(command: Path, *args: str, **changes: str):
+        return run(
+            [str(command), *args],
+            environment={**environment, **changes},
+            cwd=tmp_path,
+            check=False,
+        )
+
+    root = tmp_path / "regular-resources"
+    installed = invoke(
+        legacy_setup,
+        "--app-root",
+        str(root),
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    assert installed.returncode == 0, installed.stdout + installed.stderr
+    regular_dir = installation_directory("fixture-app", environment=environment)
+    regular_authority = regular_dir / "installation.json"
+    sentinel = root / "appdata" / "sentinel.txt"
+    sentinel.write_bytes(b"personal data")
+    updated = invoke(
+        setup, "--yes", "--skip-setup", "--command-directory", str(commands)
+    )
+    assert updated.returncode == 0, updated.stdout + updated.stderr
+    regular_before = regular_authority.read_bytes()
+    regular_command = commands / "fixture-app"
+    regular_digest = hashlib.sha256(regular_command.read_bytes()).digest()
+
+    overlapping = invoke(setup, "-s", XDG_CONFIG_HOME=str(root / "appdata"))
+    assert overlapping.returncode != 0
+    assert "overlaps a protected path" in overlapping.stderr
+    preview = invoke(
+        setup,
+        "-p",
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    assert preview.returncode == 0, preview.stdout + preview.stderr
+    preview_command = commands / "fixture-preview"
+    assert (
+        "Preview entry point ran" in invoke(preview_command, "--version").stdout
+    )
+    preview_dir = installation_directory(
+        "fixture-preview", environment=environment
+    )
+    preview_authority = preview_dir / "installation.json"
+    original_preview = preview_authority.read_bytes()
+    refused = invoke(setup, "-s")
+    assert refused.returncode != 0
+    assert "requires a fresh preview" in refused.stderr
+    assert preview_authority.read_bytes() == original_preview
+
+    repaired = invoke(preview_command, "app", "repair")
+    assert repaired.returncode == 0, repaired.stdout + repaired.stderr
+    updated_preview = invoke(
+        setup,
+        "-p",
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    assert updated_preview.returncode == 0, (
+        updated_preview.stdout + updated_preview.stderr
+    )
+    removed = invoke(preview_command, "app", "uninstall", "--yes")
+    assert removed.returncode == 0, removed.stdout + removed.stderr
+    assert not preview_authority.exists()
+
+    smoke = invoke(setup, "-p", "-s")
+    assert smoke.returncode == 0, smoke.stdout + smoke.stderr
+    assert "Preview entry point ran" in smoke.stdout
+    assert "Preview smoke passed" in smoke.stdout
+    assert not preview_authority.exists()
+    failed = invoke(setup, "-s", FIXTURE_FAIL_PREVIEW_VERSION="1")
+    assert failed.returncode != 0
+    assert "could not report its version" in failed.stderr
+    assert "cleanup is incomplete" not in failed.stderr
+    assert not preview_authority.exists()
+    assert not list(Path(environment["TMPDIR"]).glob("apprc-preview-smoke-*"))
+    assert regular_authority.read_bytes() == regular_before
+    assert (
+        hashlib.sha256(regular_command.read_bytes()).digest() == regular_digest
+    )
+    assert sentinel.read_bytes() == b"personal data"
+
+    # > A legacy setup may choose a custom regular root after preview installs.
+    environment, commands = _host(tmp_path / "reverse-host")
+    preview_again = invoke(
+        setup,
+        "-p",
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    assert preview_again.returncode == 0, (
+        preview_again.stdout + preview_again.stderr
+    )
+    preview_dir = installation_directory(
+        "fixture-preview", environment=environment
+    )
+    preview_appdata = Path(_record(preview_dir)["placement"]["appdata_dir"])
+    overlap = preview_appdata / "regular"
+    regular_args = (
+        "--app-root",
+        str(overlap),
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    new_setup = invoke(setup, *regular_args)
+    assert new_setup.returncode != 0
+    assert "overlaps a protected path" in new_setup.stderr
+    old_setup = invoke(legacy_setup, *regular_args)
+    assert old_setup.returncode == 0, old_setup.stdout + old_setup.stderr
+    legacy_sentinel = overlap / "appdata" / "keep.txt"
+    legacy_sentinel.write_text("regular data")
+    blocked = invoke(commands / "fixture-preview", "app", "uninstall", "--yes")
+    assert blocked.returncode != 0
+    assert "overlaps a protected path" in blocked.stderr
+    assert legacy_sentinel.read_text() == "regular data"
+    assert (preview_dir / "installation.json").exists()

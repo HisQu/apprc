@@ -43,6 +43,7 @@ def finalize_namespace(
     directory: Path,
     *,
     expected_app_id: str | None = None,
+    preview_app_id: str | None = None,
 ) -> None:
     """Remove the exact namespace only when it is genuinely empty.
 
@@ -52,6 +53,7 @@ def finalize_namespace(
     :param plan_path: Private exact finalization plan outside the namespace.
     :param directory: Exact installation address whose authority was retired.
     :param expected_app_id: Authenticated native product identity, when available.
+    :param preview_app_id: Authenticated alternate identity, when available.
     """
     if (
         not plan_path.is_absolute()
@@ -93,7 +95,10 @@ def finalize_namespace(
         or not isinstance(value["directory"], str)
         or not isinstance(app_id, str)
         or not app_id
-        or (expected_app_id is not None and app_id != expected_app_id)
+        or (
+            expected_app_id is not None
+            and app_id not in (expected_app_id, preview_app_id)
+        )
         or not isinstance(generation_id, str)
     ):
         raise ValueError(

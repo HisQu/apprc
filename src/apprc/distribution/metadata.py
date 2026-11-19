@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ from apprc.distribution.models import (
     AppCapabilities,
     DistributionSpec,
     ProjectMetadata,
+    PreviewProduct,
     relative_destination,
 )
 from apprc.definition.paths import Layout, Paths
@@ -44,6 +46,7 @@ def _validate_project_declaration(
             or committed_spec.metadata.project_path != metadata.project_path
             or committed_spec.metadata.distribution_path
             != metadata.distribution_path
+            or committed_spec.metadata.preview != metadata.preview
             or committed_spec.metadata.python_requirement
             != metadata.python_requirement
             or committed_spec.metadata.runtime_python != metadata.runtime_python
@@ -127,6 +130,56 @@ def _declared_hooks(project_root: Path) -> InstallationHooks:
     return InstallationHooks(**values)
 
 
+def _preview_product(
+    value: object, identity: InstallationIdentity
+) -> PreviewProduct:
+    """Read the opt-in alternate identity from committed project metadata."""
+    required = {
+        "app-id",
+        "command-name",
+        "apprc-reference",
+        "bootstrap-env-prefix",
+    }
+    if (
+        not isinstance(value, dict)
+        or not required.issubset(value)
+        or set(value) - required - {"display-name", "install-next-step"}
+        or not all(
+            isinstance(item, str) and item.strip() for item in value.values()
+        )
+    ):
+        raise ValueError(
+            "Preview requires an app ID, command, application reference, and environment prefix."
+        )
+    command = value["command-name"]
+    if command not in identity.commands or any(
+        existing != command and existing.casefold() == command.casefold()
+        for existing in identity.commands
+    ):
+        raise ValueError("Preview command must name a distinct project script.")
+    app_id = value["app-id"]
+    reference = value["apprc-reference"]
+    prefix = value["bootstrap-env-prefix"]
+    if (
+        app_id.casefold() == identity.app_id.casefold()
+        or reference == identity.apprc_reference
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", prefix) is None
+    ):
+        raise ValueError(
+            "Preview must declare a distinct app ID and application reference, and a valid environment prefix."
+        )
+    preview_identity = replace(
+        identity, app_id=app_id, apprc_reference=reference, commands=(command,)
+    )
+    return PreviewProduct(
+        preview_identity,
+        command,
+        value.get("display-name", app_id),
+        prefix,
+        value.get("install-next-step"),
+    )
+
+
 def read_project_metadata(project_root: Path) -> ProjectMetadata:
     """Read PEP 621 identity and portable AppRC routing declarations."""
     root = project_root.expanduser().absolute()
@@ -177,6 +230,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "launch-enabled",
         "hooks",
         "authoring",
+        "preview",
         "config",
         "appdata",
         "cache",
@@ -191,6 +245,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "icons",
         "hooks",
         "authoring",
+        "preview",
         "launch-enabled",
         "config",
         "appdata",
@@ -233,6 +288,20 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
     identity = InstallationIdentity(
         app_id, distribution, import_package, reference, tuple(sorted(scripts))
     )
+    preview = (
+        _preview_product(settings["preview"], identity)
+        if "preview" in settings
+        else None
+    )
+    if preview is not None:
+        identity = replace(
+            identity,
+            commands=tuple(
+                command
+                for command in identity.commands
+                if command != preview.command_name
+            ),
+        )
     project_path = PurePosixPath(settings.get("project-path", "."))
     if project_path != PurePosixPath("."):
         relative_destination(project_path)
@@ -268,6 +337,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         settings.get("command-name"),
         python_requirement,
         runtime_python,
+        preview,
     )
 
 

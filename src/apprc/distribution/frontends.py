@@ -13,21 +13,22 @@ import subprocess
 import tempfile
 import tomllib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path, PurePosixPath
 from zipfile import BadZipFile, ZipFile
 
 from apprc.definition.installation import RuntimeSelection
+from apprc.definition.paths import Layout
 from apprc.distribution._archives import _deterministic_zip
 from apprc.distribution.metadata import _validate_project_declaration
 from apprc.distribution.models import (
     Artifact,
     DistributionSpec,
     NativeBinding,
-    decode_native_binding,
     encode_native_binding,
+    read_native_bindings,
 )
 from apprc.distribution.native import (
     UV_MIN_VERSION,
@@ -233,6 +234,18 @@ def _sdk_archive(
             "Prepared project archive digest changed before SDK packaging."
         )
     entries["binding.json"] = encode_native_binding(binding)
+    preview = spec.metadata.preview
+    if preview is not None:
+        entries["preview-binding.json"] = encode_native_binding(
+            replace(
+                binding,
+                identity=preview.identity,
+                command_name=preview.command_name,
+                display_name=preview.display_name,
+                layout=Layout.native(),
+                bootstrap_env_prefix=preview.bootstrap_env_prefix,
+            )
+        )
     entries["project.zip"] = project_bytes
     entries["bootstrap-requirements.txt"] = (
         "\n".join((*requirements, UV_REQUIREMENT)) + "\n"
@@ -319,7 +332,7 @@ def _inspect_native_setup(
         with ZipFile(path) as archive:
             if len(archive.namelist()) != len(set(archive.namelist())):
                 raise ValueError("Native archive has duplicate entries.")
-            binding = decode_native_binding(archive.read("binding.json"))
+            binding, preview = read_native_bindings(archive)
             project = archive.read("project.zip")
         if binding.identity.app_id != app_id:
             raise ValueError("Native artifact belongs to another application.")
@@ -358,8 +371,13 @@ def _inspect_native_setup(
                 raise ValueError(
                     "Native binding and project distribution differ."
                 )
-            if binding.command_name not in declaration.get("scripts", {}):
-                raise ValueError("Native command is absent from the project.")
+            for product in (binding, preview):
+                if product is not None and not set(
+                    product.identity.commands
+                ).issubset(declaration.get("scripts", {})):
+                    raise ValueError(
+                        "Native command is absent from the project."
+                    )
         return binding
     except (BadZipFile, KeyError, UnicodeError) as error:
         raise ValueError(f"Invalid native artifact {path}: {error}") from error

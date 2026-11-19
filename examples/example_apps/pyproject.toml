@@ -8,11 +8,11 @@ version = "0.0.0"
 description = "Repository-local example CLIs for AppRC integration workflows."
 requires-python = ">=3.12"
 dependencies = [
-    "apprc>=0.37.0,<0.38",
+    "apprc>=0.38.0,<0.39",
 ]
 
 [project.optional-dependencies]
-desktop = ["apprc-gui>=0.37.0,<0.38"]
+desktop = ["apprc-gui>=0.38.0,<0.39"]
 
 [project.scripts]
 apprc-process-env = "process_env.cli:main"

@@ -24,6 +24,7 @@ from apprc.definition.installation import (
     InstallationError,
     InstallationInspection,
 )
+from apprc.distribution.runtime import _uninstall_controller as removal
 from apprc.distribution.runtime._uninstall_controller import (
     UninstallPreparation,
 )
@@ -61,10 +62,10 @@ def test_waits_for_handoff_staging_after_launcher_return(
             "missing", manager.directory, None, manager.spec.app_id
         )
 
-    monkeypatch.setattr(guide.time, "sleep", finish_handoff)
+    monkeypatch.setattr(removal.time, "sleep", finish_handoff)
     monkeypatch.setattr(manager, "inspect", inspect_after_cleanup)
-    monkeypatch.setattr(guide, "_windows_entry", Mock())
-    guide._await_uninstall(
+    monkeypatch.setattr(removal, "verify_windows_registration", Mock())
+    removal._await_uninstall(
         manager, staging, record, tmp_path / "command", "app"
     )
     assert sleeps
@@ -82,7 +83,7 @@ def test_handoff_timeout_preserves_recovery(
     with pytest.raises(
         InstallationError, match="Uninstall did not finish"
     ) as failure:
-        guide._await_uninstall(
+        removal._await_uninstall(
             manager,
             staging,
             installation_record(),
@@ -109,7 +110,7 @@ def test_handoff_does_not_accept_a_different_installation(
     )
     monkeypatch.setattr(manager, "inspect", lambda: current)
     with pytest.raises(InstallationError, match="expected installation"):
-        guide._await_uninstall(
+        removal._await_uninstall(
             manager, tmp_path, previous, tmp_path / "command", "app"
         )
 
@@ -125,7 +126,7 @@ def test_protected_configuration_blocks_overlapping_removal(
         "child": config / "settings",
     }[deletion]
     with pytest.raises(InstallationError, match="protected path"):
-        guide._protected_paths((target,), (config,))
+        removal.check_protected_removal_paths((target,), (config,))
 
 
 def test_changed_uninstall_preview_never_starts_a_process(
@@ -142,16 +143,16 @@ def test_changed_uninstall_preview_never_starts_a_process(
     )
     changed = replace(expected, revision="changed")
     monkeypatch.setattr(
-        guide,
+        removal,
         "prepare_uninstall",
         lambda *args, **kwargs: UninstallPreparation(
             None, changed, (), (), False
         ),
     )
     execute = Mock(side_effect=AssertionError("must not launch uninstall"))
-    monkeypatch.setattr(guide, "_run", execute)
+    monkeypatch.setattr(removal.subprocess, "run", execute)
     with pytest.raises(InstallationError, match="preview is unsafe"):
-        guide._uninstall(
+        removal.run_checked_uninstall(
             tmp_path / "command",
             "app",
             manager,
@@ -211,7 +212,7 @@ def test_preflight_failure_leaves_personal_installation_untouched(
     uninstall = Mock(
         side_effect=AssertionError("must not uninstall existing installation")
     )
-    monkeypatch.setattr(guide, "_uninstall", uninstall)
+    monkeypatch.setattr(guide, "run_checked_uninstall", uninstall)
     expected_message = (
         "Invalid checksum" if invalid_setup else "pre-existing installation"
     )
@@ -261,16 +262,16 @@ def test_retained_config_is_rechecked_against_final_uninstall_preview(
         ),
     )
     monkeypatch.setattr(
-        guide,
+        removal,
         "prepare_uninstall",
         lambda *args, **kwargs: UninstallPreparation(
             plan, expected, (), (), True
         ),
     )
     execute = Mock(side_effect=AssertionError("must preserve retained config"))
-    monkeypatch.setattr(guide, "_run", execute)
+    monkeypatch.setattr(removal.subprocess, "run", execute)
     with pytest.raises(InstallationError, match="protected path"):
-        guide._uninstall(
+        removal.run_checked_uninstall(
             tmp_path / "command",
             "app",
             manager,
@@ -366,24 +367,25 @@ def test_uninstall_child_carries_accepted_revision_and_root_options(
         CleanupInventory(),
     )
     monkeypatch.setattr(
-        guide,
+        removal,
         "prepare_uninstall",
         lambda *args, **kwargs: UninstallPreparation(
             plan, expected, (), (), True
         ),
     )
-    monkeypatch.setattr(guide, "_await_uninstall", lambda *args: expected)
+    monkeypatch.setattr(removal, "_await_uninstall", lambda *args: expected)
     calls: list[tuple[list[str], dict[str, str]]] = []
 
     def execute(
-        command: list[str], *, cwd: Path, environment: dict[str, str]
+        command: list[str], *, cwd: Path, env: dict[str, str], check: bool
     ) -> str:
-        calls.append((command, environment))
+        assert check
+        calls.append((command, env))
         if declined:
             raise subprocess.CalledProcessError(1, command)
         return ""
 
-    monkeypatch.setattr(guide, "_run", execute)
+    monkeypatch.setattr(removal.subprocess, "run", execute)
     report: dict[str, object] = {}
     outcome = (
         pytest.raises(subprocess.CalledProcessError)
@@ -391,7 +393,7 @@ def test_uninstall_child_carries_accepted_revision_and_root_options(
         else nullcontext()
     )
     with outcome:
-        guide._uninstall(
+        removal.run_checked_uninstall(
             tmp_path / "checkout-command",
             "app",
             manager,

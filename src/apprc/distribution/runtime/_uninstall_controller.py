@@ -8,9 +8,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import IO
+from typing import IO, TYPE_CHECKING
 from uuid import uuid4
 
 from apprc.definition.config_filenames import (
@@ -30,6 +31,10 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import ResourceKind
 from apprc.distribution.runtime import _handoff
+from apprc.distribution.runtime._os_integration import (
+    capture_windows_registration,
+    windows_registration_intent,
+)
 from apprc.distribution.runtime.probe import application_bridge
 from apprc.user_files.app_home.locations import (
     assert_no_links,
@@ -55,6 +60,12 @@ from apprc.user_files.installation.operations import (
 )
 from apprc.user_files.installation.planning import resource_roots
 from apprc.user_files.purge import plan_config_file_purge
+
+
+if TYPE_CHECKING:
+    from apprc.services.installation import InstallationManager
+
+EXPECTED_UNINSTALL_REVISION = "_APPRC_DIST_TEST_UNINSTALL_REVISION"
 
 
 def _assert_private_directory(directory: Path) -> None:
@@ -1088,3 +1099,175 @@ def _tree_cleanup_inventory(
             InventoryEntry(root, "tree", tree_revision(root), category)
         )
     return CleanupInventory(tuple(entries))
+
+
+def verify_windows_registration(
+    manager: InstallationManager,
+    publication: Path,
+    record: InstallationRecord | None,
+    group: str,
+    *,
+    required: bool = True,
+) -> None:
+    """Verify the saved current-user key, or require absence without authority."""
+    if os.name != "nt":
+        return
+    entry = None
+    if record is not None:
+        expected = windows_registration_intent(
+            manager.directory,
+            record.identity,
+            publication,
+            maintenance_group_name=group,
+        )
+        entry = next(
+            (
+                item
+                for item in record.owned_outputs
+                if item.kind == "hkcu" and item.path == expected.path
+            ),
+            None,
+        )
+    if entry is not None:
+        current = capture_windows_registration(entry)
+        if current is not None and current.values is not None:
+            if not required or {
+                name: value for name, value, _ in current.values
+            } == dict(entry.values):
+                return
+        if required:
+            raise InstallationError(
+                "Windows uninstall registration is missing or incomplete."
+            )
+        return
+    if required and record is not None:
+        raise InstallationError(
+            "The installation has no recorded Windows uninstall entry."
+        )
+    import winreg
+
+    key = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{manager.spec.app_id}"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key):
+            raise InstallationError(
+                "An unowned Windows uninstall entry exists."
+            )
+    except FileNotFoundError:
+        pass
+
+
+def check_protected_removal_paths(
+    deleted: tuple[Path, ...], protected: tuple[Path, ...]
+) -> None:
+    """Reject removals overlapping the runner or retained configuration."""
+    for path in deleted:
+        for survivor in protected:
+            if survivor.is_relative_to(path) or path.is_relative_to(survivor):
+                raise InstallationError(
+                    f"Removal overlaps a protected path: {survivor}"
+                )
+
+
+def _await_uninstall(
+    manager: InstallationManager,
+    staging: Path,
+    previous: InstallationRecord,
+    publication: Path,
+    group: str,
+    *,
+    timeout: float = 300,
+) -> InstallationInspection:
+    """Wait for the specific handoff's staging to retire, then verify authority."""
+    deadline = time.monotonic() + timeout
+    while any(staging.glob("apprc-uninstall-*")):
+        if time.monotonic() >= deadline:
+            raise InstallationError(
+                f"Uninstall did not finish. Recovery is under {staging}."
+            )
+        time.sleep(0.1)
+    result = manager.inspect()
+    if result.status not in {"missing", "removed-retained"} or (
+        result.record is not None
+        and result.record.generation_id != previous.generation_id
+    ):
+        raise InstallationError(
+            "Uninstall did not retire the expected installation."
+        )
+    if any(
+        os.path.lexists(item.path)
+        for item in previous.owned_outputs
+        if item.kind in {"command", "shortcut"}
+    ):
+        raise InstallationError(
+            "Uninstall left published commands or shortcuts."
+        )
+    verify_windows_registration(manager, publication, None, group)
+    return result
+
+
+def run_checked_uninstall(
+    command: Path,
+    group: str,
+    manager: InstallationManager,
+    expected: InstallationInspection,
+    publication: Path,
+    protected: tuple[Path, ...],
+    *,
+    keep_config: bool,
+    assume_yes: bool,
+    root: Path,
+    environment: dict[str, str],
+    report: dict[str, object],
+    root_arguments: tuple[str, ...] = (),
+) -> InstallationInspection:
+    """Use normal uninstall and retain private recovery files on an incomplete run."""
+    if expected.record is None or expected.revision is None:
+        raise InstallationError(
+            "Uninstall requires the previously verified authority."
+        )
+    preview = prepare_uninstall(
+        manager.directory, keep_config=keep_config or None
+    )
+    if (
+        not preview.can_execute
+        or preview.plan is None
+        or preview.inspection.snapshot != expected.snapshot
+    ):
+        raise InstallationError(
+            "Uninstall preview is unsafe or installation authority changed."
+        )
+    check_protected_removal_paths(
+        tuple(entry.path for entry in preview.plan.inventory.entries), protected
+    )
+    parent = Path(
+        tempfile.mkdtemp(
+            prefix="apprc-dist-test-", dir=Path(tempfile.gettempdir()).resolve()
+        )
+    )
+    report["uninstall_recovery"] = str(parent)
+    assert_no_links(parent)
+    if os.name == "nt":
+        set_windows_private_acl(parent)
+    flags = ["--keep-config"] if keep_config else []
+    if assume_yes:
+        flags.append("--yes")
+    try:
+        subprocess.run(
+            [str(command), *root_arguments, group, "uninstall", *flags],
+            cwd=root,
+            env={
+                **environment,
+                EXPECTED_UNINSTALL_REVISION: expected.revision,
+                **dict.fromkeys(("TMPDIR", "TMP", "TEMP"), str(parent)),
+            },
+            check=True,
+        )
+        return _await_uninstall(
+            manager, parent, expected.record, publication, group
+        )
+    finally:
+        # > A declined preview has no handoff or recovery files.
+        if not any(parent.glob("apprc-uninstall-*")):
+            report.pop("uninstall_recovery")
+            if not any(parent.iterdir()):
+                parent.rmdir()

@@ -156,9 +156,9 @@ def test_windows_namespace_creation_and_reuse_use_the_token_sid(
                     descriptor.GetSecurityDescriptorControl()[0]
                     & win32security.SE_DACL_PROTECTED
                 )
-                assert user in {
+                assert user in tuple(
                     dacl.GetAce(index)[2] for index in range(dacl.GetAceCount())
-                }
+                )
                 assert windows_acl_is_private(path)
     assert (directory / "locks" / "operation.lock").is_file()
 

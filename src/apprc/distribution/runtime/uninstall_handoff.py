@@ -1524,6 +1524,11 @@ def _remove_registry_outputs(
 
 def main() -> int:
     """Run the independently staged controller command."""
+    from apprc.distribution.runtime._setup_terminal import (
+        announce_uninstall_start,
+    )
+
+    announce_uninstall_start()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--handoff-plan", type=Path, required=True)
     arguments = parser.parse_args()

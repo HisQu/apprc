@@ -1,4 +1,4 @@
-"""Stdlib-only Windows setup diagnostics usable before AppRC imports."""
+"""Stdlib-only Windows startup feedback usable before AppRC imports."""
 
 from __future__ import annotations
 
@@ -193,8 +193,23 @@ def _acknowledge_setup() -> None:
         pass
 
 
+def announce_uninstall_start() -> None:
+    """Show progress in the new console while preserving the handoff streams."""
+    if (
+        os.name == "nt"
+        and os.environ.get("_APPRC_UNINSTALL_RESULT_WINDOW") == "1"
+    ):
+        try:
+            with open("CONOUT$", "w", encoding="utf-8") as display:
+                print("Uninstalling...", file=display, flush=True)
+        except OSError:
+            pass
+
+
 def run_setup_loader(load: Callable[[], None], state: dict[str, bool]) -> None:
     """Report early startup failures and acknowledge only dedicated setup."""
+    if sys.argv[1:2] == ["--apprc-execute-handoff"]:
+        announce_uninstall_start()
     dedicated = dedicated_setup_console()
     state["dedicated"] = dedicated
     startup_failed = False

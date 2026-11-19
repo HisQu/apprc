@@ -1505,10 +1505,11 @@ scope. Preserve the reported external recovery information if a busy runtime,
 changed directory identity or failed cleanup prevents completion.
 
 Windows Settings invokes uninstall with `--wait`. Interactive cleanup
-shows its result in a separate window while the original PowerShell prompt
-remains usable. When the result appears, press Enter in the cleanup window to
-close it. `--yes` skips acknowledgement. The separate classic-console window
-can use the installed app's icon. Windows Terminal uses its profile icon.
+shows **Uninstalling...** and then the result in a separate window while the
+original PowerShell prompt remains usable. When the result appears, press
+Enter in the cleanup window to close it. `--yes` skips acknowledgement.
+The separate classic-console window can use the installed app's icon.
+Windows Terminal uses its profile icon.
 A completed removal can report a warning and the path of leftover temporary
 staging files.
 

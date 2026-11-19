@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,6 +83,50 @@ def test_setup_acknowledgement_and_early_diagnostic(
     text = log.read_text(encoding="utf-8")
     assert "OSError" in text and "[redacted]" in text
     assert "my-private-value" not in text
+
+
+@pytest.mark.parametrize(
+    ("action", "window", "expected"),
+    [
+        ("--apprc-execute-handoff", "1", "Uninstalling...\n"),
+        ("--apprc-execute-handoff", "", ""),
+        ("--apprc-finalize-namespace", "1", ""),
+    ],
+)
+def test_uninstall_progress_is_visible_before_loading(
+    monkeypatch, action, window, expected
+):
+    display = io.StringIO()
+    foreground = io.StringIO()
+    control = io.StringIO()
+    streams = SimpleNamespace(
+        argv=["loader.py", action, "handoff.json"],
+        stdin=io.StringIO("EXIT\n"),
+        stdout=control,
+        stderr=foreground,
+    )
+    monkeypatch.setattr(terminal, "sys", streams)
+    monkeypatch.setattr(
+        terminal,
+        "os",
+        SimpleNamespace(
+            name="nt", environ={"_APPRC_UNINSTALL_RESULT_WINDOW": window}
+        ),
+    )
+
+    def open_display(path, *args, **kwargs):
+        assert path == "CONOUT$"
+        return nullcontext(display)
+
+    monkeypatch.setattr(terminal, "open", open_display, raising=False)
+
+    def load():
+        assert display.getvalue() == expected
+        assert streams.stdout is control and control.getvalue() == ""
+        assert streams.stderr is foreground and foreground.getvalue() == ""
+        assert streams.stdin.tell() == 0
+
+    terminal.run_setup_loader(load, {})
 
 
 def test_user_path_update_preserves_type_and_deduplicates(

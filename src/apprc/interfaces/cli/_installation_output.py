@@ -119,11 +119,22 @@ class InstallationProgressOutput:
             for line in next_step.splitlines():
                 self._write(f"  {line}")
 
-    def failed(self, message: str) -> None:
+    def failed(
+        self,
+        message: str,
+        *,
+        path: str | Path | None = None,
+        notes: tuple[str, ...] = (),
+    ) -> None:
         """Display the installation failure, including any recovery notes."""
         self._write(
-            f"Installation failed: {message}", style="error", error=True
+            f"Installation failed: {message}",
+            style="error",
+            path=path,
+            error=True,
         )
+        for note in notes:
+            self._write(note, style="error", error=True)
 
 
 def print_installation_path(

@@ -140,7 +140,18 @@ def _install(
         RuntimeError,
         subprocess.CalledProcessError,
     ) as error:
-        output.failed(_installation_error_message(error))
+        if (
+            os.name == "nt"
+            and isinstance(error, PermissionError)
+            and error.filename
+        ):
+            output.failed(
+                error.strerror or "Access denied",
+                path=error.filename,
+                notes=tuple(getattr(error, "__notes__", ())),
+            )
+        else:
+            output.failed(_installation_error_message(error))
         if os.name == "nt":
             from apprc.distribution.runtime._setup_terminal import (
                 setup_diagnostic,

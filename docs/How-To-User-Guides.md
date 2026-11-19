@@ -1139,6 +1139,12 @@ Double-clicked Windows setup keeps the result visible until you press Enter.
 On failure, read the reported diagnostic log path if shown. Running setup
 from an existing terminal also lets you inspect its exit code.
 
+Run Windows setup from the account that will use the application. Setup
+normally runs without administrator privileges. If Windows denies access to
+the installation directory or its lock, use the named operation and path in
+the setup output and the traceback in the diagnostic log to check permissions
+from that account.
+
 ## Install from a checkout
 
 An **Editable Source Checkout (eSC)** reuses your project and its existing

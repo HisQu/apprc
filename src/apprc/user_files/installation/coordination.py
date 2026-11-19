@@ -33,9 +33,19 @@ class StaleLockNamespace(InstallationError):
 
 
 def _private_directory(directory: Path) -> None:
-    assert_no_links(directory)
-    create_private_directory_if_missing(directory)
-    info = directory.stat()
+    action = "inspect"
+    try:
+        assert_no_links(directory)
+        action = "create"
+        create_private_directory_if_missing(directory)
+        action = "inspect"
+        info = directory.stat()
+    except PermissionError as error:
+        if getattr(error, "winerror", None) == 5:
+            error.add_note(
+                f"AppRC could not {action} the installation directory."
+            )
+        raise
     private = _path_permissions_are_private(directory, metadata=info)
     if os.name != "nt":
         private = private and info.st_uid == os.getuid()

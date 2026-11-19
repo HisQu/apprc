@@ -99,7 +99,15 @@ def namespace_lock(
                 fallback_to_soft=False,
                 on_acquired=acquired,
             )
-            lock.acquire()
+            try:
+                lock.acquire()
+            except PermissionError as error:
+                if getattr(error, "winerror", None) == 5:
+                    error.filename = error.filename or str(path)
+                    error.add_note(
+                        "AppRC could not open the installation lock."
+                    )
+                raise
         except (stale_error_type, FileNotFoundError, Timeout):
             continue
         break

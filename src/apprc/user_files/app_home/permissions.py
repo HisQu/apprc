@@ -5,6 +5,11 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pywintypes  # pyright: ignore[reportMissingModuleSource]
+    from _win32typing import PySECURITY_DESCRIPTOR, PySID  # pyright: ignore[reportMissingModuleSource]
 
 
 def _path_permissions_are_private(
@@ -31,13 +36,79 @@ def create_private_directory_if_missing(path: Path) -> None:
     :param path: Directory needed by AppRC-managed private files or locks.
     """
     try:
-        path.mkdir(parents=True, mode=0o700)
+        if os.name == "nt":
+            _create_windows_private_directory(path)
+        else:
+            path.mkdir(parents=True, mode=0o700)
     except FileExistsError:
-        if path.is_dir():
-            return
-        raise
-    if os.name == "nt":
-        set_windows_private_acl(path)
+        if not path.is_dir():
+            raise
+
+
+def _windows_user_sid() -> PySID:
+    """Return the current process token's user SID without a name lookup."""
+    import win32api  # pyright: ignore[reportMissingModuleSource]
+    import win32con  # pyright: ignore[reportMissingModuleSource]
+    import win32security  # pyright: ignore[reportMissingModuleSource]
+
+    token = win32security.OpenProcessToken(
+        win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
+    )
+    try:
+        user, _ = win32security.GetTokenInformation(
+            token, win32security.TokenUser
+        )
+        return user
+    finally:
+        win32api.CloseHandle(token)
+
+
+def _windows_private_descriptor(
+    *, for_directory: bool
+) -> PySECURITY_DESCRIPTOR:
+    """Build the protected DACL shared by directory creation and ACL updates."""
+    import win32security  # pyright: ignore[reportMissingModuleSource]
+
+    user = win32security.ConvertSidToStringSid(_windows_user_sid())
+    inheritance = "OICI" if for_directory else ""
+    sddl = "D:P" + "".join(
+        f"(A;{inheritance};FA;;;{sid})" for sid in (user, "SY", "BA")
+    )
+    return win32security.ConvertStringSecurityDescriptorToSecurityDescriptor(
+        sddl, win32security.SDDL_REVISION_1
+    )
+
+
+def _windows_path_error(
+    path: Path, action: str, error: pywintypes.error
+) -> OSError:
+    """Convert a pywin32 error into a native filesystem error with context."""
+    return OSError(
+        0, f"Cannot {action} ({error.strerror})", str(path), error.winerror
+    )
+
+
+def _create_windows_private_directory(path: Path) -> None:
+    """Apply the private ACL atomically when creating the requested directory."""
+    import pywintypes  # pyright: ignore[reportMissingModuleSource]
+    import win32file  # pyright: ignore[reportMissingModuleSource]
+
+    try:
+        attributes = pywintypes.SECURITY_ATTRIBUTES()
+        attributes.SECURITY_DESCRIPTOR = _windows_private_descriptor(
+            for_directory=True
+        )
+        try:
+            win32file.CreateDirectory(str(path), attributes)
+        except pywintypes.error as error:
+            if error.winerror != 3:  # ERROR_PATH_NOT_FOUND
+                raise
+            path.parent.mkdir(parents=True, exist_ok=True)
+            win32file.CreateDirectory(str(path), attributes)
+    except pywintypes.error as error:
+        raise _windows_path_error(
+            path, "create the private directory", error
+        ) from error
 
 
 def windows_acl_is_private(path: Path) -> bool:
@@ -46,18 +117,23 @@ def windows_acl_is_private(path: Path) -> bool:
     :param path: Existing file or directory to inspect.
     :return: Whether its Windows DACL grants access only to trusted accounts.
     """
-    import win32api  # pyright: ignore[reportMissingModuleSource]
+    import pywintypes  # pyright: ignore[reportMissingModuleSource]
     import win32security  # pyright: ignore[reportMissingModuleSource]
 
-    descriptor = win32security.GetNamedSecurityInfo(
-        str(path),
-        win32security.SE_FILE_OBJECT,
-        win32security.DACL_SECURITY_INFORMATION,
-    )
+    try:
+        descriptor = win32security.GetNamedSecurityInfo(
+            str(path),
+            win32security.SE_FILE_OBJECT,
+            win32security.DACL_SECURITY_INFORMATION,
+        )
+        user = _windows_user_sid()
+    except pywintypes.error as error:
+        raise _windows_path_error(
+            path, "inspect Windows permissions", error
+        ) from error
     acl = descriptor.GetSecurityDescriptorDacl()
     if acl is None:
         return False
-    user, _, _ = win32security.LookupAccountName(None, win32api.GetUserName())
     trusted = (
         user,
         win32security.CreateWellKnownSid(win32security.WinLocalSystemSid),
@@ -82,37 +158,22 @@ def set_windows_private_acl(path: Path) -> None:
 
     :param path: Existing file or directory whose DACL should be replaced.
     """
-    import ntsecuritycon  # pyright: ignore[reportMissingModuleSource]
-    import win32api  # pyright: ignore[reportMissingModuleSource]
+    import pywintypes  # pyright: ignore[reportMissingModuleSource]
     import win32security  # pyright: ignore[reportMissingModuleSource]
 
-    user, _, _ = win32security.LookupAccountName(None, win32api.GetUserName())
-    acl = win32security.ACL()
-    inheritance = (
-        win32security.CONTAINER_INHERIT_ACE | win32security.OBJECT_INHERIT_ACE
-        if path.is_dir()
-        else 0
-    )
-    for sid in (
-        user,
-        win32security.CreateWellKnownSid(win32security.WinLocalSystemSid),
-        win32security.CreateWellKnownSid(
-            win32security.WinBuiltinAdministratorsSid
-        ),
-    ):
-        acl.AddAccessAllowedAceEx(
-            win32security.ACL_REVISION,
-            inheritance,
-            ntsecuritycon.FILE_ALL_ACCESS,
-            sid,
+    try:
+        descriptor = _windows_private_descriptor(for_directory=path.is_dir())
+        win32security.SetNamedSecurityInfo(
+            str(path),
+            win32security.SE_FILE_OBJECT,
+            win32security.DACL_SECURITY_INFORMATION
+            | win32security.PROTECTED_DACL_SECURITY_INFORMATION,
+            None,
+            None,
+            descriptor.GetSecurityDescriptorDacl(),
+            None,
         )
-    win32security.SetNamedSecurityInfo(
-        str(path),
-        win32security.SE_FILE_OBJECT,
-        win32security.DACL_SECURITY_INFORMATION
-        | win32security.PROTECTED_DACL_SECURITY_INFORMATION,
-        None,
-        None,
-        acl,
-        None,
-    )
+    except pywintypes.error as error:
+        raise _windows_path_error(
+            path, "apply Windows permissions", error
+        ) from error

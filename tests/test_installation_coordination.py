@@ -5,7 +5,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 from dataclasses import replace
-from errno import EIO
+from errno import EACCES, EIO
 from multiprocessing.connection import _ConnectionBase
 from multiprocessing.process import BaseProcess
 from pathlib import Path
@@ -61,6 +61,132 @@ def test_private_directory_requires_current_owner(
         str(error.value)
         == f"Installation directory is not private: {directory}."
     )
+
+
+@pytest.mark.parametrize(
+    ("boundary", "operation"),
+    [
+        ("assert_no_links", "inspect the installation directory"),
+        (
+            "create_private_directory_if_missing",
+            "create the installation directory",
+        ),
+        ("open_lock", "open the installation lock"),
+    ],
+)
+def test_denied_windows_namespace_access_preserves_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    boundary: str,
+    operation: str,
+) -> None:
+    from apprc.user_files.installation import coordination
+
+    directory = tmp_path / "installation"
+    with installation_lock(directory):
+        write_record(directory, installation_record(), expected_revision=None)
+    record_path = directory / "installation.json"
+    original = record_path.read_bytes()
+
+    def deny(path: Path) -> None:
+        error = PermissionError(EACCES, "Access denied", str(path))
+        error.winerror = 5
+        raise error
+
+    if boundary == "open_lock":
+        monkeypatch.setattr(
+            FileLock,
+            "acquire",
+            lambda _: deny(directory / "locks" / "operation.lock"),
+        )
+    else:
+        monkeypatch.setattr(coordination, boundary, deny)
+
+    with pytest.raises(PermissionError) as caught, installation_lock(directory):
+        pytest.fail(
+            "Denied access must stop the operation before it holds the lock."
+        )
+    assert f"AppRC could not {operation}." in caught.value.__notes__
+    assert record_path.read_bytes() == original
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Requires Windows directory ACLs")
+def test_windows_namespace_creation_and_reuse_use_the_token_sid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import win32api  # pyright: ignore[reportMissingModuleSource]
+    import win32con  # pyright: ignore[reportMissingModuleSource]
+    import win32security  # pyright: ignore[reportMissingModuleSource]
+
+    from apprc.user_files.app_home.permissions import windows_acl_is_private
+
+    def unexpected_permission_change(*_args: object) -> None:
+        pytest.fail(
+            "Windows namespace creation should use the token SID and set its ACL at creation."
+        )
+
+    monkeypatch.setattr(
+        win32security, "LookupAccountName", unexpected_permission_change
+    )
+    monkeypatch.setattr(
+        win32security, "SetNamedSecurityInfo", unexpected_permission_change
+    )
+    token = win32security.OpenProcessToken(
+        win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
+    )
+    try:
+        user, _ = win32security.GetTokenInformation(
+            token, win32security.TokenUser
+        )
+    finally:
+        win32api.CloseHandle(token)
+
+    directory = tmp_path / "new-app" / "installation"
+    for _ in range(2):
+        with installation_lock(directory):
+            for path in (directory, directory / "locks"):
+                descriptor = win32security.GetNamedSecurityInfo(
+                    str(path),
+                    win32security.SE_FILE_OBJECT,
+                    win32security.DACL_SECURITY_INFORMATION,
+                )
+                dacl = descriptor.GetSecurityDescriptorDacl()
+                assert dacl is not None
+                assert (
+                    descriptor.GetSecurityDescriptorControl()[0]
+                    & win32security.SE_DACL_PROTECTED
+                )
+                assert user in {
+                    dacl.GetAce(index)[2] for index in range(dacl.GetAceCount())
+                }
+                assert windows_acl_is_private(path)
+    assert (directory / "locks" / "operation.lock").is_file()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Requires Windows directory ACLs")
+def test_windows_namespace_does_not_adopt_an_existing_shared_directory(
+    tmp_path: Path,
+) -> None:
+    import pywintypes  # pyright: ignore[reportMissingModuleSource]
+    import win32file  # pyright: ignore[reportMissingModuleSource]
+    import win32security  # pyright: ignore[reportMissingModuleSource]
+
+    directory = tmp_path / "shared"
+    attributes = pywintypes.SECURITY_ATTRIBUTES()
+    attributes.SECURITY_DESCRIPTOR = (
+        win32security.ConvertStringSecurityDescriptorToSecurityDescriptor(
+            "D:P(A;;FA;;;OW)(A;;FR;;;WD)", win32security.SDDL_REVISION_1
+        )
+    )
+    win32file.CreateDirectory(str(directory), attributes)
+
+    with pytest.raises(
+        InstallationError, match="Installation directory is not private"
+    ):
+        with installation_lock(directory):
+            pytest.fail("A shared installation directory must be rejected.")
+    assert directory.is_dir()
+    assert not (directory / "locks").exists()
 
 
 def _stale_namespace_consumer(

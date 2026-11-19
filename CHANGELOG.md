@@ -105,6 +105,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Create private Windows installation directories for the user running setup
+  and identify denied installation operations in the setup output.
 - Keep guided `dist test` usable with newer Typer versions and declare the
   minimum supported version in the SDK metadata.
 - Report a committed editable install as successful when optional configuration

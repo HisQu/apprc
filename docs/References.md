@@ -15,7 +15,6 @@
   - [Config bundles](#config-bundles)
   - [Dependency config imports](#dependency-config-imports)
   - [Distribution generation](#distribution-generation)
-    - [Preview identity](#preview-identity)
 - [Value sources and files](#value-sources-and-files)
   - [Source precedence](#source-precedence)
   - [Managed files](#managed-files)

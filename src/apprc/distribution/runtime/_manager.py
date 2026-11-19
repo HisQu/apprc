@@ -823,7 +823,7 @@ def main() -> int:
         print("Native setup options:")
         print("  -p, --preview  Install or update the preview.")
         print("  -s, --smoke    Install, check, and uninstall a fresh preview.")
-        return 0
+        print()
     group = binding.maintenance_group_name
     core_actions = {
         "doctor",

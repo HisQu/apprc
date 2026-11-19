@@ -15,7 +15,6 @@
 - [Build and release AppRC](#build-and-release-apprc)
   - [Build the three distributions](#build-the-three-distributions)
   - [Native application frontends](#native-application-frontends)
-  - [Verify an opted-in preview identity](#verify-an-opted-in-preview-identity)
   - [Verify an application distribution](#verify-an-application-distribution)
   - [Release procedure](#release-procedure)
 

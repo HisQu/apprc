@@ -97,7 +97,7 @@ def test_native_install_reports_rollback_after_live_progress(
     from apprc.distribution.runtime import _manager
     from apprc.distribution.runtime._install_progress import report
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         assert "1. Preparing Runtime" in capsys.readouterr().out
         report("result", "Installed runtime", "VALIDATED")
         error = OSError("Command is in use")
@@ -132,8 +132,9 @@ def test_managed_install_delegate_honors_click_color(
 
     binding, manager = _native_install_case(tmp_path)
 
-    def install(*args):
+    def install(*args, **kwargs):
         report("result", "Environment", "CREATED", tmp_path / "environment")
+        return None, manager.inspect()
 
     monkeypatch.setattr(_manager, "_install_managed", install)
     if no_color:

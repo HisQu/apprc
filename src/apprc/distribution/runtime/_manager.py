@@ -24,7 +24,10 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.distribution.models import NativeBinding
-from apprc.distribution.runtime._native_product import read_products
+from apprc.distribution.runtime._native_product import (
+    check_other_product_paths,
+    read_products,
+)
 from apprc.services.installation import InstallationManager
 
 
@@ -105,6 +108,7 @@ def _install(
     args: tuple[str, ...],
     *,
     regular: NativeBinding | None = None,
+    preview: NativeBinding | None = None,
     smoke: bool = False,
 ) -> int:
     """Render native setup progress and report its terminal outcome."""
@@ -134,7 +138,12 @@ def _install(
                 )
                 return 0
             next_step, _ = _install_managed(
-                binding, manager, executable, args, regular=regular
+                binding,
+                manager,
+                executable,
+                args,
+                regular=regular,
+                preview=preview,
             )
     except (
         OSError,
@@ -179,6 +188,7 @@ def _install_managed(
     args: tuple[str, ...],
     *,
     regular: NativeBinding | None = None,
+    preview: NativeBinding | None = None,
     smoke_command_directory: Path | None = None,
 ) -> tuple[str | None, InstallationInspection]:
     """Install the embedded project, offer optional setup, and return its hint."""
@@ -285,12 +295,8 @@ def _install_managed(
             paths, binding.capabilities.paths
         )
 
-    if regular is not None:
-        if placement.layout != Layout.native():
-            raise InstallationError(
-                "Preview uses fixed native application paths."
-            )
-        _protect_regular_placement(regular, manager, placement)
+    if regular is not None and placement.layout != Layout.native():
+        raise InstallationError("Preview uses fixed native application paths.")
 
     uv = _manager_uv()
     command_directory = options.command_directory
@@ -324,6 +330,7 @@ def _install_managed(
         hint = None
     next_step = (hint.strip() or None) if isinstance(hint, str) else None
 
+    other_product = regular or preview
     temp_parent = Path(tempfile.gettempdir()).resolve(strict=True)
     with tempfile.TemporaryDirectory(
         prefix="apprc-native-project-", dir=temp_parent
@@ -349,6 +356,10 @@ def _install_managed(
                 command_directory=command_directory,
                 assume_yes=options.yes or smoke_command_directory is not None,
                 require_fresh=smoke_command_directory is not None,
+                other_app_id=other_product.identity.app_id
+                if other_product is not None
+                else None,
+                reserve_other_native_paths=preview is not None,
             )
 
     if smoke_command_directory is not None:
@@ -413,44 +424,6 @@ def _preview_has_path_overrides(manager: InstallationManager) -> bool:
     )
 
 
-def _protect_regular_placement(
-    regular: NativeBinding,
-    preview: InstallationManager,
-    placement: InstallationPlacement,
-) -> None:
-    from apprc.distribution.runtime._uninstall_controller import (
-        check_protected_removal_paths,
-    )
-    from apprc.user_files.installation.planning import resource_roots
-
-    manager = InstallationManager(
-        _application(regular).schema, environment=preview.environment
-    )
-    inspection = manager.inspect()
-    if inspection.status == "invalid":
-        raise InstallationError(
-            "Cannot verify separation from the regular installation. Inspect it before installing preview."
-        )
-    record = inspection.record
-    placements = [record.placement] if record is not None else []
-    if record is not None and record.operation is not None:
-        operation = record.operation
-        placements.append(operation.placement)
-        if operation.intended is not None:
-            placements.append(operation.intended.placement)
-    check_protected_removal_paths(
-        (preview.directory, *(path for _, path in resource_roots(placement))),
-        (
-            manager.directory,
-            *(
-                path
-                for current in placements
-                for _, path in resource_roots(current)
-            ),
-        ),
-    )
-
-
 def _run_preview_smoke(
     binding: NativeBinding,
     regular: NativeBinding,
@@ -459,10 +432,8 @@ def _run_preview_smoke(
     args: tuple[str, ...],
 ) -> None:
     from apprc.distribution.runtime._install_progress import report
-    from apprc.distribution.runtime._os_integration import (
-        validate_global_command,
-    )
     from apprc.distribution.runtime._uninstall_controller import (
+        _recorded_manager_executable,
         run_checked_uninstall,
         verify_windows_registration,
     )
@@ -519,7 +490,10 @@ def _run_preview_smoke(
                 raise InstallationError(
                     "Smoke did not install the expected preview runtime."
                 )
-            validate_global_command(command, previous=record.owned_outputs)
+            if not _owned_manager_invocation(command, manager, binding):
+                raise InstallationError(
+                    "Smoke command publication is missing or modified."
+                )
             verify_windows_registration(
                 manager, command, record, binding.maintenance_group_name
             )
@@ -545,8 +519,13 @@ def _run_preview_smoke(
         finally:
             report("stage", "Removing Preview")
             try:
+                stable = _recorded_manager_executable(record, manager.directory)
+                if stable is None:
+                    raise InstallationError(
+                        "No authenticated preview executable is available for cleanup."
+                    )
                 removed = run_checked_uninstall(
-                    command,
+                    stable,
                     binding.maintenance_group_name,
                     manager,
                     installed,
@@ -856,6 +835,29 @@ def main() -> int:
         break
 
     if preview_command:
+        if group_args is not None and group_args[:1] in (
+            ["uninstall"],
+            ["repair"],
+        ):
+            from apprc.user_files.installation.planning import resource_roots
+
+            record = manager.inspect().record
+            if record is not None:
+                try:
+                    check_other_product_paths(
+                        (
+                            manager.directory,
+                            *(
+                                path
+                                for _, path in resource_roots(record.placement)
+                            ),
+                        ),
+                        regular.identity.app_id,
+                        environment,
+                    )
+                except InstallationError as error:
+                    print(error, file=sys.stderr)
+                    return 1
         if (
             _preview_has_path_overrides(manager)
             or any(
@@ -884,14 +886,16 @@ def main() -> int:
         )
         return 2
     if not owned and not argv:
-        return _install(binding, manager, executable, ())
+        return _install(binding, manager, executable, (), preview=preview)
     if (
         not owned
         and group_args is None
         and argv
         and argv[0] not in {"--help", "-h", "--version"}
     ):
-        return _install(binding, manager, executable, tuple(argv))
+        return _install(
+            binding, manager, executable, tuple(argv), preview=preview
+        )
 
     if owned:
         if argv and argv[0] in {"--help", "-h", "--version"}:
@@ -975,6 +979,7 @@ def main() -> int:
             executable,
             tuple(values),
             regular=regular if preview_command else None,
+            preview=None if preview_command else preview,
         ),
     )
     from apprc.interfaces.cli.context import _authenticated_native_manager_scope

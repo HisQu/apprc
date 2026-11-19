@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 
+from apprc.definition.installation import InstallationError
 from apprc.distribution.models import NativeBinding, read_native_bindings
 
 
@@ -48,3 +50,54 @@ def read_products(
             "Embedded project snapshot differs from its binding."
         )
     return binding, preview, project
+
+
+def check_other_product_paths(
+    paths: tuple[Path, ...],
+    other_app_id: str,
+    environment: Mapping[str, str],
+    *,
+    reserve_native_paths: bool = False,
+) -> None:
+    """Protect the other identity's captured paths and published files."""
+    from apprc.distribution.runtime._uninstall_controller import (
+        check_protected_removal_paths,
+    )
+    from apprc.user_files.installation.discovery import (
+        inspect_installation,
+        installation_directory,
+        native_user_directories,
+    )
+    from apprc.user_files.installation.planning import resource_roots
+
+    directory = installation_directory(other_app_id, environment=environment)
+    inspection = inspect_installation(directory, app_id=other_app_id)
+    if inspection.status == "invalid":
+        raise InstallationError(
+            f"Cannot verify separation from {other_app_id}. Inspect its installation first."
+        )
+    protected = [directory]
+    if reserve_native_paths:
+        protected.extend(
+            native_user_directories(other_app_id, environment=environment)
+        )
+    record = inspection.record
+    if record is not None:
+        protected.extend(path for _, path in resource_roots(record.placement))
+        protected.extend(
+            Path(output.path)
+            for output in record.owned_outputs
+            if output.kind in {"command", "shortcut"}
+        )
+        operation = record.operation
+        if operation is not None:
+            protected.extend(
+                path for _, path in resource_roots(operation.placement)
+            )
+            if operation.intended is not None:
+                protected.extend(
+                    path
+                    for _, path in resource_roots(operation.intended.placement)
+                )
+            protected.extend(output.path for output in operation.publication)
+    check_protected_removal_paths(paths, tuple(protected))

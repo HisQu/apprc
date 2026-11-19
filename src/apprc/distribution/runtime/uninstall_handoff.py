@@ -613,10 +613,13 @@ def execute_handoff(
     _REPOSITORY_FINALIZER = None
     assert_no_links(plan_file)
     value = _parse_plan(plan_file)
+    regular_app_id = None
     if (
         preview_identity is not None
         and value["app_id"] == preview_identity.app_id
     ):
+        if expected_identity is not None:
+            regular_app_id = expected_identity.app_id
         expected_identity = preview_identity
     if (
         expected_identity is not None
@@ -679,6 +682,19 @@ def execute_handoff(
         expected_identity=expected_identity,
     )
     try:
+        if regular_app_id is not None:
+            from apprc.distribution.runtime._native_product import (
+                check_other_product_paths,
+            )
+
+            check_other_product_paths(
+                (
+                    directory,
+                    *(entry.path for entry in pending.plan.inventory.entries),
+                ),
+                regular_app_id,
+                os.environ,
+            )
         _execute_pending_handoff(
             plan_file, value, recovery, pending, completion=completion
         )

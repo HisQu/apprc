@@ -1263,12 +1263,17 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     )
     (preview_project / "fixture_preview.py").write_text(
         "import os, sys\n"
+        "from pathlib import Path\n"
         "import apprc as rc\n"
         "APP_RC = rc.AppRC(app_id='fixture-preview', command_name='fixture-preview', "
         "paths=rc.Paths(config=True, appdata=True), bootstrap_env_prefix='FIXTURE_PREVIEW')\n"
         "def main():\n"
         " if sys.argv[1:] != ['--version']: raise SystemExit(3)\n"
-        " if os.environ.get('FIXTURE_FAIL_PREVIEW_VERSION'): raise SystemExit(4)\n"
+        " if os.environ.get('FIXTURE_FAIL_PREVIEW_VERSION'):\n"
+        "  bin_path = Path(os.environ['PATH'].split(os.pathsep)[1])\n"
+        "  if bin_path.name.startswith('apprc-preview-smoke-'):\n"
+        "   (bin_path / 'fixture-preview').unlink()\n"
+        "  raise SystemExit(4)\n"
         " print('Preview entry point ran')\n"
     )
     author = {
@@ -1390,6 +1395,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     failed = invoke(setup, "-s", FIXTURE_FAIL_PREVIEW_VERSION="1")
     assert failed.returncode != 0
     assert "could not report its version" in failed.stderr
+    assert "cleanup is incomplete" not in failed.stderr
     assert not preview_authority.exists()
     assert not list(Path(environment["TMPDIR"]).glob("apprc-preview-smoke-*"))
     assert regular_authority.read_bytes() == regular_before
@@ -1397,3 +1403,42 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         hashlib.sha256(regular_command.read_bytes()).digest() == regular_digest
     )
     assert sentinel.read_bytes() == b"personal data"
+
+    # > A legacy setup may choose a custom regular root after preview installs.
+    environment, commands = _host(tmp_path / "reverse-host")
+    preview_again = invoke(
+        setup,
+        "-p",
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    assert preview_again.returncode == 0, (
+        preview_again.stdout + preview_again.stderr
+    )
+    preview_dir = installation_directory(
+        "fixture-preview", environment=environment
+    )
+    preview_appdata = Path(_record(preview_dir)["placement"]["appdata_dir"])
+    overlap = preview_appdata / "regular"
+    regular_args = (
+        "--app-root",
+        str(overlap),
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    new_setup = invoke(setup, *regular_args)
+    assert new_setup.returncode != 0
+    assert "overlaps a protected path" in new_setup.stderr
+    old_setup = invoke(legacy_setup, *regular_args)
+    assert old_setup.returncode == 0, old_setup.stdout + old_setup.stderr
+    legacy_sentinel = overlap / "appdata" / "keep.txt"
+    legacy_sentinel.write_text("regular data")
+    blocked = invoke(commands / "fixture-preview", "app", "uninstall", "--yes")
+    assert blocked.returncode != 0
+    assert "overlaps a protected path" in blocked.stderr
+    assert legacy_sentinel.read_text() == "regular data"
+    assert (preview_dir / "installation.json").exists()

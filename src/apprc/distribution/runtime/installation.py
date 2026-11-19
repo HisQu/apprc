@@ -1793,6 +1793,8 @@ def install_application(
     command_directory: Path | None = None,
     assume_yes: bool = False,
     require_fresh: bool = False,
+    other_app_id: str | None = None,
+    reserve_other_native_paths: bool = False,
 ) -> InstallationInspection:
     if not manager_executable.is_absolute() or not manager_executable.is_file():
         raise InstallationError(
@@ -1900,6 +1902,25 @@ def install_application(
             )
             if global_directory is None:
                 global_directory = _default_command_directory(uv, environment)
+            global_command = global_directory / name
+            update_user_path = True
+        if other_app_id is not None:
+            from apprc.distribution.runtime._native_product import (
+                check_other_product_paths,
+            )
+
+            check_other_product_paths(
+                (
+                    directory,
+                    *(path for _, path in resource_roots(placement)),
+                    *((global_command,) if global_command is not None else ()),
+                ),
+                other_app_id,
+                environment,
+                reserve_native_paths=reserve_other_native_paths,
+            )
+        if global_command is not None and update_user_path:
+            global_directory = global_command.parent
             _windows_command_path.prepare_shared_bin(
                 global_directory, environment, forbidden=forbidden
             )
@@ -1908,8 +1929,6 @@ def install_application(
                 forbidden=forbidden,
                 path_entries=(global_directory,),
             )
-            global_command = global_directory / name
-            update_user_path = True
         if pending_publication and command_directory is None:
             update_user_path = any(
                 item.path == global_command and item.update_user_path

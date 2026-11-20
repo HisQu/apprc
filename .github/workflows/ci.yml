@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: apprc-ci-${{ github.event.pull_request.number || github.ref }}

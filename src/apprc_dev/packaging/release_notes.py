@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 _NUMBER = r"(?:0|[1-9][0-9]*)"
-VERSION_PATTERN = rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}(?:(?:b|rc)[1-9][0-9]*)?"
+VERSION_PATTERN = rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}(?:(?P<phase>b|rc)(?P<number>[1-9][0-9]*))?"
 VERSION_RE = re.compile(VERSION_PATTERN)
 RELEASE_HEADING_RE = re.compile(
     rf"^## \[(?P<version>{VERSION_PATTERN})\] - "
@@ -63,6 +63,27 @@ def validate_version(version: str) -> None:
     if VERSION_RE.fullmatch(version) is None:
         raise ValueError(
             f"Invalid release version {version!r}; expected MAJOR.MINOR.PATCH with an optional bN or rcN."
+        )
+
+
+def validate_next_version(current: str, requested: str) -> None:
+    """Require the requested release to advance the committed version."""
+
+    def order(version: str) -> tuple[tuple[int, ...], int, int]:
+        validate_version(version)
+        match = VERSION_RE.fullmatch(version)
+        assert match is not None
+        phase = match["phase"]
+        base = version[: version.index(phase)] if phase is not None else version
+        return (
+            tuple(map(int, base.split("."))),
+            {"b": 0, "rc": 1, None: 2}[phase],
+            int(match["number"] or 0),
+        )
+
+    if order(requested) <= order(current):
+        raise ValueError(
+            f"Release {requested} must advance the committed version {current}."
         )
 
 

@@ -267,3 +267,12 @@ def test_extract_preview_release_and_prevent_toc_clutter(version: str) -> None:
         module.build_release_notes(
             sample_changelog(version=version, toc_entry=True), version
         )
+
+
+def test_release_preparation_advances_beta_rc_and_stable_versions() -> None:
+    module = load_release_notes_module()
+    module.validate_next_version("1.2.0b2", "1.2.0b10")
+    module.validate_next_version("1.2.0b10", "1.2.0rc1")
+    module.validate_next_version("1.2.0rc1", "1.2.0")
+    with pytest.raises(ValueError, match="must advance"):
+        module.validate_next_version("1.2.0", "1.2.0rc2")

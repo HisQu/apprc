@@ -247,6 +247,7 @@ release-prepare level="patch":
         major|minor|patch) next_version="$(uv version --bump "$requested" --dry-run --short)" ;;
         *) next_version="$requested" ;;
     esac
+    PYTHONPATH=src python -c 'import sys; from apprc_dev.packaging.release_notes import validate_next_version; validate_next_version(*sys.argv[1:])' "$(uv version --short)" "$next_version"
     tag="v${next_version}"
     if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
         echo "Tag ${tag} already exists. Choose another release level." >&2

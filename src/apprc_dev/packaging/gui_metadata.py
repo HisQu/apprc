@@ -89,8 +89,8 @@ def sync_gui_metadata(
         return
     if check:
         raise SystemExit(
-            "GUI metadata is stale. Run python "
-            "src/apprc_dev/packaging/gui_metadata.py."
+            "GUI metadata is stale. Run PYTHONPATH=src python -m "
+            "apprc_dev.packaging.gui_metadata."
         )
     path.write_text(expected, encoding="utf-8")
 

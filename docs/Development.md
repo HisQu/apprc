@@ -773,7 +773,7 @@ report hosted CI status separately. When true, exact-commit hosted CI must pass.
 This setting is independent of `RELEASE_PYPI`.
 
 Prepare a dated changelog section for every release. Use package versions such
-as `0.39.0b1` for Beta, `0.39.0rc1` for Pre-release, and `0.39.0` for Stable.
+as `0.40.0b1` for Beta, `0.40.0rc1` for Pre-release, and `0.40.0` for Stable.
 Preview entries cover the changes since the preceding release. A stable entry
 covers the net changes since the last stable release. Link each version heading
 to the preceding tag comparison and give stable readers a separate link to the

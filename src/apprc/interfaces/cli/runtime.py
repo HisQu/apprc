@@ -787,9 +787,6 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 callback is not None
                 and inspect.unwrap(callback) is update_command
             ):
-                ctx.meta["apprc.update.maintenance_group"] = (
-                    self.maintenance_group_name
-                )
                 return True
         if ctx.invoked_subcommand == "launch" and isinstance(
             ctx.command, TyperGroup

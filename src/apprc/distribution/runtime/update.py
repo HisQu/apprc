@@ -100,23 +100,22 @@ def _managed_update(
         if sys.platform == "win32"
         else "x86_64-unknown-linux-gnu"
     )
-    archive_app_id = regular_app_id
     if (
-        binding.identity == record.identity
-        and binding.command_name != record.command_name
+        binding.identity != record.identity
+        or binding.command_name != record.command_name
     ):
         raise InstallationError(
-            "The manager command differs from the installed command."
+            "The manager binding differs from the installed product."
         )
     setup, digest = download_release_setup(
         source,
-        app_id=archive_app_id,
+        app_id=regular_app_id,
         target=target,
         directory=stage,
         environment=environment,
     )
     regular, preview = _inspect_native_products(
-        setup, app_id=archive_app_id, target=target
+        setup, app_id=regular_app_id, target=target
     )
     is_preview = regular.identity != record.identity
     candidate = preview if is_preview else regular
@@ -315,6 +314,32 @@ def _editable_update(
     return True
 
 
+def _stage_windows_helper(stage: Path) -> Path:
+    """Stage the Windows helper from an installed package or native archive."""
+    from inspect import getsource
+
+    from apprc.distribution.runtime import _process_waiter, _update_handoff
+    from apprc.user_files.app_home import locations
+    from apprc.user_files.installation import _namespace_lock
+
+    script = stage / "handoff.py"
+    script.write_text(getsource(_update_handoff), encoding="utf-8")
+    (stage / "apprc").mkdir()
+    (stage / "apprc" / "__init__.py").touch()
+    for module in (_process_waiter, locations, _namespace_lock):
+        destination = stage.joinpath(*module.__name__.split(".")).with_suffix(
+            ".py"
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(getsource(module), encoding="utf-8")
+    shutil.copytree(
+        Path(filelock.__file__).parent,
+        stage / "filelock",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    return script
+
+
 def _hand_off_windows(
     stage: Path,
     work: UpdateWork,
@@ -323,41 +348,19 @@ def _hand_off_windows(
     editable_environment: Path | None,
     forbidden: tuple[Path, ...],
 ) -> None:
-    from apprc.distribution.runtime import _process_waiter, _update_handoff
-    from apprc.user_files.app_home import locations
-    from apprc.user_files.installation import _namespace_lock
-
     external = (Path(sys.base_prefix) / "python.exe").resolve(strict=True)
     if any(external.is_relative_to(path) for path in forbidden):
         raise InstallationError(
             "No independent interpreter is available for the Windows update."
         )
     processes = update_process_identities(executables, editable_environment)
-    shutil.copyfile(_update_handoff.__file__, stage / "handoff.py")
-    (stage / "apprc").mkdir()
-    (stage / "apprc" / "__init__.py").touch()
-    for module in (_process_waiter, locations, _namespace_lock):
-        destination = stage.joinpath(*module.__name__.split(".")).with_suffix(
-            ".py"
-        )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        module_file = module.__file__
-        if module_file is None:
-            raise InstallationError(
-                "The Windows update helper modules are unavailable."
-            )
-        shutil.copyfile(module_file, destination)
-    shutil.copytree(
-        Path(filelock.__file__).parent,
-        stage / "filelock",
-        ignore=shutil.ignore_patterns("__pycache__"),
-    )
+    script = _stage_windows_helper(stage)
     plan = stage / "update.json"
     plan.write_text(
         json.dumps({"processes": processes, "work": work}), encoding="utf-8"
     )
     process = subprocess.Popen(
-        [str(external), "-I", str(stage / "handoff.py"), str(plan)],
+        [str(external), "-I", str(script), str(plan)],
         cwd=stage.parent,
         env=environment,
         stdin=subprocess.PIPE,

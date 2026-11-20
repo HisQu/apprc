@@ -119,7 +119,15 @@ def run_update(
                 raise ValueError("The editable update has no confirmed commit.")
             if candidate != work["current_head"]:
                 subprocess.run(
-                    [git, "-C", str(cwd), "merge", "--ff-only", candidate],
+                    [
+                        git,
+                        "-C",
+                        str(cwd),
+                        "merge",
+                        "--ff-only",
+                        "--no-overwrite-ignore",
+                        candidate,
+                    ],
                     check=True,
                     env=env,
                     stdout=output,

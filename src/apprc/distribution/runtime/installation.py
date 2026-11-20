@@ -1857,6 +1857,7 @@ def install_application(
             if (
                 not isinstance(update_record.active_runtime, RuntimeSlot)
                 or update_record.identity != identity
+                or update_record.command_name != command_name
             ):
                 raise InstallationError(
                     "The requested update is for a different managed installation."
@@ -2174,6 +2175,7 @@ def register_editable_application(
             if (
                 not isinstance(old, EditableCheckout)
                 or previous.identity != identity
+                or previous.command_name != command_name
                 or not old.project.samefile(runtime.project)
                 or not old.environment.samefile(runtime.environment)
             ):

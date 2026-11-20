@@ -317,7 +317,12 @@ def _install_managed(
     command_directory = options.command_directory
     if smoke_command_directory is not None:
         command_directory = smoke_command_directory
-    elif regular is not None and os.name != "nt" and command_directory is None:
+    elif (
+        expected_update is None
+        and regular is not None
+        and os.name != "nt"
+        and command_directory is None
+    ):
         command_directory = _default_command_directory(uv, environment)
     _, project_bytes = _read_product(include_project=True)
     if project_bytes is None:

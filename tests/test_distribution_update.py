@@ -175,7 +175,8 @@ def _git(cwd: Path, *arguments: str) -> str:
     sys.platform != "linux", reason="Isolates a POSIX editable subprocess flow"
 )
 @pytest.mark.parametrize(
-    "outcome", ["success", "dirty", "diverged", "sync", "registration"]
+    "outcome",
+    ["success", "dirty", "ignored", "diverged", "sync", "registration"],
 )
 def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     tmp_path: Path,
@@ -202,6 +203,11 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     _git(tmp_path, "clone", "-q", str(upstream), str(checkout))
     start = _git(checkout, "rev-parse", "HEAD")
     metadata.write_text(metadata.read_text().replace("1.0", "2.0"))
+    if outcome == "ignored":
+        (checkout / ".git" / "info" / "exclude").write_text("local.env\n")
+        (checkout / "local.env").write_text("local configuration")
+        (upstream / "local.env").write_text("upstream configuration")
+        _git(upstream, "add", "local.env")
     _git(upstream, "commit", "-qam", "version bump")
     end = _git(upstream, "rev-parse", "HEAD")
     if outcome == "dirty":
@@ -296,6 +302,14 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             maintenance_group="app",
             confirm=confirmed.append,
         )
+
+    if outcome == "ignored":
+        with pytest.raises(subprocess.CalledProcessError):
+            perform()
+        assert confirmed and not calls
+        assert _git(checkout, "rev-parse", "HEAD") == start
+        assert (checkout / "local.env").read_text() == "local configuration"
+        return
 
     if outcome in {"dirty", "diverged", "sync"}:
         expected = {

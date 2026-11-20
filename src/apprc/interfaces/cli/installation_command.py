@@ -90,7 +90,17 @@ def update_command(
 
     try:
         regular_app_id = None
-        if binding is not None and executable is not None:
+        if binding is not None:
+            from apprc.distribution.runtime._manager import (
+                _owned_manager_invocation,
+            )
+
+            if executable is None or not _owned_manager_invocation(
+                executable, context.manager, binding
+            ):
+                raise click.ClickException(
+                    "Run update through the installed application command."
+                )
             with ZipFile(executable) as archive:
                 regular, _ = read_native_bindings(archive)
             regular_app_id = regular.identity.app_id

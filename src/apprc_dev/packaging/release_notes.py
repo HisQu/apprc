@@ -8,9 +8,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-VERSION_RE = re.compile(r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
+_NUMBER = r"(?:0|[1-9][0-9]*)"
+VERSION_PATTERN = rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}(?:(?P<phase>b|rc)(?P<number>[1-9][0-9]*))?"
+VERSION_RE = re.compile(VERSION_PATTERN)
 RELEASE_HEADING_RE = re.compile(
-    r"^## \[(?P<version>\d+\.\d+\.\d+)\] - "
+    rf"^## \[(?P<version>{VERSION_PATTERN})\] - "
     r"(?P<date>\d{4}-\d{2}-\d{2})(?P<yanked> \[YANKED\])?$",
     re.MULTILINE,
 )
@@ -54,13 +56,34 @@ def build_release_notes(markdown: str, version: str) -> str:
 
 
 def validate_version(version: str) -> None:
-    """Reject release identifiers outside AppRC's three-part version scheme.
+    """Reject release identifiers outside AppRC's canonical stable, Beta, and Pre-release versions.
 
     :param version: Candidate version without a leading ``v``.
     """
     if VERSION_RE.fullmatch(version) is None:
         raise ValueError(
-            f"Invalid release version {version!r}; expected MAJOR.MINOR.PATCH."
+            f"Invalid release version {version!r}; expected MAJOR.MINOR.PATCH with an optional bN or rcN."
+        )
+
+
+def validate_next_version(current: str, requested: str) -> None:
+    """Require the requested release to advance the committed version."""
+
+    def order(version: str) -> tuple[tuple[int, ...], int, int]:
+        validate_version(version)
+        match = VERSION_RE.fullmatch(version)
+        assert match is not None
+        phase = match["phase"]
+        base = version[: version.index(phase)] if phase is not None else version
+        return (
+            tuple(map(int, base.split("."))),
+            {"b": 0, "rc": 1, None: 2}[phase],
+            int(match["number"] or 0),
+        )
+
+    if order(requested) <= order(current):
+        raise ValueError(
+            f"Release {requested} must advance the committed version {current}."
         )
 
 
@@ -158,7 +181,7 @@ def _validate_toc_entry(markdown: str, match: re.Match[str]) -> None:
         )
     if not version.endswith(".0") and occurrences:
         raise ValueError(
-            f"Patch release {version} must not appear in the table of contents."
+            f"Patch or preview release {version} must not appear in the table of contents."
         )
 
 

@@ -96,8 +96,6 @@ dev = [
     { include-group = "demo" },
     # === Install from PyPI ===================================
     # --- Interactive development -------
-    "jupyterlab",    # < Brings notebook, widgets, ipykernel, etc.
-    "ipywidgets",    # < Needed for interactive widgets; also installs/configures widget frontend support.
     "textual",       # < Terminal config editor tests and manual runs.
     "gradio>=6.26,<7",  # < Browser configuration editor checks.
     # "jupytext",    # < Needed for paired text notebooks / .py notebook workflows.

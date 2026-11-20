@@ -6,18 +6,56 @@ on:
   push:
     branches:
       - main
+    tags: ["v*"]
   pull_request:
   workflow_call:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: apprc-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  profile:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.profile.outputs.versions }}
+      extended: ${{ steps.profile.outputs.extended }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.56.0"
+      - id: profile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          extended=false
+          versions='["3.12"]'
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+b[0-9]+$ ]]; then
+              if [[ "$(just --no-dotenv --evaluate RELEASE_REQUIRE_CI)" == false ]]; then
+                versions='[]'
+              fi
+            elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?$ ]] && \
+                ! PYTHONPATH=src python -m apprc_dev.packaging.release_assets reuse-rc "$tag"; then
+              extended=true
+              versions='["3.12", "3.13", "3.14"]'
+            fi
+          fi
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+          echo "extended=$extended" >> "$GITHUB_OUTPUT"
+
   checks:
+    needs: profile
+    if: needs.profile.outputs.versions != '[]'
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -25,10 +63,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-        python-version:
-          - "3.12"
-          - "3.13"
-          - "3.14"
+        python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
 
     steps:
       - name: Checkout
@@ -54,27 +89,35 @@ jobs:
         run: uv sync --all-packages --locked --all-extras --group dev --group gui-test
 
       - name: Check generated terminal metadata
+        if: matrix.python-version == '3.12'
         run: uv run --locked python src/apprc_dev/packaging/terminal_metadata.py --check
 
       - name: Check lockfile
+        if: matrix.python-version == '3.12'
         run: uv lock --check
 
       - name: Check formatting
+        if: matrix.python-version == '3.12'
         run: uv run --locked ruff format . --check
 
       - name: Lint
+        if: matrix.python-version == '3.12'
         run: uv run --locked ruff check .
 
       - name: Type check
+        if: matrix.python-version == '3.12'
         run: uv run --locked pyright
 
       - name: Test
         run: uv run --locked pytest
 
       - name: Compile sources
+        if: matrix.python-version == '3.12'
         run: uv run --locked python -m compileall -q src tests examples/example_apps/src
 
   gui:
+    needs: profile
+    if: needs.profile.outputs.extended == 'true'
     name: GUI / ${{ matrix.os }} / Python 3.14
     runs-on: ${{ matrix.os }}
     strategy:

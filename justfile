@@ -17,7 +17,7 @@
 # Let recipes use Bash features and fail-fast in pipelines
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# > Include PyPI in normal tag releases. Keep this policy in version control.
+# > Publish stable packages through PyPI. Keep this policy in version control.
 RELEASE_PYPI := "true"
 # Hosted CI is advisory during allowance outages; local tests remain required.
 RELEASE_REQUIRE_CI := "false"
@@ -198,74 +198,42 @@ _ci-check-python version environment:
     echo "☑️ Python {{version}}: CI checks passed."
 
 [private]
-_release-artifact-check notes_output:
+_release-artifact-check directory:
     #!/usr/bin/env bash
     set -euo pipefail
-    version="$(uv version --short)"
-    tag="${GITHUB_REF_NAME:-v${version}}"
-    notes_output="{{notes_output}}"
+    directory={{quote(directory)}}
     artifact_root="$(mktemp -d)"
     readme_candidate="$artifact_root/README.pypi.md"
     trap 'rm -rf "$artifact_root"' EXIT
 
-    mkdir -p "$(dirname "$notes_output")"
-    python src/apprc_dev/packaging/release_notes.py \
-        "$version" \
-        --tag "$tag" \
-        --project-version "$version" \
-        --output "$notes_output"
-
-    python src/apprc_dev/packaging/pypi_readme.py \
-        --destination "$readme_candidate"
+    python src/apprc_dev/packaging/pypi_readme.py --destination "$readme_candidate"
     if ! cmp -s README.pypi.md "$readme_candidate"; then
         diff -u README.pypi.md "$readme_candidate" || true
-        echo "README.pypi.md is stale. Regenerate and commit it with:" >&2
-        echo "python src/apprc_dev/packaging/pypi_readme.py" >&2
+        echo "README.pypi.md is stale. Regenerate it with python src/apprc_dev/packaging/pypi_readme.py." >&2
         exit 1
     fi
-
     python src/apprc_dev/packaging/terminal_metadata.py --check
-    python src/apprc_dev/packaging/gui_metadata.py --check
+    PYTHONPATH=src python src/apprc_dev/packaging/gui_metadata.py --check
     PYTHONPATH=src python -m apprc_dev.packaging.example_metadata --check
-    rm -rf dist
-    uv build --python 3.12 --no-sources --package apprc-core
-    uv build --python 3.12 --no-sources --package apprc
-    uv build --python 3.12 --no-sources --package apprc-gui
-    uv run --with twine --no-project -- twine check dist/*
-    for python_version in 3.12 3.13 3.14; do
-        uv run --isolated --no-project --python "$python_version" \
-            python src/apprc_dev/packaging/artifact_check.py dist
-    done
-    echo "PyPI publication dry run: no files will be uploaded."
     for project in apprc-core apprc apprc-gui; do
-        prefix="${project//-/_}"
-        if [[ "$project" == apprc ]]; then prefix=apprc; fi
-        uv publish --dry-run --trusted-publishing never \
-            --token unused-local-dry-run-token \
-            --check-url "https://pypi.org/simple/${project}/" \
-            dist/"${prefix}"-*.whl dist/"${prefix}"-*.tar.gz
+        uv build --python 3.12 --no-sources --no-create-gitignore --no-build-logs --package "$project" --out-dir "$directory"
     done
-    echo "PyPI publication dry run passed; nothing was uploaded."
+    uv run --with twine --no-project -- twine check "$directory"/*
+    uv run --isolated --no-project --python 3.12 \
+        python src/apprc_dev/packaging/artifact_check.py "$directory"
+    PYTHONPATH=src python -m apprc_dev.packaging.release_assets seal "v$(uv version --short)" "$directory"
 
-# Rehearse the complete local release gate without publishing
+# Rehearse the complete local release gate without publishing.
 publish-check:
     #!/usr/bin/env bash
     set -euo pipefail
     just _check-uv
     check_root="$(mktemp -d)"
     trap 'rm -rf "$check_root"' EXIT
-
-    for python_version in 3.12 3.13 3.14; do
-        just _ci-check-python \
-            "$python_version" \
-            "$check_root/python-${python_version}/.venv"
-    done
-    just _release-artifact-check "$check_root/release-notes.md"
-    if [[ "${APPRC_RELEASE_IN_PROGRESS:-}" == 1 ]]; then
-        echo "✅ Local release rehearsal passed; nothing was published."
-    else
-        echo "👉 Next step: run just release <patch|minor|major>."
-    fi
+    just _ci-check-python 3.12 "$check_root/.venv"
+    mkdir "$check_root/packages"
+    just _release-artifact-check "$check_root/packages"
+    echo "Local release rehearsal passed. No files were uploaded."
 
 # Prepare a checked version commit and annotated local release tag.
 release-prepare level="patch":
@@ -274,7 +242,12 @@ release-prepare level="patch":
     just _check-uv
     just _check-clean-worktree "preparing the release"
 
-    next_version="$(uv version --bump "{{level}}" --dry-run --short)"
+    requested={{quote(level)}}
+    case "$requested" in
+        major|minor|patch) next_version="$(uv version --bump "$requested" --dry-run --short)" ;;
+        *) next_version="$requested" ;;
+    esac
+    PYTHONPATH=src python -c 'import sys; from apprc_dev.packaging.release_notes import validate_next_version; validate_next_version(*sys.argv[1:])' "$(uv version --short)" "$next_version"
     tag="v${next_version}"
     if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
         echo "Tag ${tag} already exists. Choose another release level." >&2
@@ -314,13 +287,13 @@ release-prepare level="patch":
     cp examples/example_apps/pyproject.toml \
         "$release_root/examples-pyproject.toml"
     restore_version_files=true
-    uv version --bump "{{level}}" --frozen
+    uv version "$next_version" --frozen
     python src/apprc_dev/packaging/terminal_metadata.py
-    python src/apprc_dev/packaging/gui_metadata.py
+    PYTHONPATH=src python src/apprc_dev/packaging/gui_metadata.py
     PYTHONPATH=src python -m apprc_dev.packaging.example_metadata
     uv lock
     uv export -o pylock.toml --all-extras --all-groups --quiet
-    APPRC_RELEASE_IN_PROGRESS=1 just publish-check
+    uv lock --check --quiet
 
     git commit \
         --only \
@@ -347,57 +320,84 @@ release-prepare level="patch":
     echo
     echo "  just release-push ${tag}"
     echo
-    echo "GitHub will run CI, validate wheel and sdist artifacts, and create"
-    echo "the GitHub Release. PyPI follows RELEASE_PYPI in the tagged justfile."
-    echo "================================================================="
+    echo "Run from main to build locally and publish the GitHub Release."
+    echo "====================================================================="
 
-# Push a prepared release commit and tag as one remote operation.
+# Build, verify, and publish the annotated tag at main's current commit.
 release-push tag:
     #!/usr/bin/env bash
     set -euo pipefail
     just _check-clean-worktree "pushing the release"
-    tag="{{tag}}"
+    just _check-gh
+    tag={{quote(tag)}}
+    version="$(uv version --short)"
+    if [[ "$(git branch --show-current)" != main || "$tag" != "v$version" ]]; then
+        echo "Release pushes require main and a tag matching the committed version." >&2
+        exit 1
+    fi
+    ref="refs/tags/$tag"
+    commit="$(git rev-parse HEAD)"
+    if ! git cat-file -e "$ref^{tag}" 2>/dev/null || [[ "$(git rev-parse "$ref^{commit}")" != "$commit" ]]; then
+        echo "Annotated tag $tag must reference the current main commit." >&2
+        exit 1
+    fi
+    release_pypi="$(just --no-dotenv --evaluate RELEASE_PYPI)"
+    require_ci="$(just --no-dotenv --evaluate RELEASE_REQUIRE_CI)"
+    [[ "$release_pypi" == true || "$release_pypi" == false ]]
+    [[ "$require_ci" == true || "$require_ci" == false ]]
 
-    if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-        echo "Invalid release tag '${tag}'; expected vMAJOR.MINOR.PATCH." >&2
-        exit 1
+    cache=".cache/apprc/releases/$tag"
+    mkdir -p "$cache"
+    exec 9>"$cache/.lock"
+    flock 9
+    notes="$cache/release-notes.md"
+    python src/apprc_dev/packaging/release_notes.py "$version" \
+        --tag "$tag" --project-version "$version" --output "$notes"
+    bundle="$cache/$commit"
+    if [[ ! -d "$bundle" ]]; then
+        pending="$(mktemp -d "$cache/.partial.XXXXXX")"
+        trap 'rm -rf "$pending"' EXIT
+        just _ci-check-python 3.12 "$pending/.venv"
+        mkdir "$pending/packages"
+        just _release-artifact-check "$pending/packages"
+        mv "$pending/packages" "$bundle"
     fi
-    if [[ "$(git branch --show-current)" != "main" ]]; then
-        echo "Release pushes must run from the main branch." >&2
-        exit 1
+    PYTHONPATH=src python -m apprc_dev.packaging.release_assets verify "$tag" "$bundle"
+
+    git push --atomic origin refs/heads/main:refs/heads/main "$ref:$ref"
+    if [[ "$require_ci" == true ]]; then
+        just _wait-release-ci "$tag" "$commit"
     fi
-    if ! git cat-file -e "${tag}^{tag}" 2>/dev/null; then
-        echo "Annotated local tag ${tag} does not exist." >&2
-        exit 1
-    fi
-    if [[ "$(git rev-list -n 1 "$tag")" != "$(git rev-parse HEAD)" ]]; then
-        echo "Tag ${tag} does not point to the current main commit." >&2
-        exit 1
-    fi
-    release_pypi="$(just --evaluate RELEASE_PYPI)"
-    if [[ "$release_pypi" != "true" && "$release_pypi" != "false" ]]; then
-        echo "RELEASE_PYPI must be \"true\" or \"false\", found '${release_pypi}'." >&2
-        exit 1
+    PYTHONPATH=src python -m apprc_dev.packaging.release_assets publish "$tag" "$bundle" \
+        --commit "$commit" --notes "$notes"
+    if [[ "$release_pypi" == true && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        just publish-pypi "$tag"
     fi
 
-    echo "Pushing main and ${tag} atomically. RELEASE_PYPI=${release_pypi}."
-    if ! git push --atomic origin main "$tag"; then
-        echo "The remote push failed. The release remains prepared locally." >&2
-        echo "Retry with: just release-push ${tag}" >&2
-        exit 1
-    fi
-    echo "GitHub Actions will create the release. This command does not wait for it."
-    echo "If PyPI was skipped, run: just publish-pypi ${tag}"
+[private]
+_wait-release-ci tag commit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for attempt in {1..30}; do
+        run_id="$(gh run list --workflow ci.yml --event push --branch {{quote(tag)}} \
+            --commit {{quote(commit)}} --json databaseId --jq '.[0].databaseId // empty')"
+        if [[ -n "$run_id" ]]; then
+            gh run watch "$run_id" --exit-status
+            exit 0
+        fi
+        sleep 2
+    done
+    echo "No hosted CI run for this tag and commit. Retry release-push when CI is available." >&2
+    exit 1
 
-# Prepare and push a release. GitHub Actions owns artifact publication.
+# Prepare, build, and publish a release.
 release level="patch":
     #!/usr/bin/env bash
     set -euo pipefail
-    just release-prepare "{{level}}"
+    just release-prepare {{quote(level)}}
     tag="v$(uv version --short)"
     if ! just release-push "$tag"; then
-        echo "Release ${tag} remains prepared locally." >&2
-        echo "Retry with: just release-push ${tag}" >&2
+        echo "Retry with: just release-push $tag" >&2
         exit 1
     fi
 
@@ -406,7 +406,11 @@ publish-pypi tag:
     #!/usr/bin/env bash
     set -euo pipefail
     just _check-gh
-    tag="{{tag}}"
+    tag={{quote(tag)}}
+    [[ "$(just --no-dotenv --evaluate RELEASE_PYPI)" == true ]] || {
+        echo "PyPI publication is disabled by RELEASE_PYPI." >&2
+        exit 1
+    }
 
     if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
         echo "Invalid release tag '${tag}'; expected vMAJOR.MINOR.PATCH." >&2

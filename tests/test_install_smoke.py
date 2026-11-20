@@ -193,7 +193,7 @@ def test_release_prepare_restores_metadata_after_uv_lock_failure(
     pyproject = workspace / "pyproject.toml"
     source = pyproject.read_text(encoding="utf-8")
     version = tomllib.loads(source)["project"]["version"]
-    major, minor, _ = map(int, version.split("."))
+    major, minor = map(int, version.split(".")[:2])
     release_version = f"{major}.{minor + 1}.0"
     expected_tag = f"v{release_version}"
     source, count = re.subn(

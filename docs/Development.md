@@ -538,6 +538,10 @@ Use Rust 1.89.0 as the starting point for these commands. Building Cargo-xwin
 network access to GitHub and Cargo's dependency registry. The Windows target
 also needs access to Cargo-xwin's Microsoft downloads.
 
+When compilation fails, the build error includes the last part of Cargo's
+diagnostic output with credentials redacted. You can read it even when the
+application's build command removes the temporary workspace.
+
 ### Build on Windows x64
 
 On Windows, install Rust with rustup and use the MSVC host toolchain. The

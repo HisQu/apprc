@@ -16,7 +16,7 @@ from zipfile import ZipFile
 import pytest
 
 from apprc.distribution import native
-from apprc.definition.installation import ProjectSnapshot
+from apprc.definition.installation import InstallationError, ProjectSnapshot
 from apprc.distribution.frontends import (
     _sdk_archive,
     _validate_prepared_project,
@@ -289,3 +289,51 @@ def test_native_compiler_writes_into_private_directories(
     ):
         assert path.is_file()
         assert _path_permissions_are_private(path.parent)
+
+
+@pytest.mark.parametrize("use_stderr", [True, False])
+def test_native_build_failure_includes_sanitized_compiler_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, use_stderr: bool
+) -> None:
+    runtime_archive = tmp_path / "runtime.zip"
+    with ZipFile(runtime_archive, "w") as archive:
+        archive.writestr("bootstrap-requirements.txt", native.UV_REQUIREMENT)
+    source = tmp_path / "pyapp"
+    source.mkdir()
+    builder = native.NativeFrontendBuilder(
+        tmp_path / "compiler",
+        environment={
+            "RUSTUP_TOOLCHAIN": "fixture",
+            "CARGO_REGISTRIES_FIXTURE_TOKEN": "fixture-secret",
+        },
+    )
+    monkeypatch.setattr(builder, "_acquire_source", lambda: source)
+    monkeypatch.setattr(
+        native.shutil, "which", lambda name, **_kwargs: str(tmp_path / name)
+    )
+
+    def run_tool(
+        command: Sequence[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        if "build" not in command:
+            return subprocess.CompletedProcess(command, 0, "", "")
+        detail = "compile progress\n" * 1000 + (
+            "error: link failed (fixture-secret)\n"
+        )
+        stdout, stderr = ("", detail) if use_stderr else (detail, "")
+        return subprocess.CompletedProcess(command, 101, stdout, stderr)
+
+    monkeypatch.setattr(native.subprocess, "run", run_tool)
+    with pytest.raises(InstallationError) as error:
+        builder.build(
+            target="x86_64-pc-windows-msvc",
+            destination=tmp_path / "compiled" / "setup.exe",
+            runtime_archive=runtime_archive,
+            entrypoint="apprc.distribution.runtime._manager",
+        )
+
+    message = str(error.value)
+    assert "x86_64-pc-windows-msvc exited with code 101" in message
+    assert "error: link failed ([redacted])" in message
+    assert "fixture-secret" not in message
+    assert len(message) < 5000

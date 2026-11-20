@@ -116,6 +116,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   or the compiled setup.
 - Native setup builds report missing Rust tools and Cargo-xwin before
   downloading PyApp and link to toolchain setup instructions.
+- Native build errors show recent compiler output even when the application
+  removes the temporary build workspace.
 
 ### 🔒 Security
 

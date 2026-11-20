@@ -628,11 +628,15 @@ class NativeFrontendBuilder:
                     if windows
                     else "the Rust GNU target and host C compiler and linker"
                 )
+                diagnostic = _diagnostics(
+                    result.stderr.strip() or result.stdout.strip(), environment
+                )
+                detail = "\n".join(diagnostic.splitlines()[-30:])[-4000:]
                 raise InstallationError(
                     f"Native compilation for {target} exited with code "
                     f"{result.returncode}. Check {tools}. "
-                    f"See the workspace build report if retained. "
                     f"{NATIVE_TOOLCHAIN_DOCS}"
+                    + (f"\n\n{detail}" if detail else "")
                 )
             if (source / "Cargo.lock").read_bytes() != self._cargo_lock:
                 raise ValueError(

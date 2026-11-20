@@ -12,6 +12,7 @@ from types import ModuleType
 
 import pytest
 import typer
+from rich.text import Text
 from typer.testing import CliRunner
 
 from apprc import AppRC
@@ -19,6 +20,10 @@ from apprc.cli import AppRCRootGroup, mount_app_cli
 
 _COMMAND = "dist-fixture"
 _REVISION = "1" * 40
+
+
+def _plain_message(output: str) -> str:
+    return " ".join(Text.from_ansi(output).plain.replace("│", "").split())
 
 
 @pytest.fixture
@@ -153,8 +158,9 @@ assert "prompt_toolkit" not in sys.modules
         text=True,
     )
     assert result.returncode == 0, result.stderr
+    output = Text.from_ansi(result.stdout).plain
     if help_args == ("--help",):
-        host_help, apprc_help = result.stdout.split("AppRC: Commands", 1)
+        host_help, apprc_help = output.split("AppRC: Commands", 1)
         assert any(
             line.split()[:2] == ["│", "serve"]
             for line in host_help.splitlines()
@@ -167,12 +173,12 @@ assert "prompt_toolkit" not in sys.modules
             for line in apprc_help.splitlines()
         )
     elif help_args[:2] == ("dist", "build"):
-        assert "--target-current" in result.stdout
-        assert "--olis-repo" in result.stdout
+        assert "--target-current" in output
+        assert "--olis-repo" in output
     else:
-        assert "Source Build (SB)" in result.stdout
-        assert "--preview" in result.stdout
-        assert "--smoke" in result.stdout
+        assert "Source Build (SB)" in output
+        assert "--preview" in output
+        assert "--smoke" in output
 
 
 @pytest.mark.parametrize("flag", [None, "-o", "--olis-repo"])
@@ -347,7 +353,7 @@ def test_missing_authoring_backend_reports_checkout_setup(
     result = CliRunner().invoke(_app(args), args)
     assert result.exit_code != 0
     assert "Cannot load distribution backend" in result.output
-    assert "uv sync --locked --all-groups" in result.output
+    assert "uv sync --locked --all-groups" in _plain_message(result.output)
 
 
 def test_distribution_name_collision_preserves_the_host_cli(
@@ -417,7 +423,7 @@ def test_unattended_missing_setup_does_not_build_without_yes(
     args = ["app", "install"]
     result = CliRunner().invoke(_app(args, installation_management=True), args)
     assert result.exit_code != 0
-    assert "app install --yes" in result.output
+    assert "app install --yes" in _plain_message(result.output)
     assert builds == []
 
 
@@ -504,5 +510,5 @@ def test_checkout_does_not_register_regular_editable_for_preview(
     assert result.exit_code == 2
     assert (
         "--editable cannot be combined with --preview or --smoke"
-        in result.output
+        in _plain_message(result.output)
     )

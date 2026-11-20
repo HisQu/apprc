@@ -7,6 +7,7 @@ import pytest
 
 import typer
 from typer.testing import CliRunner
+from rich.text import Text
 
 import apprc as rc
 from apprc.interfaces.cli.context import InstallationCommandContext
@@ -1149,7 +1150,7 @@ def test_update_command_routes_share_confirmation(
     app = _app(args=args)
     refused = CliRunner().invoke(app, args)
     assert refused.exit_code != 0
-    assert "Rerun with --yes" in refused.output
+    assert "Rerun with --yes" in Text.from_ansi(refused.output).plain
     args.append("--yes")
     accepted = CliRunner().invoke(app, args)
     assert accepted.exit_code == 0, accepted.output

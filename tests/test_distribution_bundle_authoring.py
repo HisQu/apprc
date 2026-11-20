@@ -5,13 +5,16 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import struct
 import subprocess
+import tarfile
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
 
+from apprc.distribution import native
 from apprc.definition.installation import ProjectSnapshot
 from apprc.distribution.frontends import (
     _sdk_archive,
@@ -21,6 +24,7 @@ from apprc.distribution.metadata import read_distribution_spec
 from apprc.distribution.models import decode_native_binding
 from apprc.distribution.project import PreparedProject
 from apprc.user_files.app_home.permissions import (
+    _path_permissions_are_private,
     create_private_directory_if_missing,
 )
 
@@ -156,3 +160,75 @@ def test_native_authoring_validates_snapshot_for_selected_workspace_member(
         ):
             _validate_prepared_project(spec, prepared, workspace)
     assert list(workspace.iterdir()) == []
+
+
+def test_native_compiler_writes_into_private_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_asset = BytesIO()
+    with tarfile.open(fileobj=source_asset, mode="w:gz") as archive:
+        for name in (
+            "pyapp/Cargo.toml",
+            "pyapp/Cargo.lock",
+            "pyapp/build.rs",
+            "pyapp/src/main.rs",
+        ):
+            member = tarfile.TarInfo(name)
+            archive.addfile(member)
+    source_bytes = source_asset.getvalue()
+    monkeypatch.setattr(
+        native, "PYAPP_SOURCE_SHA256", hashlib.sha256(source_bytes).hexdigest()
+    )
+    monkeypatch.setattr(
+        native.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: BytesIO(source_bytes),
+    )
+
+    runtime_archive = tmp_path / "runtime.zip"
+    with ZipFile(runtime_archive, "w") as archive:
+        archive.writestr("bootstrap-requirements.txt", native.UV_REQUIREMENT)
+
+    target = "x86_64-unknown-linux-gnu"
+    target_directory = tmp_path / "cargo-target"
+    compiled = target_directory / target / "release" / "pyapp"
+    compiled.parent.mkdir(parents=True)
+    header = bytearray(64)
+    header[:6] = b"\x7fELF\x02\x01"
+    struct.pack_into("<HH", header, 16, 2, 62)
+    compiled.write_bytes(header)
+    monkeypatch.setattr(
+        native.shutil, "which", lambda name, **_kwargs: str(tmp_path / name)
+    )
+    builder = native.NativeFrontendBuilder(
+        tmp_path / "compiler",
+        environment={
+            "CARGO_TARGET_DIR": str(target_directory),
+            "RUSTUP_TOOLCHAIN": "fixture",
+        },
+    )
+    monkeypatch.setattr(
+        builder,
+        "_run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0, "", ""
+        ),
+    )
+
+    artifact = builder.build(
+        target=target,
+        destination=tmp_path / "compiled" / "setup",
+        runtime_archive=runtime_archive,
+        entrypoint="apprc.distribution.runtime._manager",
+    )
+
+    assert artifact.path.read_bytes() == header + runtime_archive.read_bytes()
+    source = builder.workspace / "source" / "pyapp"
+    for path in (
+        source / "src" / "main.rs",
+        source / "apprc-inputs" / artifact.report.parent.name / "loader.py",
+        artifact.report,
+        artifact.path,
+    ):
+        assert path.is_file()
+        assert _path_permissions_are_private(path.parent)

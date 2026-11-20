@@ -30,10 +30,11 @@ def _path_permissions_are_private(
     return stat.S_IMODE(info.st_mode) & 0o077 == 0
 
 
-def create_private_directory_if_missing(path: Path) -> None:
+def create_private_directory(path: Path, *, exist_ok: bool = False) -> None:
     """Create a private directory without changing an existing directory.
 
     :param path: Directory needed by AppRC-managed private files or locks.
+    :param exist_ok: Allow an existing directory without changing permissions.
     """
     try:
         if os.name == "nt":
@@ -41,8 +42,13 @@ def create_private_directory_if_missing(path: Path) -> None:
         else:
             path.mkdir(parents=True, mode=0o700)
     except FileExistsError:
-        if not path.is_dir():
+        if not exist_ok or not path.is_dir():
             raise
+
+
+def create_private_directory_if_missing(path: Path) -> None:
+    """Create the directory only if it does not already exist."""
+    create_private_directory(path, exist_ok=True)
 
 
 def _windows_user_sid() -> PySID:

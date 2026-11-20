@@ -23,7 +23,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
-    set_windows_private_acl,
+    create_private_directory,
     windows_acl_is_private,
 )
 
@@ -72,7 +72,7 @@ def _create_file(path: Path, *, mode: int = 0o600) -> BinaryIO:
         flags |= os.O_BINARY
         if not windows_acl_is_private(path.parent):
             raise PermissionError(
-                "Native output requires a private parent directory."
+                f"Native output requires a private parent directory: {path.parent}"
             )
     descriptor = os.open(path, flags, mode)
     try:
@@ -256,9 +256,7 @@ class NativeFrontendBuilder:
         self._cargo_lock: bytes | None = None
         self._build_count = 0
         assert_no_links(self.workspace)
-        self.workspace.mkdir(parents=True, mode=0o700, exist_ok=False)
-        if os.name == "nt":
-            set_windows_private_acl(self.workspace)
+        create_private_directory(self.workspace)
 
     @property
     def bootstrap_version(self) -> str:
@@ -283,7 +281,7 @@ class NativeFrontendBuilder:
         if digest != PYAPP_SOURCE_SHA256:
             raise ValueError("Pinned PyApp source SHA256 mismatch.")
         extracted = self.workspace / "source"
-        extracted.mkdir(mode=0o700)
+        create_private_directory(extracted)
         with tarfile.open(asset, "r:gz") as archive:
             seen: set[PurePosixPath] = set()
             for member in archive:
@@ -304,11 +302,9 @@ class NativeFrontendBuilder:
                     continue
                 output_path = extracted.joinpath(*relative.parts)
                 if member.isdir():
-                    output_path.mkdir(parents=True, mode=0o700, exist_ok=True)
+                    create_private_directory(output_path, exist_ok=True)
                 else:
-                    output_path.parent.mkdir(
-                        parents=True, mode=0o700, exist_ok=True
-                    )
+                    create_private_directory(output_path.parent, exist_ok=True)
                     stream = archive.extractfile(member)
                     if stream is None:
                         raise ValueError(
@@ -449,7 +445,7 @@ class NativeFrontendBuilder:
         self._build_count += 1
         attempt = self.workspace / f"build-{self._build_count:04d}"
         assert_no_links(attempt)
-        attempt.mkdir(mode=0o700)
+        create_private_directory(attempt)
         report_path = attempt / "report.json"
         observations: list[dict[str, object]] = []
         report: dict[str, object] = {
@@ -464,7 +460,7 @@ class NativeFrontendBuilder:
         try:
             source = self._acquire_source()
             inputs = source / "apprc-inputs" / attempt.name
-            inputs.mkdir(parents=True, mode=0o700)
+            create_private_directory(inputs)
             stub = (
                 "import hashlib\n"
                 "import os\n"
@@ -615,7 +611,7 @@ class NativeFrontendBuilder:
                 / ("pyapp.exe" if windows else "pyapp")
             )
             assert_no_links(destination)
-            destination.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            create_private_directory(destination.parent, exist_ok=True)
             with (
                 compiled.open("rb") as input_stream,
                 _create_file(destination, mode=0o700) as output,

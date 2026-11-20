@@ -112,7 +112,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   preview and smoke options for opted-in checkouts. Build and verification
   stages use AppRC terminal styles.
 - Windows Source Builds apply a private ACL to snapshot validation staging
-  before extracting source files, so native setup can build from a checkout.
+  and compiler directories before writing source files, build inputs, reports,
+  or the compiled setup.
 
 ### 🔒 Security
 

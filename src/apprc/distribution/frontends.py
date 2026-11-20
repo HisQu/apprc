@@ -41,6 +41,7 @@ from apprc.distribution.native import (
 from apprc.distribution.project import PreparedProject
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
 from apprc.user_files.app_home.locations import assert_no_links
+from apprc.user_files.app_home.permissions import set_windows_private_acl
 
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,8 @@ def _validate_prepared_project(
         tempfile.mkdtemp(prefix="apprc-author-check-", dir=workspace)
     )
     try:
+        if os.name == "nt":
+            set_windows_private_acl(staging)
         materialize_project_snapshot(project.archive, staging, project.source)
         project_path = PurePosixPath(project.source.project_path)
         selected = (
@@ -699,10 +702,6 @@ def build_native_distribution(
     assert_no_links(workspace)
     workspace.mkdir(parents=True, mode=0o700, exist_ok=False)
     if os.name == "nt":
-        from apprc.user_files.app_home.permissions import (
-            set_windows_private_acl,
-        )
-
         set_windows_private_acl(workspace)
     _validate_prepared_project(spec, project, workspace)
     runtime_archive = workspace / "runtime.zip"

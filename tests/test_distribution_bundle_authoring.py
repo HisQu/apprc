@@ -20,6 +20,9 @@ from apprc.distribution.frontends import (
 from apprc.distribution.metadata import read_distribution_spec
 from apprc.distribution.models import decode_native_binding
 from apprc.distribution.project import PreparedProject
+from apprc.user_files.app_home.permissions import (
+    create_private_directory_if_missing,
+)
 
 
 def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
@@ -82,8 +85,10 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
         assert not any(name.endswith("fixture_app.py") for name in names)
 
 
-def test_native_authoring_rejects_snapshot_bound_to_another_workspace_member(
+@pytest.mark.parametrize("member", ["fixture", "other"])
+def test_native_authoring_validates_snapshot_for_selected_workspace_member(
     tmp_path: Path,
+    member: str,
 ) -> None:
     repository = tmp_path / "workspace"
     selected = repository / "apps" / "fixture"
@@ -126,10 +131,10 @@ def test_native_authoring_rejects_snapshot_bound_to_another_workspace_member(
     )
     spec = read_distribution_spec(selected)
 
-    project_archive = tmp_path / "wrong-member.zip"
+    project_archive = tmp_path / "project.zip"
     with ZipFile(project_archive, "w") as archive:
         archive.writestr("uv.lock", lock)
-        archive.writestr("apps/other/pyproject.toml", declaration)
+        archive.writestr(f"apps/{member}/pyproject.toml", declaration)
     archive_bytes = project_archive.read_bytes()
     prepared = PreparedProject(
         project_archive,
@@ -137,9 +142,17 @@ def test_native_authoring_rejects_snapshot_bound_to_another_workspace_member(
             hashlib.sha256(archive_bytes).hexdigest(),
             hashlib.sha256(lock).hexdigest(),
             "b" * 40,
-            "apps/other",
+            f"apps/{member}",
         ),
     )
 
-    with pytest.raises(ValueError, match="different committed project path"):
-        _validate_prepared_project(spec, prepared, tmp_path)
+    workspace = tmp_path / "build"
+    create_private_directory_if_missing(workspace)
+    if member == "fixture":
+        _validate_prepared_project(spec, prepared, workspace)
+    else:
+        with pytest.raises(
+            ValueError, match="different committed project path"
+        ):
+            _validate_prepared_project(spec, prepared, workspace)
+    assert list(workspace.iterdir()) == []

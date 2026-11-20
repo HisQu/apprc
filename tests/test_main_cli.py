@@ -646,134 +646,13 @@ def test_ci_compile_command_uses_current_source_roots() -> None:
     )
 
 
-def test_ci_is_reusable_without_running_twice_for_release_tags() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
-
-    assert "workflow_call:" in workflow
-    assert "tags:" not in workflow
-    assert "uses: extractions/setup-just@v4" in workflow
-    assert 'just-version: "1.56.0"' in workflow
-    assert (
-        workflow.count(
-            "matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'"
-        )
-        == 2
-    )
-    assert workflow.index("name: Install just") < workflow.index(
-        "name: Validate justfile"
-    )
-    assert "run: just --summary" in workflow
-
-
-def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
-        encoding="utf-8"
-    )
-    checks, remainder = workflow.split("  build:", maxsplit=1)
-    build, remainder = remainder.split("  github-release:", maxsplit=1)
-    github_release, remainder = remainder.split("  pypi-publish:", maxsplit=1)
-    pypi_publish, publish_existing = remainder.split(
-        "  publish-existing-release:", maxsplit=1
-    )
-
-    assert '      - "v*"' in workflow
-    assert "workflow_dispatch:" in workflow
-    assert "release_tag:" in workflow
-    assert "uses: ./.github/workflows/ci.yml" in workflow
-    assert "needs: build" in workflow
-    assert "environment: pypi" in pypi_publish
-    assert "id-token: write" in workflow
-    assert "contents: write" in workflow
+def test_hosted_release_uses_existing_package_artifacts() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    assert "types: [published]" in workflow
+    assert "uv build" not in workflow
+    assert "gh release download" in workflow
+    assert "gh release create" not in workflow
     assert "--trusted-publishing always" in workflow
-    assert "needs.build.outputs.release_pypi == 'true'" in pypi_publish
-    assert "      - github-release" in pypi_publish
-    assert "just --evaluate RELEASE_PYPI" in build
-    assert 'gh release create "$GITHUB_REF_NAME"' in workflow
-    assert "just _release-artifact-check release/release-notes.md" in workflow
-    assert "just publish-check" not in build
-    assert "uses: extractions/setup-just@v4" in build
-    assert 'just-version: "1.56.0"' in build
-    assert build.index("name: Install just") < build.index(
-        "just _release-artifact-check release/release-notes.md"
-    )
-    assert "cancel-in-progress: false" in workflow
-    assert "contents: read" in checks
-    assert "contents: read" in build
-    assert "id-token:" not in checks
-    assert "id-token:" not in build
-    assert "actions/upload-artifact@v7" in build
-    assert "actions/download-artifact@v8" in github_release
-    assert "actions/download-artifact@v8" in pypi_publish
-    assert "artifact@v4" not in workflow
-    assert "dist/*.whl" in workflow
-    assert "dist/*.tar.gz" in workflow
-    assert "--notes-file release/release-notes.md" in github_release
-    assert "--trusted-publishing always" in pypi_publish
-    assert "if: github.event_name == 'workflow_dispatch'" in publish_existing
-    assert "gh release download" in publish_existing
-    assert "exactly three wheels and three source archives" in publish_existing
-    assert "${project}-${version}-py3-none-any.whl" in publish_existing
-    assert "${project}-${version}.tar.gz" in publish_existing
-    assert "twine check" in publish_existing
-    assert "uv build" not in publish_existing
-    assert "actions/checkout" not in publish_existing
-    assert "--check-url https://pypi.org/simple/apprc/" in workflow
-    assert "PUBLISH_PYPI" not in workflow
-
-
-def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
-    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-    publish_check = _just_recipe("publish-check")
-    ci_check = _just_recipe("_ci-check-python")
-    artifact_check = _just_recipe("_release-artifact-check")
-
-    assert "pypi-readme:" not in justfile
-    assert "build:" not in justfile
-    assert "for python_version in 3.12 3.13 3.14" in publish_check
-    assert "mktemp -d" in publish_check
-    assert "_ci-check-python" in publish_check
-    assert "_release-artifact-check" in publish_check
-    for command in (
-        "uv sync",
-        "uv lock --check",
-        "ruff format . --check",
-        "ruff check .",
-        "pyright",
-        "pytest",
-        "python -m compileall",
-    ):
-        assert command in ci_check
-    assert "UV_PROJECT_ENVIRONMENT" in ci_check
-    assert "UV_LINK_MODE=copy" in ci_check
-    assert "unset VIRTUAL_ENV" in ci_check
-    assert "--quiet" in ci_check
-    assert "--no-progress" in ci_check
-    assert "preparing isolated release environment" in ci_check
-    assert "environment ready; running CI checks" in ci_check
-    assert "CI checks passed" in ci_check
-    assert '$(dirname "$UV_PROJECT_ENVIRONMENT")' in ci_check
-    assert "release_notes.py" in artifact_check
-    assert "GITHUB_REF_NAME:-v${version}" in artifact_check
-    assert "pypi_readme.py" in artifact_check
-    assert "gui_metadata.py --check" in artifact_check
-    assert "rm -rf dist" in artifact_check
-    assert "uv build --python 3.12 --no-sources" in artifact_check
-    assert "twine check" in artifact_check
-    assert "for python_version in 3.12 3.13 3.14" in artifact_check
-    assert "--python 3.12" in artifact_check
-    assert "artifact_check.py dist" in artifact_check
-    assert "--dry-run" in artifact_check
-    assert "--trusted-publishing never" in artifact_check
-    assert "--token unused-local-dry-run-token" in artifact_check
-    assert "https://pypi.org/simple/${project}/" in artifact_check
-    assert "no files will be uploaded" in artifact_check
-    assert "nothing was uploaded" in artifact_check
-    assert "run just release <patch|minor|major>" in publish_check
-    assert (
-        "Local release rehearsal passed; nothing was published" in publish_check
-    )
 
 
 def test_release_recipe_surface_is_minimal() -> None:
@@ -804,25 +683,6 @@ def test_release_recipe_surface_is_minimal() -> None:
     assert (
         re.search(r"(?m)^alias\s+(?:bump|bump-version)\s*:=", justfile) is None
     )
-
-
-def test_release_recipe_pushes_prepared_tag_atomically() -> None:
-    """Release orchestration should preserve a retryable local result."""
-    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-    release = _just_recipe("release")
-    release_push = _just_recipe("release-push")
-    publish_pypi = _just_recipe("publish-pypi")
-
-    assert 'RELEASE_PYPI := "true"' in justfile
-    assert 'just release-prepare "{{level}}"' in release
-    assert 'just release-push "$tag"' in release
-    assert 'git push --atomic origin main "$tag"' in release_push
-    assert "git branch --show-current" in release_push
-    assert 'git cat-file -e "${tag}^{tag}"' in release_push
-    assert "just --evaluate RELEASE_PYPI" in release_push
-    assert "gh workflow run release.yml" in publish_pypi
-    assert "isDraft" in publish_pypi
-    assert "exactly three wheels and three source archives" in publish_pypi
 
 
 def test_release_prepare_keeps_existing_result_banner() -> None:

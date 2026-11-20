@@ -35,7 +35,7 @@ def render_example_pyproject(source: str, version: str) -> str:
                 f"Example metadata must contain exactly one {name} range."
             )
 
-    major, minor, _ = map(int, version.split("."))
+    major, minor = map(int, version.split(".")[:2])
     compatibility = f">={version},<{major}.{minor + 1}"
     updated, count = REQUIREMENT_LINE.subn(
         lambda match: f'"{match["name"]}{compatibility}"',

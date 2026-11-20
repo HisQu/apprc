@@ -7,6 +7,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from apprc_dev.packaging.release_notes import validate_version
+
 ROOT = Path(__file__).resolve().parents[3]
 GUI_PROJECT = ROOT / "src/apprc_dev/packaging/gui/pyproject.toml"
 VERSION_LINE = re.compile(
@@ -16,7 +18,6 @@ CORE_PIN_LINE = re.compile(
     r'(?m)^(?P<indent>[ \t]*)"(?P<pin>apprc-core==[^"]+)"'
     r"(?P<suffix>[ \t]*,?[ \t]*)$"
 )
-VERSION_PATTERN = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
 
 
 def render_gui_pyproject(source: str, version: str) -> str:
@@ -27,8 +28,7 @@ def render_gui_pyproject(source: str, version: str) -> str:
     :return: GUI metadata preserving all fields unrelated to the version.
     :raises ValueError: If the version or GUI metadata has an unexpected form.
     """
-    if VERSION_PATTERN.fullmatch(version) is None:
-        raise ValueError(f"Invalid AppRC version {version!r}.")
+    validate_version(version)
 
     project = tomllib.loads(source)["project"]
     if project["name"] != "apprc-gui":

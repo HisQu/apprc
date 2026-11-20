@@ -193,7 +193,7 @@ def test_major_minor_release_requires_toc_entry() -> None:
 def test_patch_release_must_not_be_listed_in_toc() -> None:
     module = load_release_notes_module()
 
-    with pytest.raises(ValueError, match="Patch release"):
+    with pytest.raises(ValueError, match="Patch or preview release"):
         module.build_release_notes(
             sample_changelog(version="1.2.3", toc_entry=True), "1.2.3"
         )
@@ -252,4 +252,18 @@ def test_main_rejects_requested_version_different_from_project(
                 "--project-version",
                 "1.2.3",
             ]
+        )
+
+
+@pytest.mark.parametrize("version", ("1.2.0b1", "1.2.0rc1"))
+def test_extract_preview_release_and_prevent_toc_clutter(version: str) -> None:
+    module = load_release_notes_module()
+    markdown = sample_changelog(version=version)
+    assert "- Added a tested release workflow." in module.build_release_notes(
+        markdown, version
+    )
+    module.validate_tag_version(f"v{version}", version)
+    with pytest.raises(ValueError, match="table of contents"):
+        module.build_release_notes(
+            sample_changelog(version=version, toc_entry=True), version
         )

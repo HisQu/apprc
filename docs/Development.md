@@ -772,38 +772,34 @@ When false, run and pass the full local test suite before merge or release and
 report hosted CI status separately. When true, exact-commit hosted CI must pass.
 This setting is independent of `RELEASE_PYPI`.
 
-Update the changelog first. Keep its complete release history in `CHANGELOG.md`.
-Use the six Keep a Changelog categories and the heading `## [VERSION] - YYYY-MM-DD`;
-append `[YANKED]` only for a yanked release. Leave all six category headings
-under `[Unreleased]` even when empty, and omit empty categories in released sections.
-Place breaking changes under their actual category with `**Breaking:** 💥`, identify
-affected users, and include migration guidance when possible. Curate entries for
-notable user or contributor effects; omit routine internal refactors and test-only
-work. Keep the core, terminal, and GUI distribution versions
-in sync. Release preparation syncs the GUI version and its exact `apprc-core`
-pin automatically.
-When preparing a release, add an entry to the TOC only for a major/minor
-`X.Y.0` version; omit patch releases. Keep every release section in the history.
-Update comparison reference definitions immediately after the TOC. Link only
-existing tags; do not invent links for tagless history.
+Prepare a dated changelog section for every release. Use package versions such
+as `0.39.0b1` for Beta, `0.39.0rc1` for Pre-release, and `0.39.0` for Stable.
+Preview entries cover the changes since the preceding release. A stable entry
+covers the net changes since the last stable release. Link each version heading
+to the preceding tag comparison and give stable readers a separate link to the
+previous stable comparison when a preview intervenes. Keep all versions in the
+history and reserve the table of contents for stable `X.Y.0` releases and
+`[Unreleased]`. Leave the six empty categories under `[Unreleased]` at release time.
 
-`just publish-check` rehearses Linux Python 3.12–3.14 checks, generated metadata,
-all three distributions, pip installation checks, and publication dry runs. It
-uploads nothing. `just release-prepare <patch|minor|major>` changes the root
-version, regenerates terminal and GUI metadata, aligns the example workspace's
-CLI and GUI requirement ranges, refreshes the locks, and checks the release before
-preparing a local commit and tag. Failed checks restore the prior version metadata.
-`PYTHONPATH=src python -m apprc_dev.packaging.example_metadata --check` validates
-the example requirements without changing files. `just release-push TAG` is the
-separate remote action.
+`just publish-check` rehearses the Python 3.12 tests, metadata validation,
+local package builds, and clean installs without pushing or uploading.
+`just release-prepare VERSION` updates the package and example metadata and
+lockfiles, commits the version, and creates the annotated local tag.
+It also accepts `patch`, `minor`, and `major`. Use an explicit version when
+promoting a release candidate to stable.
 
-Tag CI reuses the same Ubuntu-only core and GUI/browser checks described in
-[Environment](#environment); it does not verify Windows or macOS. The release workflow
-attaches all six artifacts to GitHub, then publishes `apprc-core` before `apprc`
-and `apprc-gui`.
-Each project uses its own PyPI check URL so retries can skip already uploaded
-artifacts. `just publish-pypi TAG` requests publication of an existing validated
-release, rather than rebuilding it.
+`just release-push TAG` runs the full local suite and builds the three wheels
+and three source archives from the tagged main commit. It smoke-tests them
+and stores the verified bundle under `.cache/apprc/releases/`. It then pushes
+main and the tag and publishes the cached files on GitHub. Rerun the same command
+to resume an interrupted GitHub upload. A raw tag push triggers CI checks.
+
+GitHub tests the published artifacts. It keeps the newest three published betas
+and three release candidates. Older preview downloads expire and their Git tags
+and changelog entries stay available. For stable releases, the release command
+requests trusted publishing of the same GitHub files to PyPI. The publisher
+sends `apprc-core` first, then `apprc` and `apprc-gui`. Use
+`just publish-pypi TAG` to retry PyPI publication of an existing stable release.
 
 > [!IMPORTANT]
 > Trusted publishing must be configured for all three PyPI projects before release.

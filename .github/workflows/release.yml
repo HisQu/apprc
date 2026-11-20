@@ -1,169 +1,44 @@
 name: Release
 
-run-name: ${{ github.actor }} - ${{ inputs.release_tag || github.ref_name }} - Release
+run-name: ${{ inputs.release_tag || github.event.release.tag_name }} - AppRC release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing non-draft GitHub Release tag to publish to PyPI
+        description: Published stable GitHub release to send to PyPI
         required: true
         type: string
 
+permissions:
+  contents: read
+
 concurrency:
-  group: apprc-release
+  group: apprc-release-${{ inputs.release_tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
-  policy:
-    name: Read release CI policy
-    if: github.event_name == 'push'
+  artifact-smoke:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
-    outputs:
-      require_ci: ${{ steps.policy.outputs.require_ci }}
     steps:
       - uses: actions/checkout@v5
-      - uses: extractions/setup-just@v4
-        with:
-          just-version: "1.56.0"
-      - id: policy
-        shell: bash
-        run: |
-          value="$(just --evaluate RELEASE_REQUIRE_CI)"
-          [[ "$value" == true || "$value" == false ]] || { echo "Invalid RELEASE_REQUIRE_CI: $value" >&2; exit 1; }
-          echo "require_ci=$value" >> "$GITHUB_OUTPUT"
-
-  checks:
-    name: Full CI
-    if: github.event_name == 'push' && needs.policy.outputs.require_ci == 'true'
-    needs: policy
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci.yml
-
-  build:
-    name: Build release artifacts
-    if: >-
-      github.event_name == 'push' && always() && needs.policy.result == 'success' &&
-      (needs.policy.outputs.require_ci == 'false' || needs.checks.result == 'success')
-    needs: [policy, checks]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      release_pypi: ${{ steps.release_policy.outputs.release_pypi }}
-
-    steps:
-      - name: Checkout release tag
-        uses: actions/checkout@v5
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-          enable-cache: auto
-
-      - name: Install just
-        uses: extractions/setup-just@v4
-        with:
-          just-version: "1.56.0"
-
-      - name: Validate release policy
-        id: release_policy
-        shell: bash
-        run: |
-          release_pypi="$(just --evaluate RELEASE_PYPI)"
-          if [[ "$release_pypi" != "true" && "$release_pypi" != "false" ]]; then
-            echo "RELEASE_PYPI must be \"true\" or \"false\", found '${release_pypi}'." >&2
-            exit 1
-          fi
-          echo "release_pypi=${release_pypi}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and validate release bundle
-        run: just _release-artifact-check release/release-notes.md
-
-      - name: Preserve release bundle
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-bundle-${{ github.ref_name }}
-          path: |
-            dist/*.whl
-            dist/*.tar.gz
-            release/release-notes.md
-          if-no-files-found: error
-          retention-days: 14
-
-  github-release:
-    name: Create GitHub Release
-    if: github.event_name == 'push' && !cancelled() && needs.build.result == 'success'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Restore release bundle
-        uses: actions/download-artifact@v8
-        with:
-          name: release-bundle-${{ github.ref_name }}
-
-      - name: Create GitHub Release
+      - name: Verify the uploaded bundle and smoke installed wheels
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          release_version="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" \
-            dist/*.whl \
-            dist/*.tar.gz \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --latest \
-            --title "AppRC ${release_version}" \
-            --notes-file release/release-notes.md
-
-  pypi-publish:
-    name: Publish to PyPI
-    if: >-
-      github.event_name == 'push' && !cancelled() &&
-      needs.build.result == 'success' && needs.github-release.result == 'success' &&
-      needs.build.outputs.release_pypi == 'true'
-    needs:
-      - build
-      - github-release
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Restore release bundle
-        uses: actions/download-artifact@v8
-        with:
-          name: release-bundle-${{ github.ref_name }}
-
-      - name: Publish to PyPI with trusted publishing
-        shell: bash
-        run: |
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/apprc-core/ \
-            dist/apprc_core-*
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/apprc/ \
-            dist/apprc-*
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/apprc-gui/ \
-            dist/apprc_gui-*
+          mkdir packages
+          gh release download "$RELEASE_TAG" --dir packages
+          PYTHONPATH=src python -m apprc_dev.packaging.release_assets verify "$RELEASE_TAG" packages
+          uv venv .artifact-venv
+          uv pip install --python .artifact-venv/bin/python packages/*.whl
+          .artifact-venv/bin/python src/apprc_dev/packaging/install_smoke.py --gui
 
   publish-existing-release:
     name: Publish existing GitHub Release to PyPI
@@ -173,66 +48,45 @@ jobs:
     permissions:
       contents: read
       id-token: write
-
     steps:
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.56.0"
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Download and validate GitHub Release artifacts
+      - name: Validate the published stable asset set
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         shell: bash
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Invalid release tag '${RELEASE_TAG}'; expected vMAJOR.MINOR.PATCH." >&2
-            exit 1
-          fi
-          if ! is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"; then
-            echo "GitHub Release ${RELEASE_TAG} does not exist." >&2
-            exit 1
-          fi
-          if [[ "$is_draft" == "true" ]]; then
-            echo "GitHub Release ${RELEASE_TAG} is still a draft." >&2
-            exit 1
-          fi
-
-          mkdir dist
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir dist \
-            --pattern '*.whl' \
-            --pattern '*.tar.gz'
-
-          shopt -s nullglob
-          wheels=(dist/*.whl)
-          sdists=(dist/*.tar.gz)
-          version="${RELEASE_TAG#v}"
-          if [[ "${#wheels[@]}" -ne 3 || "${#sdists[@]}" -ne 3 ]]; then
-            echo "Expected exactly three wheels and three source archives on ${RELEASE_TAG}." >&2
-            exit 1
-          fi
-          for project in apprc apprc_core apprc_gui; do
-            if [[ ! -f "dist/${project}-${version}-py3-none-any.whl" || ! -f "dist/${project}-${version}.tar.gz" ]]; then
-              echo "Missing ${project} artifacts for ${RELEASE_TAG}." >&2
-              exit 1
-            fi
-          done
-          uv run --with twine --no-project -- twine check dist/*
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$(just --no-dotenv --evaluate RELEASE_PYPI)" == true ]]
+          git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+          git show FETCH_HEAD:justfile > "$RUNNER_TEMP/tagged-justfile"
+          [[ "$(just --no-dotenv --justfile "$RUNNER_TEMP/tagged-justfile" --evaluate RELEASE_PYPI)" == true ]]
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease \
+            --jq '(.isDraft or .isPrerelease) | not' | grep -Fx true
+          mkdir packages
+          gh release download "$RELEASE_TAG" --dir packages
+          PYTHONPATH=src python - "$RELEASE_TAG" <<'PY'
+          import sys
+          from pathlib import Path
+          from apprc_dev.packaging.release_assets import bundle, expected_checksums
+          directory = Path("packages")
+          version = sys.argv[1][1:]
+          if (directory / "SHA256SUMS").exists():
+              bundle(directory, version)
+          else:
+              expected_checksums(directory, version)
+          PY
+          uv run --with twine --no-project -- twine check packages/*.whl packages/*.tar.gz
 
       - name: Publish existing artifacts to PyPI
         run: |
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/apprc-core/ \
-            dist/apprc_core-*
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/apprc/ \
-            dist/apprc-*
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/apprc-gui/ \
-            dist/apprc_gui-*
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/apprc-core/ packages/apprc_core-*
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/apprc/ packages/apprc-*
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/apprc-gui/ packages/apprc_gui-*

@@ -573,9 +573,15 @@ cargo xwin --version
 Get-Command clang, clang-cl, lld-link, llvm-lib
 ```
 
-Run the checkout build in that PowerShell session. Cargo-xwin may create
-symbolic links in its cache. If Windows reports a symbolic-link privilege
-error, check Developer Mode and your machine's policy for creating links.
+Run the checkout build in that PowerShell session. If `Get-Command lld-link`
+fails and LLVM is installed in the default location, run
+`$env:Path = "$env:ProgramFiles\LLVM\bin;$env:Path"` in that session and check
+again. For future sessions, add the LLVM `bin` directory to your user PATH.
+
+Cargo-xwin creates symbolic links in its SDK cache. If it reports Windows
+error 1314 while creating a link, enable Developer Mode (Entwicklermodus) in
+Windows Settings and retry. On a managed device, check your organization's
+policy for creating symbolic links.
 [Cargo-xwin 0.23.1](https://github.com/rust-cross/cargo-xwin/blob/v0.23.1/README.md) · [Windows Developer Mode](https://learn.microsoft.com/en-us/windows/apps/get-started/developer-mode-features-and-debugging)
 
 ### Build on Linux x86-64 or WSL

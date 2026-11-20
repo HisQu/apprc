@@ -1886,7 +1886,7 @@ def install_application(
     placement: InstallationPlacement,
     *,
     command_name: str,
-    setup_version: str,
+    setup_version: str | None = None,
     project_archive: Path,
     manager_executable: Path,
     uv: Path,
@@ -2088,7 +2088,7 @@ def install_application(
             )
         version = (
             setup_version
-            if runtime.source == setup_source
+            if setup_version is not None and runtime.source == setup_source
             else _snapshot_metadata(project_archive, runtime, identity)
         )
         prepared_command = _report_setup_change(

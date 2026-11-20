@@ -483,6 +483,10 @@ class CliRuntime(Generic[OptionsT, StateT]):
             context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
         if self._installation_command_requested(ctx):
+            if help_requested_before_separator(
+                self.current_args(), value_options=self.cli_value_options
+            ):
+                return CliRuntimeSession(apprc_context=None)
             diagnostic_context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=diagnostic_context)
         skip_runtime_setup = self._request_skips_runtime(ctx)
@@ -596,11 +600,12 @@ class CliRuntime(Generic[OptionsT, StateT]):
             if self.native_binding is None
             else None
         )
-        if (
-            authoring is not None
-            and installer_entrypoint is None
-            and installation_management
-        ):
+        checkout_installer = (
+            authoring
+            if installer_entrypoint is None and installation_management
+            else None
+        )
+        if checkout_installer is not None:
 
             def install_checkout(arguments: Sequence[str]) -> int:
                 tokens = self.current_args()
@@ -614,7 +619,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                     if suffix is not None
                     else ()
                 )
-                return authoring.install(
+                return checkout_installer.install(
                     arguments, root_arguments=root_arguments
                 )
 
@@ -629,6 +634,9 @@ class CliRuntime(Generic[OptionsT, StateT]):
             config_group_name=self.config_group_name,
             installation_management=installation_management,
             installer_entrypoint=installer_entrypoint,
+            checkout_installation=checkout_installer is not None,
+            preview_options=checkout_installer is not None
+            and checkout_installer.preview,
             host_diagnostics=host_diagnostics,
             resource_diagnostics=resource_diagnostics,
             resource_group_extensions=resource_group_extensions,

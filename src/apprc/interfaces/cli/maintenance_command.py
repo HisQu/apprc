@@ -59,6 +59,8 @@ def mount_maintenance_groups(
     installation_management: bool = False,
     host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
+    checkout_installation: bool = False,
+    preview_options: bool = False,
     resource_diagnostics: Mapping[
         Literal["appdata", "cache", "state"],
         Callable[[Path], Mapping[str, object]],
@@ -99,6 +101,8 @@ def mount_maintenance_groups(
         config_group_name=config_group_name,
         installation_management=installation_management,
         installer_entrypoint=installer_entrypoint,
+        checkout_installation=checkout_installation,
+        preview_options=preview_options,
     )
 
     @maintenance.command("paths", rich_help_panel=maintenance_help_panel)

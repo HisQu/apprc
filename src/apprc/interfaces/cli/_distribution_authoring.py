@@ -52,6 +52,7 @@ class _Backend(Protocol):
 class CheckoutAuthoring:
     root: Path
     module: str
+    preview: bool = False
 
     def backend(self) -> _Backend:
         """Load the app-author's build tooling only for an actual command."""
@@ -83,14 +84,19 @@ class CheckoutAuthoring:
             installation_color,
         )
         from apprc.interfaces._terminal_console import (
-            cli_line,
             color_environment,
+            write_line,
         )
 
         backend = self.backend()
         try:
             targets = _targets(current=True)
             revision = _revision(self.root)
+            stream = typer.get_text_stream("stdout")
+            color = installation_color.get()
+            write_line(
+                stream, "1. Checking Local Setup", style="stage", color=color
+            )
             try:
                 (setup,) = _check(
                     backend, self.root, revision=revision, targets=targets
@@ -106,14 +112,37 @@ class CheckoutAuthoring:
                         f"{exc} Build the setup for this platform?"
                     ):
                         raise typer.Exit(1) from exc
+                write_line(
+                    stream,
+                    "2. Building Local Setup",
+                    style="stage",
+                    color=color,
+                )
                 _build(backend, self.root, revision, targets)
                 (setup,) = _check(
                     backend, self.root, revision=revision, targets=targets
                 )
-            cli_line(None, "Running native setup", path=setup)
+            write_line(
+                stream,
+                "Running native setup",
+                prefix="   VERIFIED   ",
+                path=setup,
+                color=color,
+            )
+            setup_arguments = (*root_arguments, *arguments)
+            if (
+                self.preview
+                and arguments
+                and arguments[0] in {"--preview", "--smoke"}
+            ):
+                setup_arguments = (
+                    arguments[0],
+                    *root_arguments,
+                    *arguments[1:],
+                )
             return subprocess.run(
-                [str(setup), *root_arguments, *arguments],
-                env=color_environment(os.environ, installation_color.get()),
+                [str(setup), *setup_arguments],
+                env=color_environment(os.environ, color),
                 check=False,
             ).returncode
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
@@ -146,6 +175,7 @@ def discover_checkout_authoring(
         ):
             return None
         authoring = settings.get("authoring")
+        preview = isinstance(settings.get("preview"), dict)
     except (KeyError, OSError, TypeError, ValueError, AttributeError):
         return None
 
@@ -156,7 +186,7 @@ def discover_checkout_authoring(
         component.isidentifier() for component in module.split(".")
     ):
         return None
-    return CheckoutAuthoring(root, module)
+    return CheckoutAuthoring(root, module, preview=preview)
 
 
 def _targets(*, current: bool) -> tuple[NativeTarget, ...]:
@@ -207,13 +237,15 @@ def _build(
     olis_repo: str | None = None,
 ) -> None:
     from apprc.distribution.project import _git
-    from apprc.interfaces._terminal_console import cli_line
+    from apprc.distribution.runtime._install_progress import installation_color
+    from apprc.interfaces._terminal_console import write_line
 
     if _git(root, "status", "--porcelain"):
-        cli_line(
-            None,
+        write_line(
+            typer.get_text_stream("stderr"),
             "The setup uses the committed revision. Uncommitted edits are excluded.",
-            error=True,
+            style="warning",
+            color=installation_color.get(),
         )
     if olis_repo is None:
         backend.build(root, revision=revision, targets=targets)

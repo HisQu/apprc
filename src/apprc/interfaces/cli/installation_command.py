@@ -66,15 +66,33 @@ def mount_installation_group(
     config_group_name: str = "config",
     installation_management: bool = False,
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
+    checkout_installation: bool = False,
+    preview_options: bool = False,
 ) -> typer.Typer:
     """Register explicitly enabled installation actions on a maintenance group."""
     child = app
     if installer_entrypoint is not None and not callable(installer_entrypoint):
         raise TypeError("installer_entrypoint must be callable.")
     if installer_entrypoint is not None or installation_management:
+        if checkout_installation:
+            install_help = (
+                "Install a Source Build (SB), building setup if needed, or "
+                "register the current Editable Source Checkout (eSC) with -e.\n\n"
+                "Reuse a verified, current setup for this platform. "
+                "If setup is missing or stale, offer to build it from committed source."
+            )
+        elif installer_entrypoint is None:
+            install_help = (
+                "Register the current Editable Source Checkout (eSC) with -e."
+            )
+        elif installation_management:
+            install_help = "Run the configured installer or register the current Editable Source Checkout (eSC) with -e."
+        else:
+            install_help = "Run the configured installer."
 
         @child.command(
             "install",
+            help=install_help,
             cls=_InstallationCommand,
             context_settings={
                 "allow_extra_args": True,
@@ -120,8 +138,25 @@ def mount_installation_group(
                     help="Create a desktop shortcut without prompting.",
                 ),
             ] = False,
+            preview: bool = typer.Option(
+                False,
+                "--preview",
+                "-p",
+                hidden=not preview_options,
+                help="Install or update the preview and leave it installed.",
+            ),
+            smoke: bool = typer.Option(
+                False,
+                "--smoke",
+                "-s",
+                hidden=not preview_options,
+                help="Install a fresh preview, verify its runtime, and uninstall it.",
+            ),
         ) -> None:
-            """Register the existing checkout or invoke an authored installer."""
+            if editable and (preview or smoke):
+                raise typer.BadParameter(
+                    "--editable cannot be combined with --preview or --smoke."
+                )
             if editable:
                 if not installation_management:
                     raise typer.BadParameter(
@@ -239,6 +274,17 @@ def mount_installation_group(
                 for token in ctx.meta["apprc.installation.arguments"]
                 if token != "--"
             )
+            if preview_options and (preview or smoke):
+                # > Setup selects its identity before interpreting the remaining options.
+                arguments = ("--smoke" if smoke else "--preview", *ctx.args)
+                if command_directory is not None:
+                    arguments += ("--command-directory", str(command_directory))
+                if assume_yes:
+                    arguments += ("--yes",)
+                if skip_setup:
+                    arguments += ("--skip-setup",)
+                if desktop:
+                    arguments += ("--desktop",)
             from apprc.distribution.runtime._install_progress import (
                 installation_color_override,
             )

@@ -1317,9 +1317,19 @@ instructions and run its command through that environment:
 uv run --locked demo app install
 ```
 
-AppRC verifies the current-platform setup in `dist/` and runs it. If the
-setup is missing or stale, the command can offer to build it from committed
-source. You can also build and check it explicitly:
+AppRC reuses a verified setup in `dist/` when it matches the current platform
+and committed revision. If the setup is missing without a checksum entry, or
+its checksum verifies but its source is stale, AppRC offers to build it from
+committed source. Pass `--yes` to authorize that build without a prompt.
+A checksum mismatch, an unlisted setup, or a checksum entry with no setup
+stops the command. The checkout reports when it checks setup and when it
+needs to build. The native setup then reports its installation stages.
+
+For an opted-in preview, use `demo app install --preview` to keep the preview
+installed or `demo app install --smoke` to verify and remove a fresh preview.
+Use `-e` on its own to register an Editable Source Checkout (eSC).
+
+You can also build and check the setup explicitly:
 
 ```shell
 uv run --locked demo dist build -t

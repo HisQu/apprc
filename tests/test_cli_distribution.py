@@ -59,10 +59,27 @@ backend = "authoring_fixture"
     return root
 
 
+def _enable_preview(checkout: Path) -> None:
+    metadata = checkout / "pyproject.toml"
+    source = metadata.read_text().replace(
+        "[project.scripts]",
+        "[project.scripts]\ndist-preview = 'preview_fixture:main'",
+    )
+    metadata.write_text(
+        source + "\n[tool.apprc.distribution.preview]\n"
+        "app-id = 'dist-preview'\ncommand-name = 'dist-preview'\n"
+        "apprc-reference = 'preview_fixture:APP_RC'\n"
+        "bootstrap-env-prefix = 'DIST_PREVIEW'\n"
+    )
+
+
 def _app(
-    args: list[str], *, installation_management: bool = False
+    args: list[str],
+    *,
+    installation_management: bool = False,
+    color: bool | None = None,
 ) -> typer.Typer:
-    app = typer.Typer(cls=AppRCRootGroup)
+    app = typer.Typer(cls=AppRCRootGroup, context_settings={"color": color})
     mount_app_cli(
         app,
         AppRC(app_id=_COMMAND, command_name=_COMMAND),
@@ -73,11 +90,14 @@ def _app(
 
 
 @pytest.mark.parametrize(
-    "help_args", [("--help",), ("dist", "build", "--help")]
+    "help_args",
+    [("--help",), ("dist", "build", "--help"), ("app", "install", "--help")],
 )
 def test_distribution_help_is_lazy_in_a_fresh_process(
     checkout: Path, help_args: tuple[str, ...]
 ) -> None:
+    if help_args[:2] == ("app", "install"):
+        _enable_preview(checkout)
     result = subprocess.run(
         [
             sys.executable,
@@ -105,7 +125,10 @@ def forbidden(*args, **kwargs):
 
 AppRC.paths = AppRC.installation = forbidden
 app = typer.Typer(cls=AppRCRootGroup)
-mount_app_cli(app, AppRC(app_id="dist-fixture", command_name="dist-fixture"))
+mount_app_cli(
+    app, AppRC(app_id="dist-fixture", command_name="dist-fixture"),
+    installation_management=True,
+)
 
 @app.command()
 def serve():
@@ -143,9 +166,13 @@ assert "prompt_toolkit" not in sys.modules
             line.split()[:2] == ["│", "dist"]
             for line in apprc_help.splitlines()
         )
-    else:
+    elif help_args[:2] == ("dist", "build"):
         assert "--target-current" in result.stdout
         assert "--olis-repo" in result.stdout
+    else:
+        assert "Source Build (SB)" in result.stdout
+        assert "--preview" in result.stdout
+        assert "--smoke" in result.stdout
 
 
 @pytest.mark.parametrize("flag", [None, "-o", "--olis-repo"])
@@ -233,11 +260,13 @@ def test_noneditable_interpreter_does_not_enable_distribution(
     )
 
 
-@pytest.mark.parametrize("existing", ["verified", "missing", "corrupt"])
+@pytest.mark.parametrize(
+    "existing", ["verified", "missing", "stale", "corrupt"]
+)
 def test_checkout_install_only_delegates_verified_native_setup(
     checkout: Path, monkeypatch: pytest.MonkeyPatch, existing: str
 ) -> None:
-    from apprc.distribution import MissingNativeArtifact
+    from apprc.distribution import MissingNativeArtifact, StaleNativeArtifact
     from apprc.interfaces.cli import _distribution_authoring as command
 
     backend = ModuleType("authoring_fixture")
@@ -254,6 +283,8 @@ def test_checkout_install_only_delegates_verified_native_setup(
             raise ValueError("Invalid checksum")
         if existing == "missing" and not calls:
             raise MissingNativeArtifact("Missing setup")
+        if existing == "stale" and not calls:
+            raise StaleNativeArtifact("Stale setup")
         return (setup,)
 
     def execute(
@@ -291,14 +322,21 @@ def test_checkout_install_only_delegates_verified_native_setup(
         "--skip-setup",
     ]
     result = CliRunner().invoke(_app(args, installation_management=True), args)
+    assert "1. Checking Local Setup" in result.output
+    assert ("2. Building Local Setup" in result.output) == (
+        existing in {"missing", "stale"}
+    )
     if existing == "corrupt":
         assert result.exit_code != 0
         assert "Invalid checksum" in result.output
         assert calls == []
     else:
         assert result.exit_code == 7, result.output
+        assert "\x1b[" not in result.stdout
         assert calls == (
-            ["build", "install"] if existing == "missing" else ["install"]
+            ["build", "install"]
+            if existing in {"missing", "stale"}
+            else ["install"]
         )
 
 
@@ -397,3 +435,74 @@ def test_dist_test_runs_guided_preflight(
     )
     (report,) = (checkout / ".cache" / "apprc" / "dist-test").glob("*.json")
     assert json.loads(report.read_text())["commit"] == _REVISION
+
+
+@pytest.mark.parametrize(
+    ("flags", "mode"),
+    [(["--yes", "--preview"], "--preview"), (["-ys"], "--smoke")],
+)
+def test_checkout_install_selects_preview_before_other_native_options(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch, flags: list[str], mode: str
+) -> None:
+    from apprc.interfaces.cli import _distribution_authoring as authoring
+
+    _enable_preview(checkout)
+    backend = ModuleType("authoring_fixture")
+    setup = checkout / "dist" / "setup"
+    monkeypatch.setattr(
+        backend, "check", lambda *args, **kwargs: (setup,), raising=False
+    )
+    monkeypatch.setattr(
+        backend,
+        "build",
+        lambda *args, **kwargs: pytest.fail("rebuild"),
+        raising=False,
+    )
+    monkeypatch.setitem(sys.modules, backend.__name__, backend)
+    monkeypatch.setattr(authoring, "_revision", lambda root: _REVISION)
+    monkeypatch.delenv("NO_COLOR")
+
+    def execute(args: list[str], *, env: dict[str, str], check: bool):
+        assert args == [str(setup), mode, "--log-level", "INFO", "--yes"]
+        assert env["_APPRC_TERMINAL_COLOR"] == "1"
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(authoring.subprocess, "run", execute)
+    args = ["--log-level", "INFO", "app", "install", *flags]
+    app = _app(args, installation_management=True, color=True)
+    result = CliRunner().invoke(app, args, color=True)
+    assert result.exit_code == 0, result.output
+    assert "\x1b[35m" in result.output
+    assert "\x1b[36m" in result.output
+    assert "\x1b[32m" in result.output
+
+
+def test_checkout_install_help_omits_preview_without_opt_in(
+    checkout: Path,
+) -> None:
+    args = ["app", "install", "--help"]
+    result = CliRunner().invoke(_app(args, installation_management=True), args)
+    assert result.exit_code == 0, result.output
+    assert "--preview" not in result.output
+    assert "--smoke" not in result.output
+
+
+def test_checkout_does_not_register_regular_editable_for_preview(
+    checkout: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apprc.interfaces.cli import installation_command
+
+    _enable_preview(checkout)
+    monkeypatch.setattr(
+        installation_command,
+        "_register_editable",
+        lambda *args, **kwargs: pytest.fail("registered regular editable"),
+    )
+    args = ["app", "install", "-ep"]
+    result = CliRunner().invoke(_app(args, installation_management=True), args)
+    assert result.exit_code == 2
+    assert (
+        "--editable cannot be combined with --preview or --smoke"
+        in result.output
+    )

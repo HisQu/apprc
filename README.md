@@ -377,6 +377,8 @@ for toolchain prerequisites, application icons, installation messages, and
 ## Choose an installation route
 
 For an opted-in setup, [install a preview or run a smoke test](docs/How-To-User-Guides.md#install-a-preview-or-run-a-smoke-test) beside the regular application.
+From an opted-in checkout, `app install --help` lists the preview options for a
+[Source Build](docs/How-To-User-Guides.md#install-from-a-source-build).
 
 The application supplies the release assets, command name, and installation
 instructions. Start with the route that matches what you have.

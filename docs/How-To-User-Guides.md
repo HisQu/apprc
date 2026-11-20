@@ -1022,6 +1022,20 @@ the first option.
 | `<setup> --smoke` | Install a fresh preview, verify its runtime, and wait for uninstall to finish. |
 | `<preview-command> app uninstall` | Remove the preview through the ordinary uninstall workflow. |
 
+On Windows, run the verified preview-enabled setup from its download directory
+in PowerShell.
+
+```powershell
+.\demo-setup-windows-x86_64.exe --preview
+```
+
+For a path containing spaces, quote the path and invoke it with PowerShell's
+call operator `&`.
+
+```powershell
+& "C:\My Downloads\demo-setup-windows-x86_64.exe" --preview
+```
+
 `-p` and `-s` are the short forms. Combining them runs smoke. A smoke test
 requires an unused preview identity with no retained preview resources. If
 you have preview data you want to keep, leave that preview installed. Preview

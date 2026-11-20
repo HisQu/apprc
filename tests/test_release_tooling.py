@@ -104,6 +104,28 @@ def test_publisher_retries_only_missing_assets(
         assets.publish("owner/repo", tag, commit, tmp_path, tmp_path / "notes")
 
 
+def test_remote_tag_resolves_inside_release_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tag = "v1.0.0rc1"
+    annotation = "b" * 40
+    commit = "a" * 40
+    responses = {
+        f"repos/owner/target/git/ref/tags/{tag}": {
+            "object": {"type": "tag", "sha": annotation}
+        },
+        f"repos/owner/target/git/tags/{annotation}": {
+            "object": {"type": "commit", "sha": commit}
+        },
+    }
+    monkeypatch.setattr(
+        assets, "_gh", lambda _, endpoint: json.dumps(responses[endpoint])
+    )
+    assets._remote_tag_matches("owner/target", tag, commit)
+    with pytest.raises(ValueError, match="does not resolve"):
+        assets._remote_tag_matches("owner/target", tag, "c" * 40)
+
+
 def test_rc_evidence_can_only_reuse_matching_dependencies() -> None:
     candidate = """
     [project]

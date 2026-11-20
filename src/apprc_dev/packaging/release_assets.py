@@ -109,15 +109,19 @@ def _releases(repository: str) -> list[dict[str, Any]]:
     return [release for page in pages for release in page]
 
 
-def _remote_tag_matches(tag: str, commit: str) -> None:
-    ref = f"refs/tags/{tag}^{{}}"
-    advertised = subprocess.check_output(
-        ["git", "ls-remote", "origin", ref], text=True
-    ).strip()
-    if advertised != f"{commit}\t{ref}":
-        raise ValueError(
-            f"Remote annotated tag {tag} does not resolve to {commit}."
+def _remote_tag_matches(repository: str, tag: str, commit: str) -> None:
+    ref = json.loads(_gh("api", f"repos/{repository}/git/ref/tags/{tag}"))
+    obj = ref.get("object", {})
+    if obj.get("type") == "tag" and isinstance(obj.get("sha"), str):
+        annotated = json.loads(
+            _gh("api", f"repos/{repository}/git/tags/{obj['sha']}")
         )
+        target = annotated.get("object", {})
+        if target.get("type") == "commit" and target.get("sha") == commit:
+            return
+    raise ValueError(
+        f"Remote annotated tag {tag} does not resolve to {commit}."
+    )
 
 
 def _missing_assets(
@@ -141,7 +145,7 @@ def publish(
 ) -> None:
     """Upload verified package bytes, finalize the matching draft, and prune."""
     checksums = bundle(directory, tag[1:])
-    _remote_tag_matches(tag, commit)
+    _remote_tag_matches(repository, tag, commit)
     preview = channel(tag) != "Stable"
     release_options = (
         "--repo",
@@ -188,7 +192,7 @@ def publish(
         )
         if _missing_assets(updated, checksums) or not updated["draft"]:
             raise ValueError("The GitHub draft changed during upload.")
-        _remote_tag_matches(tag, commit)
+        _remote_tag_matches(repository, tag, commit)
         _gh("release", "edit", tag, "--draft=false", *release_options)
     elif missing:
         raise ValueError(f"Published release {tag} is missing expected assets.")
@@ -196,14 +200,27 @@ def publish(
     print(f"GitHub release {tag} is published.")
     if preview:
         try:
-            for release_id in expired_releases(_releases(repository), tag):
-                _gh(
-                    "api",
-                    "--method",
-                    "DELETE",
-                    f"repos/{repository}/releases/{release_id}",
+            releases = _releases(repository)
+            by_id = {item["id"]: item for item in releases}
+            for release_id in expired_releases(releases, tag):
+                endpoint = f"repos/{repository}/releases/{release_id}"
+                observed = json.loads(_gh("api", endpoint))
+                expected = by_id[release_id]
+                fields = (
+                    "id",
+                    "tag_name",
+                    "published_at",
+                    "draft",
+                    "prerelease",
                 )
-        except subprocess.SubprocessError as error:
+                if any(
+                    observed.get(field) != expected[field] for field in fields
+                ):
+                    raise ValueError(
+                        f"Preview release {release_id} changed during retention."
+                    )
+                _gh("api", "--method", "DELETE", endpoint)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(
                 f"Warning: preview retention failed. Retry just release-push {tag}: {error}",
                 file=sys.stderr,

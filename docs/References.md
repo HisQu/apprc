@@ -354,7 +354,8 @@ and lifecycle hooks.
 
 Use `--preview/-p` to leave the preview installed or `--smoke/-s` to install,
 verify and uninstall a fresh preview. The preview identity is opt-in.
-See [preview usage](How-To-User-Guides.md#install-a-preview-or-run-a-smoke-test).
+See [preview usage](How-To-User-Guides.md#install-a-preview-or-run-a-smoke-test)
+and [author guidance for running both identities](Development.md#verify-an-opted-in-preview-identity).
 
 ### One-line install script reference
 

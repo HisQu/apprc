@@ -647,6 +647,12 @@ the CLI, configuration, or hooks load. Supply a distinct app ID, command,
 and bootstrap environment prefix. Keep both identities in the committed
 source snapshot. See [the preview declaration](References.md#preview-identity).
 
+The application owns the TCP ports and socket paths it binds at runtime.
+If regular and preview installations can run concurrently, give each identity
+its own defaults for those endpoints and keep them configurable. For a server
+application, launch both commands together and verify that each responds on
+its own endpoint.
+
 Use the existing native fixture to exercise the same setup with and without
 preview flags. Include a regular installation at custom resource paths, then
 assert its authority, runtime, command, and resources survive preview

@@ -74,6 +74,7 @@ class AppCapabilities:
     user_dotenv: bool = False
     workspaces: bool = False
     workspace_registry: bool = False
+    update_alias: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,20 @@ class DistributionSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class GitHubReleaseSource:
+    """Publisher-selected GitHub repository and access mode."""
+
+    repository: str
+    public: bool
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+", self.repository
+        ) is None or self.repository.rsplit("/", 1)[1] in {".", ".."}:
+            raise ValueError("RELEASE_REPO_OLIS must be a GitHub OWNER/REPO.")
+
+
+@dataclass(frozen=True, slots=True)
 class NativeBinding:
     """Immutable portable product declaration, never installation authority."""
 
@@ -158,6 +173,7 @@ class NativeBinding:
     hooks: InstallationHooks = InstallationHooks()
     launch_enabled: bool = False
     config_group_name: str = "config"
+    release_source: GitHubReleaseSource | None = None
 
     def __post_init__(self) -> None:
         """Reject inconsistent product identity and author-specific locations."""
@@ -203,6 +219,10 @@ def decode_native_binding(data: bytes) -> NativeBinding:
     binding = json.loads(data, object_pairs_hook=_pairs)
     if isinstance(binding, dict):
         binding.setdefault("config_group_name", "config")
+        binding.setdefault("release_source", None)
+        capabilities = binding.get("capabilities")
+        if isinstance(capabilities, dict):
+            capabilities.setdefault("update_alias", True)
     return cast(NativeBinding, _decode(binding, NativeBinding, "binding"))
 
 

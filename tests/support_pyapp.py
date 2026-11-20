@@ -616,7 +616,11 @@ def native_product(
         project,
         uv=uv,
         workspace=base / "native-build",
-        environment=environment,
+        environment={
+            **environment,
+            "RELEASE_REPO_OLIS": "fixture/app",
+            "RELEASE_PUBLIC": "false",
+        },
         extras=("native-feature",),
     )
     linux_setup = next(
@@ -682,7 +686,11 @@ def native_product(
         project_snapshot_b,
         uv=uv,
         workspace=base / "native-build-b",
-        environment=environment,
+        environment={
+            **environment,
+            "RELEASE_REPO_OLIS": "fixture/app",
+            "RELEASE_PUBLIC": "false",
+        },
         extras=("native-feature",),
     )
     return project_root, uv, linux_setup, checksum_path, spec, project

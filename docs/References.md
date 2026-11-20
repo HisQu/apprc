@@ -357,6 +357,21 @@ verify and uninstall a fresh preview. The preview identity is opt-in.
 See [preview usage](How-To-User-Guides.md#install-a-preview-or-run-a-smoke-test)
 and [author guidance for running both identities](Development.md#verify-an-opted-in-preview-identity).
 
+### Application update
+
+| Interface | Behavior |
+| --- | --- |
+| `<app> app update` | Update the ready installation selected by the installed command. Applications with a custom maintenance group use that group in place of `app`. |
+| `<app> update` | Root alias enabled by default. Set `AppRC(update_alias=False)` to reserve the root name for the host. |
+| `--yes`, `-y` | Apply an available update without prompting. |
+| `RELEASE_REPO_OLIS`, `--olis-repo`, `RELEASE_PUBLIC` | Authoring inputs that select the optional release source embedded in new native setups. |
+
+Managed updates compare the active package version and source snapshot with
+the verified candidate. The same version and source is current. Changed
+source at the same version requires the publisher to bump the version.
+Older candidates leave the active installation in place. Preview uses the
+same release source and updates the preview identity.
+
 ### One-line install script reference
 
 | Term | Meaning |

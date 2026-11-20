@@ -12,6 +12,7 @@ import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
+from uuid import UUID
 
 import typer
 from apprc.interfaces.cli._typer_utils import click
@@ -57,6 +58,70 @@ class _InstallationCommand(TyperCommand):
     def parse_args(self, ctx: typer.Context, args: list[str]) -> list[str]:
         ctx.meta["apprc.installation.arguments"] = tuple(args)
         return super().parse_args(ctx, args)
+
+
+def update_command(
+    ctx: typer.Context,
+    assume_yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Apply the update without prompting."),
+    ] = False,
+) -> None:
+    """Update the registered release or editable checkout."""
+    from zipfile import ZipFile
+
+    from apprc.distribution.models import read_native_bindings
+    from apprc.distribution.runtime.update import update_application
+
+    context = _inspection(ctx)
+    binding = context.native_binding
+    executable = context._native_manager_executable
+
+    def confirm(message: str) -> None:
+        if assume_yes:
+            typer.echo(message)
+        else:
+            if not sys.stdin.isatty():
+                raise click.ClickException(
+                    f"{message} Rerun with --yes to apply the update."
+                )
+            if not typer.confirm(message, default=False):
+                raise typer.Abort()
+
+    try:
+        regular_app_id = None
+        if binding is not None:
+            from apprc.distribution.runtime._manager import (
+                _owned_manager_invocation,
+            )
+
+            if executable is None or not _owned_manager_invocation(
+                executable, context.manager, binding
+            ):
+                raise click.ClickException(
+                    "Run update through the installed application command."
+                )
+            with ZipFile(executable) as archive:
+                regular, _ = read_native_bindings(archive)
+            regular_app_id = regular.identity.app_id
+        group = (
+            binding.maintenance_group_name
+            if binding is not None
+            else ctx.meta.get("apprc.update.maintenance_group", "app")
+        )
+        result = update_application(
+            context.manager,
+            binding=binding,
+            regular_app_id=regular_app_id,
+            maintenance_group=group,
+            confirm=confirm,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise click.ClickException(
+            _installation_error_message(error)
+        ) from error
+    if result:
+        raise typer.Exit(result)
 
 
 def mount_installation_group(
@@ -152,7 +217,34 @@ def mount_installation_group(
                 hidden=not preview_options,
                 help="Install a fresh preview, verify its runtime, and uninstall it.",
             ),
+            update_generation: str | None = typer.Option(
+                None,
+                "--apprc-update-generation",
+                hidden=True,
+                help="Expected installation generation for an update.",
+            ),
+            update_revision: str | None = typer.Option(
+                None,
+                "--apprc-update-revision",
+                hidden=True,
+                help="Expected installation revision for an update.",
+            ),
         ) -> None:
+            if (update_generation is None) != (update_revision is None) or (
+                update_generation is not None and not editable
+            ):
+                raise typer.BadParameter("Invalid editable update authority.")
+            try:
+                expected_update = (
+                    (UUID(update_generation), update_revision)
+                    if update_generation is not None
+                    and update_revision is not None
+                    else None
+                )
+            except ValueError as error:
+                raise typer.BadParameter(
+                    "Invalid editable update generation."
+                ) from error
             if editable and (preview or smoke):
                 raise typer.BadParameter(
                     "--editable cannot be combined with --preview or --smoke."
@@ -181,6 +273,11 @@ def mount_installation_group(
                             ctx,
                             command_directory=command_directory,
                             assume_yes=assume_yes,
+                            **(
+                                {"expected_update": expected_update}
+                                if expected_update is not None
+                                else {}
+                            ),
                         )
                 except OSError as exc:
                     output.failed(_installation_error_message(exc))
@@ -681,6 +778,7 @@ def _register_editable(
     *,
     command_directory: Path | None,
     assume_yes: bool,
+    expected_update: tuple[UUID, str] | None = None,
 ) -> InstallationInspection:
     """Validate the mounted command's existing editable uv checkout."""
     context = _inspection(ctx)
@@ -707,11 +805,28 @@ def _register_editable(
     placement = _editable_placement(
         context, distribution_spec, project_root, prefix, guidance
     )
-    uv, command_directory = _editable_command_destination(
-        context, project_root, prefix, command_directory, guidance
-    )
     from apprc.distribution.runtime.installation import (
+        recorded_command_directory,
         register_editable_application,
+        require_update_record,
+    )
+
+    if expected_update is not None:
+        previous = require_update_record(context.inspection, expected_update)
+        command_directory = recorded_command_directory(
+            previous, context.manager.directory
+        )
+        if command_directory is None:
+            raise ValueError(
+                "The editable installation has no recorded command location."
+            )
+    uv, command_directory = _editable_command_destination(
+        context,
+        project_root,
+        prefix,
+        command_directory,
+        guidance,
+        **({"recorded": True} if expected_update is not None else {}),
     )
 
     try:
@@ -733,6 +848,11 @@ def _register_editable(
                 uv=uv,
                 command_directory=command_directory,
                 assume_yes=assume_yes,
+                **(
+                    {"expected_update": expected_update}
+                    if expected_update is not None
+                    else {}
+                ),
             )
     except OSError as exc:
         exc.add_note(guidance)
@@ -941,6 +1061,8 @@ def _editable_command_destination(
     prefix: Path,
     command_directory: Path | None,
     guidance: str,
+    *,
+    recorded: bool = False,
 ) -> tuple[Path, Path]:
     """Select uv and an external existing command directory on PATH."""
     uv_name = shutil.which("uv", path=context.environment.get("PATH"))
@@ -960,8 +1082,11 @@ def _editable_command_destination(
     if (
         not command_directory.is_absolute()
         or not command_directory.is_dir()
-        or os.fspath(command_directory)
-        not in context.environment.get("PATH", "").split(os.pathsep)
+        or (
+            not recorded
+            and os.fspath(command_directory)
+            not in context.environment.get("PATH", "").split(os.pathsep)
+        )
     ):
         raise ValueError(
             "The command directory must be an absolute existing directory on PATH. "

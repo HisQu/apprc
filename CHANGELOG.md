@@ -102,6 +102,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - Native setup shows the installed and incoming versions. Equal versions
   show source revisions and, when needed, command fingerprints that identify
   an exact reinstall.
+- Add `app update` for managed releases and editable checkouts. Hosts can
+  disable the default root `update` alias with `AppRC(update_alias=False)`.
 
 ### 🛠️ Changed
 

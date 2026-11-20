@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from collections.abc import Callable
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 from apprc.definition.installation import (
     InstallationError,
     InstallationIdentity,
@@ -72,6 +72,7 @@ def _application(binding: NativeBinding):
         layout=binding.layout,
         bootstrap_env_prefix=binding.bootstrap_env_prefix,
         command_name=binding.command_name,
+        update_alias=binding.capabilities.update_alias,
     )
 
 
@@ -213,11 +214,25 @@ def _install_managed(
     parser.add_argument("--skip-setup", action="store_true")
     parser.add_argument("--start-menu", action="store_true")
     parser.add_argument("--desktop", action="store_true")
+    parser.add_argument("--apprc-update-generation", type=UUID)
+    parser.add_argument("--apprc-update-revision")
     options, extras = parser.parse_known_args(args)
     if extras:
         raise ValueError(
             "Native install received unsupported arguments: " + " ".join(extras)
         )
+
+    generation, revision = (
+        options.apprc_update_generation,
+        options.apprc_update_revision,
+    )
+    if (generation is None) != (revision is None):
+        raise InstallationError("Incomplete installation identity for update.")
+    expected_update = (
+        (generation, revision)
+        if generation is not None and revision is not None
+        else None
+    )
 
     runtime_options, _ = runtime_parser.parse_known_args(sys.argv[1:])
     captured_options = CliRuntimeOptions.from_typer(
@@ -300,7 +315,12 @@ def _install_managed(
     command_directory = options.command_directory
     if smoke_command_directory is not None:
         command_directory = smoke_command_directory
-    elif regular is not None and os.name != "nt" and command_directory is None:
+    elif (
+        expected_update is None
+        and regular is not None
+        and os.name != "nt"
+        and command_directory is None
+    ):
         command_directory = _default_command_directory(uv, environment)
     _, project_bytes = _read_product(include_project=True)
     if project_bytes is None:
@@ -359,6 +379,7 @@ def _install_managed(
                 if other_product is not None
                 else None,
                 reserve_other_native_paths=preview is not None,
+                expected_update=expected_update,
             )
 
     if smoke_command_directory is not None:
@@ -810,6 +831,7 @@ def main() -> int:
         "uninstall",
         "migrate",
         "install",
+        "update",
     }
     group_args = None
     value_options = {
@@ -824,6 +846,9 @@ def main() -> int:
         token = argv[index]
         if token == group:
             group_args = argv[index + 1 :]
+            break
+        if owned and token == "update" and binding.capabilities.update_alias:
+            group_args = argv[index:]
             break
         if token == "--":
             break

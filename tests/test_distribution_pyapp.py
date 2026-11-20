@@ -1444,3 +1444,98 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     assert "overlaps a protected path" in blocked.stderr
     assert legacy_sentinel.read_text() == "regular data"
     assert (preview_dir / "installation.json").exists()
+
+
+def test_update_helper_stages_from_a_native_archive(
+    tmp_path: Path, native_product: NativeProduct
+) -> None:
+    _, _, setup, _, _, _ = native_product
+    stage = tmp_path / "handoff"
+    stage.mkdir()
+    plan = stage / "update.json"
+    plan.write_text('{"processes": []}', encoding="utf-8")
+    code = (
+        "from pathlib import Path; import sys; "
+        "sys.path.insert(0, sys.argv[1]); "
+        "from apprc.distribution.runtime.update import _stage_windows_helper; "
+        "print(_stage_windows_helper(Path(sys.argv[2])))"
+    )
+    script = run(
+        [sys.executable, "-I", "-c", code, str(setup), str(stage)], cwd=tmp_path
+    ).stdout.strip()
+
+    result = subprocess.run(
+        [sys.executable, "-I", script, str(plan)],
+        cwd=tmp_path,
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.stdout == "APPRC-UPDATE-READY\n", result.stderr
+    assert result.returncode == 1
+    assert not stage.exists()
+
+
+def test_installed_update_uses_verified_release_and_preserves_command(
+    tmp_path: Path, native_product: NativeProduct
+) -> None:
+    project, _, original_setup, _, spec, _ = native_product
+    release_assets = project.parent / "fixture-b" / "dist"
+    environment, commands = _host(tmp_path / "host")
+    gh = commands / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\n"
+        "import json, shutil, sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "assert args[0] == 'release' and args[args.index('--repo') + 1] == 'github.com/fixture/app'\n"
+        "if args[1] == 'view':\n"
+        "  print(json.dumps({'tagName': 'v2.0.0', 'isDraft': False, 'isPrerelease': False}))\n"
+        "else:\n"
+        "  assert args[1] == 'download' and args[-1] == 'v2.0.0'\n"
+        "  destination = Path(args[args.index('--dir') + 1])\n"
+        "  for index, arg in enumerate(args):\n"
+        "    if arg == '--pattern':\n"
+        f"      shutil.copyfile(Path({str(release_assets)!r}) / args[index + 1], destination / args[index + 1])\n",
+        encoding="utf-8",
+    )
+    gh.chmod(0o700)
+    run(
+        _install(original_setup, commands),
+        environment=environment,
+        cwd=tmp_path,
+    )
+    command = commands / spec.metadata.identity.commands[0]
+    directory = installation_directory(
+        spec.metadata.identity.app_id, environment=environment
+    )
+    before = _record(directory)
+
+    for separator in ([], ["--"]):
+        refused = run(
+            [str(original_setup), "app", *separator, "update", "--yes"],
+            environment=environment,
+            cwd=tmp_path,
+            check=False,
+        )
+        assert refused.returncode != 0
+        assert "installed application command" in refused.stderr
+        assert _record(directory) == before
+
+    result = run(
+        [str(command), "update", "--yes"], environment=environment, cwd=tmp_path
+    )
+    assert "from 1.0.0 to 2.0.0" in result.stdout
+    after = _record(directory)
+    assert before["placement"] == after["placement"]
+    assert before["active_runtime"]["version"] == "1.0.0"
+    assert after["active_runtime"]["version"] == "2.0.0"
+    assert command.exists()
+
+    again = run(
+        [str(command), "app", "update"], environment=environment, cwd=tmp_path
+    )
+    assert "Already up to date (2.0.0)" in again.stdout
+    assert _record(directory) == after

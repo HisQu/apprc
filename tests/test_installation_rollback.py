@@ -43,7 +43,9 @@ class _NativeCase:
     uv: Path
     archive: Path
 
-    def install(self, *, commit: str = "c" * 40) -> InstallationInspection:
+    def install(
+        self, *, commit: str = "c" * 40, setup_version: str | None = "1.0"
+    ) -> InstallationInspection:
         """Run the real controller with a fresh candidate and isolated effects."""
         return installation.install_application(
             self.manager,
@@ -55,7 +57,7 @@ class _NativeCase:
             ),
             self.placement,
             command_name="fixture",
-            setup_version="1.0",
+            setup_version=setup_version,
             project_archive=self.archive,
             manager_executable=self.setup,
             uv=self.uv,
@@ -200,6 +202,24 @@ def test_managed_setup_compares_installed_and_incoming_builds(
         "Incoming   1.0 (commit dddddddddddd)",
     ]
     assert versions == ["1.0"] * 4
+
+
+def test_managed_setup_reads_snapshot_version_when_caller_omits_version(
+    native_case: _NativeCase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def snapshot_version(
+        archive: Path, runtime: RuntimeSlot, identity: InstallationIdentity
+    ) -> str:
+        assert archive == native_case.archive
+        assert runtime.source.commit == "c" * 40
+        assert identity == native_case.identity
+        return "1.0"
+
+    monkeypatch.setattr(installation, "_snapshot_metadata", snapshot_version)
+    events: list[InstallProgress] = []
+    with installation_progress(events.append):
+        assert native_case.install(setup_version=None).status == "ready"
+    assert events[2].message == "Incoming   1.0"
 
 
 @pytest.mark.parametrize(

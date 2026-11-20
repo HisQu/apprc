@@ -27,6 +27,7 @@ from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
     InstallationInspection,
+    InstallationRecord,
     InstallationWriteAuthority,
     InstallPlan,
     InstallationIdentity,
@@ -1788,6 +1789,44 @@ def _report_windows_command_path(
     report("detail", "Open a new PowerShell window to use the global command.")
 
 
+def require_update_record(
+    inspection: InstallationInspection, expected: tuple[UUID, str]
+) -> InstallationRecord:
+    """Require the same ready installation that was offered to the user."""
+    record = inspection.require_usable()
+    if (
+        record is None
+        or record.status != "ready"
+        or record.operation is not None
+        or (record.generation_id, inspection.revision) != expected
+    ):
+        raise InstallationError(
+            "The installation changed after update was requested. Run update again."
+        )
+    return record
+
+
+def recorded_command_directory(
+    record: InstallationRecord, directory: Path
+) -> Path | None:
+    """Read the single recorded global command location without consulting PATH."""
+    name = _command_filename(record.command_name)
+    stable = directory / name
+    parents = {
+        path.parent
+        for item in record.owned_outputs
+        if item.kind == "command"
+        and os.path.normcase((path := Path(item.path)).name)
+        == os.path.normcase(name)
+        and os.path.normcase(str(path)) != os.path.normcase(str(stable))
+    }
+    if len(parents) > 1:
+        raise InstallationError(
+            "Multiple recorded command locations. Use the publisher's manual update procedure."
+        )
+    return next(iter(parents), None)
+
+
 def _report_setup_change(
     installed: RuntimeSlot | EditableCheckout | None,
     candidate: RuntimeSlot,
@@ -1847,7 +1886,7 @@ def install_application(
     placement: InstallationPlacement,
     *,
     command_name: str,
-    setup_version: str,
+    setup_version: str | None = None,
     project_archive: Path,
     manager_executable: Path,
     uv: Path,
@@ -1856,6 +1895,7 @@ def install_application(
     require_fresh: bool = False,
     other_app_id: str | None = None,
     reserve_other_native_paths: bool = False,
+    expected_update: tuple[UUID, str] | None = None,
 ) -> InstallationInspection:
     if not manager_executable.is_absolute() or not manager_executable.is_file():
         raise InstallationError(
@@ -1873,6 +1913,19 @@ def install_application(
     environment = manager.environment
     with installation_lock(directory):
         prior = manager.inspect()
+        if expected_update is not None:
+            update_record = require_update_record(prior, expected_update)
+            if (
+                not isinstance(update_record.active_runtime, RuntimeSlot)
+                or update_record.identity != identity
+                or update_record.command_name != command_name
+            ):
+                raise InstallationError(
+                    "The requested update is for a different managed installation."
+                )
+            command_directory = recorded_command_directory(
+                update_record, directory
+            )
         setup_source = runtime.source
         if require_fresh:
             if prior.status != "missing" or any(
@@ -1938,7 +1991,17 @@ def install_application(
             )
         global_command: Path | None = None
         update_user_path = False
-        if command_directory is not None:
+        if expected_update is not None:
+            if command_directory is not None:
+                validate_command_directory(
+                    command_directory,
+                    forbidden=forbidden,
+                    path_entries=(command_directory,),
+                )
+                global_command = command_directory / _command_filename(
+                    command_name
+                )
+        elif command_directory is not None:
             global_command = _command_directory(
                 uv, command_directory, environment, forbidden
             ) / _command_filename(command_name)
@@ -2025,7 +2088,7 @@ def install_application(
             )
         version = (
             setup_version
-            if runtime.source == setup_source
+            if setup_version is not None and runtime.source == setup_source
             else _snapshot_metadata(project_archive, runtime, identity)
         )
         prepared_command = _report_setup_change(
@@ -2135,6 +2198,7 @@ def register_editable_application(
     uv: Path,
     command_directory: Path | None = None,
     assume_yes: bool = False,
+    expected_update: tuple[UUID, str] | None = None,
 ) -> InstallationInspection:
     """Register the existing checkout environment without managing its files."""
     if (
@@ -2177,6 +2241,26 @@ def register_editable_application(
     with installation_lock(manager.directory):
         prior = manager.inspect()
         previous = prior.record
+        if expected_update is not None:
+            previous = require_update_record(prior, expected_update)
+            old = previous.active_runtime
+            if (
+                not isinstance(old, EditableCheckout)
+                or previous.identity != identity
+                or previous.command_name != command_name
+                or not old.project.samefile(runtime.project)
+                or not old.environment.samefile(runtime.environment)
+            ):
+                raise InstallationError(
+                    "The requested update is for a different editable installation."
+                )
+            command_directory = recorded_command_directory(
+                previous, manager.directory
+            )
+            if command_directory is None:
+                raise InstallationError(
+                    "The editable installation has no recorded command location."
+                )
         if previous is not None and previous.status != "removed-retained":
             prior_runtime = previous.active_runtime
             same_checkout = isinstance(prior_runtime, EditableCheckout) and (
@@ -2194,9 +2278,22 @@ def register_editable_application(
                 )
             if previous.operation is None:
                 placement = previous.placement
-        selected_directory = _editable_command_directory(
-            manager, runtime, uv, command_directory
-        )
+        if expected_update is not None and command_directory is not None:
+            validate_command_directory(
+                command_directory,
+                forbidden=(
+                    runtime.project,
+                    runtime.environment,
+                    runtime.environment.parent,
+                    manager.directory,
+                ),
+                path_entries=(command_directory,),
+            )
+            selected_directory = command_directory
+        else:
+            selected_directory = _editable_command_directory(
+                manager, runtime, uv, command_directory
+            )
         global_command = selected_directory / _command_filename(command_name)
         prior_outputs = previous.owned_outputs if previous is not None else ()
         pending_publication = _existing_publication(manager)

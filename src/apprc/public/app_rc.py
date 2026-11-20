@@ -101,6 +101,7 @@ class _AppRCDeclaration:
     bootstrap_env_prefix: str | None
     workspaces: Workspaces | None
     setup_next_step: str | None
+    update_alias: bool
 
 
 class AppRC:
@@ -125,6 +126,7 @@ class AppRC:
         bootstrap_env_prefix: str | None = None,
         workspaces: Workspaces | None = None,
         setup_next_step: str | None = None,
+        update_alias: bool = True,
     ) -> None:
         """Build an application declaration with optional writable features.
 
@@ -141,6 +143,7 @@ class AppRC:
         :param workspaces: Optional direct or registered workspace selection.
         :param setup_next_step: Optional command or instruction shown after
             successful explicit CLI setup.
+        :param update_alias: Enable the root update alias with installation management.
         """
         self._declaration = _AppRCDeclaration(
             app_id=app_id,
@@ -153,6 +156,7 @@ class AppRC:
             bootstrap_env_prefix=bootstrap_env_prefix,
             workspaces=workspaces,
             setup_next_step=setup_next_step,
+            update_alias=update_alias,
         )
         self._registered_by_key: dict[str, RegisteredConfig] = {}
         self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
@@ -563,6 +567,7 @@ class AppRC:
             workspaces=declaration.workspaces,
             setup_next_step=declaration.setup_next_step,
             command_name=declaration.command_name,
+            update_alias=declaration.update_alias,
         )
 
     def _register_config(

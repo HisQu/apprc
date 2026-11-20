@@ -1394,11 +1394,24 @@ uninstall removes the owned integrations. See the
 
 ## Update an application
 
-For a release installation, stop the app and run a newer verified setup. The
-[published OLI](#run-a-published-installer) runs setup from the latest release
-and can also update an existing installation. Setup keeps the saved resource
-placement and validates the replacement runtime before switching the command
-to it. Follow any compatibility instructions from the application publisher.
+Stop any running application processes, then run the installed command.
+
+```shell
+demo app update
+```
+
+`demo update` is an alias when the application enables the root alias.
+An available update asks for confirmation. Add `--yes` for an unattended
+run. On Windows the command may hand work to a helper while the original
+launcher closes. Read the helper or setup output for the final result.
+
+A release installation uses the publisher's configured GitHub release
+source. The command verifies the downloaded setup before running it and keeps
+the current resource placement, command location, and regular or preview
+identity. Private releases require GitHub CLI authenticated with access to
+the publisher's repository. For setups without an update source, follow the
+publisher's compatibility instructions and run a newer verified setup or
+the [published OLI](#run-a-published-installer).
 
 Regular and preview setup show the installed and incoming versions before
 preparing the runtime. If the versions match, setup also shows the Git
@@ -1408,11 +1421,14 @@ On Windows these hashes include the version metadata stamped onto the
 published command. **Reinstall** indicates an exact command match and proceeds
 through the normal installation steps.
 
-For an editable installation, update the checkout with Git and synchronize
-its environment with `uv sync --locked`. Run `demo app install -e` again to
-refresh installed command metadata such as the version shown by Windows.
-See [inspection and repair](#inspect-or-repair-installation) if the existing
-runtime has stopped working.
+An editable installation uses its recorded checkout and environment. It
+requires a clean Git checkout on a branch with an upstream and advances the
+branch only by fast-forward. It then runs `uv sync --locked` and refreshes
+registration as needed. Sync uses the project's default dependency selection
+and may remove packages outside that selection. If sync or registration
+fails, the command reports any Git change and prints the command for retrying
+the failed step. Use [inspection and repair](#inspect-or-repair-installation)
+when the saved runtime has stopped working.
 
 ## Keep or switch the saved layout
 

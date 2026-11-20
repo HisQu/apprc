@@ -719,6 +719,28 @@ action, then check help, version where available, and an unrelated subcommand.
 For a Windows installer build, verify double-clicking the installed command
 and any requested shortcut from Windows itself.
 
+### Author a managed update source
+
+Set `RELEASE_REPO_OLIS` or pass `--olis-repo OWNER/REPO` when building the
+publisher's setup. The same configuration enables the installed update
+command. Set `RELEASE_PUBLIC=true` for a public release and use the default
+private mode for releases that require GitHub CLI authentication. Publish the
+platform setup and its matching `SHA256SUMS` in the same release. Bump the
+package version for every published source update. [Update command reference](References.md#application-update)
+
+Set `update_alias=False` on `AppRC` when the host owns a root `update`
+command. Authoring backends that compose their own `DistributionSpec` carry
+that declaration with `inspect_capabilities(app)`.
+
+For Windows acceptance, use a normal Windows terminal and two builds that
+differ in package version. Invoke update through the installed executable.
+Confirm the helper reports the outcome after the old launcher exits, and
+check the updated command and its saved resource paths. Repeat with an
+editable installation and confirm that the saved checkout fast-forwards,
+its environment is synchronized, and registration is refreshed. Use a
+publisher test release or an isolated authenticated-release fixture to
+supply the setup and manifest.
+
 ## Verify an application distribution
 
 With authoring enabled, the application exposes `dist build` and `dist check`

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+import hashlib
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -25,6 +26,10 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime import installation
+from apprc.distribution.runtime._install_progress import (
+    InstallProgress,
+    installation_progress,
+)
 from apprc.services.installation import InstallationManager
 from apprc.user_files.app_home.writes import managed_lock_path
 
@@ -38,18 +43,19 @@ class _NativeCase:
     uv: Path
     archive: Path
 
-    def install(self) -> InstallationInspection:
+    def install(self, *, commit: str = "c" * 40) -> InstallationInspection:
         """Run the real controller with a fresh candidate and isolated effects."""
         return installation.install_application(
             self.manager,
             self.identity,
             RuntimeSlot(
                 uuid4(),
-                ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+                ProjectSnapshot("a" * 64, "b" * 64, commit),
                 RuntimeSelection("3.14"),
             ),
             self.placement,
             command_name="fixture",
+            setup_version="1.0",
             project_archive=self.archive,
             manager_executable=self.setup,
             uv=self.uv,
@@ -141,6 +147,59 @@ def native_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _NativeCase:
         placement,
         *files,
     )
+
+
+def test_managed_setup_compares_installed_and_incoming_builds(
+    native_case: _NativeCase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apprc.distribution.runtime import _windows_version
+
+    case = native_case
+    versions: list[str] = []
+    stamp = b"version resource"
+
+    def versioned(content: bytes, version: str) -> bytes:
+        versions.append(version)
+        return content + stamp
+
+    monkeypatch.setattr(_windows_version, "versioned_executable", versioned)
+
+    def run_setup(*, commit: str = "c" * 40) -> list[str]:
+        events: list[InstallProgress] = []
+        with installation_progress(events.append):
+            assert case.install(commit=commit).status == "ready"
+        assert events[3].message == "Preparing Runtime"
+        return [event.message for event in events[:3]]
+
+    assert run_setup() == [
+        "Install",
+        "Installed  No active installation",
+        "Incoming   1.0",
+    ]
+    published = case.manager.directory / installation._command_filename(
+        "fixture"
+    )
+    installed_digest = hashlib.sha256(published.read_bytes()).hexdigest()[:12]
+    assert run_setup() == [
+        "Reinstall",
+        f"Installed  1.0 (commit cccccccccccc) · Command SHA-256 {installed_digest}",
+        f"Incoming   1.0 (commit cccccccccccc) · Command SHA-256 {installed_digest}",
+    ]
+
+    case.setup.write_bytes(b"new executable")
+    incoming_digest = hashlib.sha256(b"new executable" + stamp).hexdigest()[:12]
+    assert run_setup() == [
+        "Replace",
+        f"Installed  1.0 (commit cccccccccccc) · Command SHA-256 {installed_digest}",
+        f"Incoming   1.0 (commit cccccccccccc) · Command SHA-256 {incoming_digest}",
+    ]
+    assert published.read_bytes() == b"new executable" + stamp
+    assert run_setup(commit="d" * 40) == [
+        "Replace",
+        "Installed  1.0 (commit cccccccccccc)",
+        "Incoming   1.0 (commit dddddddddddd)",
+    ]
+    assert versions == ["1.0"] * 4
 
 
 @pytest.mark.parametrize(
@@ -683,6 +742,7 @@ def test_pending_windows_publication_preserves_path_intent(
             ),
             case.placement,
             command_name="fixture",
+            setup_version="1.0",
             project_archive=case.archive,
             manager_executable=case.setup,
             uv=case.uv,

@@ -54,13 +54,13 @@ class InstallationProgressOutput:
         self._stage = 0
         self.stage = ""
         self._version = ""
-        if mode == "managed":
-            title = "Installing or updating"
-        elif mode == "repair":
-            title = "Repair installation"
-        else:
-            title = f"{mode.title()} installation"
-        self._write(f"{name} · {title}")
+        if mode != "managed":
+            title = (
+                "Repair installation"
+                if mode == "repair"
+                else f"{mode.title()} installation"
+            )
+            self._write(f"{name} · {title}")
 
     def _write(
         self,
@@ -87,6 +87,8 @@ class InstallationProgressOutput:
     def __call__(self, event: InstallProgress) -> None:
         if event.kind == "version":
             self._version = event.message
+        elif event.kind == "summary":
+            self._write(f"{self._name} · {event.message}", style="stage")
         elif event.kind == "stage":
             self._stage += 1
             self.stage = event.message
@@ -103,7 +105,7 @@ class InstallationProgressOutput:
                 path=event.path,
             )
         else:
-            self._write(f"   {event.message}", style="detail")
+            self._write(f"   {event.message}", style="detail", path=event.path)
 
     def complete(self, *, next_step: str | None = None) -> None:
         """Confirm the usable, committed install."""

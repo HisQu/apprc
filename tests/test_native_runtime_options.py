@@ -98,6 +98,7 @@ def test_native_install_reports_rollback_after_live_progress(
     from apprc.distribution.runtime._install_progress import report
 
     def fail(*args, **kwargs):
+        report("stage", "Preparing Runtime")
         assert "1. Preparing Runtime" in capsys.readouterr().out
         report("result", "Installed runtime", "VALIDATED")
         error = OSError("Command is in use")
@@ -133,6 +134,7 @@ def test_managed_install_delegate_honors_click_color(
     binding, manager = _native_install_case(tmp_path)
 
     def install(*args, **kwargs):
+        report("summary", "Reinstall")
         report("result", "Environment", "CREATED", tmp_path / "environment")
         return None, manager.inspect()
 
@@ -150,7 +152,9 @@ def test_managed_install_delegate_honors_click_color(
     )
     result = CliRunner().invoke(app, ["install"], color=color)
     assert result.exit_code == 0, result.output
-    assert f"{binding.display_name} · Installing or updating" in result.output
+    title = f"{binding.display_name} · Reinstall"
+    assert title in result.output
+    assert (f"\x1b[35m{title}" in result.output) is expected
     for code in (32, 35, 36):
         assert (f"\x1b[{code}m" in result.output) is expected
     assert "managed installation complete" in result.output

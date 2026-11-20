@@ -392,7 +392,8 @@ instructions. Start with the route that matches what you have.
 | **Editable Source Checkout (eSC)** | [Prepare and register a checkout](docs/How-To-User-Guides.md#install-from-a-checkout) with `<app> app install -e` in its environment. | Editable installation |
 | **Source Build (SB)** | [Build or reuse a local executable](docs/How-To-User-Guides.md#install-from-a-source-build) with `<app> app install` in a distribution-enabled checkout. | Release installation |
 
-Installation reports the applicable steps, resolved paths, and final result.
+Native setup shows the [installed and incoming versions](docs/How-To-User-Guides.md#update-an-application)
+before reporting installation steps, resolved paths, and the final result.
 An application can show a **Next step** after successful setup. On Windows,
 double-clicked setup displays its result before asking you to press Enter.
 

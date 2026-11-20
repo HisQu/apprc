@@ -1413,6 +1413,14 @@ the publisher's repository. For setups without an update source, follow the
 publisher's compatibility instructions and run a newer verified setup or
 the [published OLI](#run-a-published-installer).
 
+Regular and preview setup show the installed and incoming versions before
+preparing the runtime. If the versions match, setup also shows the Git
+revisions. When both come from the same revision and an owned command exists,
+setup shows the first 12 characters of each command executable's SHA-256.
+On Windows these hashes include the version metadata stamped onto the
+published command. **Reinstall** indicates an exact command match and proceeds
+through the normal installation steps.
+
 An editable installation uses its recorded checkout and environment. It
 requires a clean Git checkout on a branch with an upstream and advances the
 branch only by fast-forward. It then runs `uv sync --locked` and refreshes

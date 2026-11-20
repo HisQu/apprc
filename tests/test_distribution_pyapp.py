@@ -1356,6 +1356,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         str(commands),
     )
     assert preview.returncode == 0, preview.stdout + preview.stderr
+    assert " · Install" in preview.stdout
     preview_command = commands / "fixture-preview"
     assert (
         "Preview entry point ran" in invoke(preview_command, "--version").stdout
@@ -1383,6 +1384,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     assert updated_preview.returncode == 0, (
         updated_preview.stdout + updated_preview.stderr
     )
+    assert " · Reinstall" in updated_preview.stdout
     removed = invoke(preview_command, "app", "uninstall", "--yes")
     assert removed.returncode == 0, removed.stdout + removed.stderr
     assert not preview_authority.exists()

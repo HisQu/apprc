@@ -99,6 +99,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - Opt-in native setup can install a preview beside the regular application.
   Smoke mode verifies a fresh preview and waits for its uninstall. Generated
   OLI scripts forward setup options.
+- Native setup shows the installed and incoming versions. Equal versions
+  show source revisions and, when needed, command fingerprints that identify
+  an exact reinstall.
 
 ### 🛠️ Changed
 

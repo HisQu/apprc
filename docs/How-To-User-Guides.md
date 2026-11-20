@@ -1400,6 +1400,14 @@ and can also update an existing installation. Setup keeps the saved resource
 placement and validates the replacement runtime before switching the command
 to it. Follow any compatibility instructions from the application publisher.
 
+Regular and preview setup show the installed and incoming versions before
+preparing the runtime. If the versions match, setup also shows the Git
+revisions. When both come from the same revision and an owned command exists,
+setup shows the first 12 characters of each command executable's SHA-256.
+On Windows these hashes include the version metadata stamped onto the
+published command. **Reinstall** indicates an exact command match and proceeds
+through the normal installation steps.
+
 For an editable installation, update the checkout with Git and synchronize
 its environment with `uv sync --locked`. Run `demo app install -e` again to
 refresh installed command metadata such as the version shown by Windows.

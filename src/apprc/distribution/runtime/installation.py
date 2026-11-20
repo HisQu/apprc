@@ -167,12 +167,12 @@ def _command_directory(
 def _check_owned_command(
     destination: Path,
     previous: tuple[OwnedOutput, ...],
-) -> None:
+) -> str | None:
     assert_no_links(destination.parent)
     try:
         metadata = destination.lstat()
     except FileNotFoundError:
-        return
+        return None
     if not stat.S_ISREG(metadata.st_mode):
         raise InstallationError(
             f"Refusing to replace unsafe stable command: {destination}."
@@ -182,6 +182,7 @@ def _check_owned_command(
         raise InstallationError(
             f"Refusing to replace unowned stable command: {destination}."
         )
+    return digest
 
 
 def _publish_stable_command(
@@ -1276,6 +1277,7 @@ def _install_managed_candidate(
     archive: Path | None,
     commands: tuple[tuple[Path, str | None], ...],
     user_path_command: Path | None = None,
+    prepared_command: tuple[str, bytes] | None = None,
 ) -> InstallationInspection:
     """Prepare and activate one managed candidate under its lifecycle lock.
 
@@ -1291,6 +1293,7 @@ def _install_managed_candidate(
     :param archive: Setup snapshot, or ``None`` to recover the repair snapshot.
     :param commands: Global command destinations and optional link targets.
     :param user_path_command: Automatic Windows command whose directory may be added to user PATH.
+    :param prepared_command: Version and command bytes prepared for comparison.
     :return: Activated installation, including deferred housekeeping.
     """
     directory = manager.directory
@@ -1346,8 +1349,13 @@ def _install_managed_candidate(
         )
 
         report("stage", "Publishing Command")
-        content = versioned_executable(
-            manager_executable.read_bytes(), observed.version or ""
+        content = (
+            prepared_command[1]
+            if prepared_command is not None
+            and prepared_command[0] == observed.version
+            else versioned_executable(
+                manager_executable.read_bytes(), observed.version or ""
+            )
         )
         publication_specs = (
             (stable, content, None),
@@ -1780,6 +1788,58 @@ def _report_windows_command_path(
     report("detail", "Open a new PowerShell window to use the global command.")
 
 
+def _report_setup_change(
+    installed: RuntimeSlot | EditableCheckout | None,
+    candidate: RuntimeSlot,
+    version: str,
+    manager_executable: Path,
+    installed_digest: str | None,
+    *,
+    resuming: bool,
+) -> tuple[str, bytes] | None:
+    """Describe the selected setup and reuse any command prepared for comparison."""
+    action = "Install" if installed is None else "Replace"
+    incoming = version
+    prepared = None
+    if isinstance(installed, RuntimeSlot):
+        current = installed.version or "Unknown version"
+        if installed.version == version:
+            current += f" (commit {installed.source.commit[:12]})"
+            incoming += f" (commit {candidate.source.commit[:12]})"
+            if (
+                not resuming
+                and installed.source.commit == candidate.source.commit
+                and installed_digest is not None
+            ):
+                from apprc.distribution.runtime._windows_version import (
+                    versioned_executable,
+                )
+
+                content = versioned_executable(
+                    manager_executable.read_bytes(), version
+                )
+                prepared = (version, content)
+                digest = hashlib.sha256(content).hexdigest()
+                current += f" · Command SHA-256 {installed_digest[:12]}"
+                incoming += f" · Command SHA-256 {digest[:12]}"
+                if installed_digest == digest:
+                    action = "Reinstall"
+    elif isinstance(installed, EditableCheckout):
+        current = "Editable checkout"
+    else:
+        current = "No active installation"
+    report("summary", "Resume installation" if resuming else action)
+    report(
+        "detail",
+        f"Installed  {current}",
+        path=installed.project
+        if isinstance(installed, EditableCheckout)
+        else None,
+    )
+    report("detail", f"Incoming   {incoming}")
+    return prepared
+
+
 def install_application(
     manager: InstallationManager,
     identity: InstallationIdentity,
@@ -1787,6 +1847,7 @@ def install_application(
     placement: InstallationPlacement,
     *,
     command_name: str,
+    setup_version: str,
     project_archive: Path,
     manager_executable: Path,
     uv: Path,
@@ -1812,6 +1873,7 @@ def install_application(
     environment = manager.environment
     with installation_lock(directory):
         prior = manager.inspect()
+        setup_source = runtime.source
         if require_fresh:
             if prior.status != "missing" or any(
                 os.path.lexists(path) for _, path in resource_roots(placement)
@@ -1830,8 +1892,9 @@ def install_application(
                 _MAINTENANCE_GROUP.get(),
             )
         previous = prior.record
-        if previous is not None and previous.operation is not None:
-            intended = previous.operation.intended
+        operation = previous.operation if previous is not None else None
+        if previous is not None and operation is not None:
+            intended = operation.intended
             if intended is None or not isinstance(
                 intended.runtime, RuntimeSlot
             ):
@@ -1858,7 +1921,9 @@ def install_application(
         publication_authority = _publication_authorized_outputs(
             pending_publication
         )
-        _check_owned_command(stable, (*prior_outputs, *publication_authority))
+        installed_digest = _check_owned_command(
+            stable, (*prior_outputs, *publication_authority)
+        )
         from apprc.distribution.runtime import _windows_command_path
 
         forbidden = (directory, runtime_prefix(directory, runtime))
@@ -1939,15 +2004,7 @@ def install_application(
                 global_command,
                 previous=(*prior_outputs, *publication_authority),
             )
-        if previous is not None and previous.operation is not None:
-            intended = previous.operation.intended
-            if intended is None or not isinstance(
-                intended.runtime, RuntimeSlot
-            ):
-                raise InstallationError(
-                    "Pending candidate is not a managed runtime."
-                )
-            runtime = intended.runtime
+        if operation is not None:
             pending_archive = (
                 directory / "runtimes" / str(runtime.slot_id) / "project.zip"
             )
@@ -1966,6 +2023,20 @@ def install_application(
             plan = manager.plan_install(
                 identity, runtime, placement, command_name=command_name
             )
+        version = (
+            setup_version
+            if runtime.source == setup_source
+            else _snapshot_metadata(project_archive, runtime, identity)
+        )
+        prepared_command = _report_setup_change(
+            previous.active_runtime if previous is not None else None,
+            runtime,
+            version,
+            manager_executable,
+            installed_digest,
+            resuming=operation is not None,
+        )
+        report("stage", "Preparing Runtime")
         result = _install_managed_candidate(
             manager,
             plan,
@@ -1983,6 +2054,7 @@ def install_application(
             if global_command is not None
             else (),
             user_path_command=global_command if update_user_path else None,
+            prepared_command=prepared_command,
         )
         if (
             _windows_command_path.enabled()

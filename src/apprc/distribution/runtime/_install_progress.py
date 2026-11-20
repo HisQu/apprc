@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-_Kind = Literal["stage", "result", "detail", "warning", "version"]
+_Kind = Literal["summary", "stage", "result", "detail", "warning", "version"]
 
 
 @dataclass(frozen=True, slots=True)

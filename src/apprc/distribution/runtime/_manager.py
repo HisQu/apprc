@@ -114,7 +114,6 @@ def _install(
     """Render native setup progress and report its terminal outcome."""
     _setup_launch()["install"] = True
     from apprc.distribution.runtime._install_progress import (
-        InstallProgress,
         installation_progress,
     )
     from apprc.interfaces.cli._installation_output import (
@@ -125,7 +124,6 @@ def _install(
     )
 
     output = InstallationProgressOutput(None, binding.display_name, "managed")
-    output(InstallProgress("stage", "Preparing Runtime"))
     try:
         with installation_progress(output):
             if smoke:
@@ -350,6 +348,7 @@ def _install_managed(
                 runtime,
                 placement,
                 command_name=binding.command_name,
+                setup_version=binding.version,
                 project_archive=project_archive,
                 manager_executable=executable,
                 uv=uv,

@@ -1,16 +1,19 @@
 <!-- README EDITING CONTRACT
-Adapt this README in place. Preserve its structure, HTML layout, heading levels,
-spacing, and useful content. Replace placeholders and update facts within this
-design. Before editing, read "README maintenance" in docs/Development.md.
+Adapt this README in place. Preserve its Buildben presentation, centered header,
+badges, graphical abstract, heading hierarchy, spacing, and useful content.
+Before editing, read "README maintenance" in docs/Development.md.
 -->
 
 
 <!-- ====================================================================== -->
-<!-- --- URLs  -->
-[`typed-settings`]: https://pypi.org/project/typed-settings/
+<!-- --- URLs -->
+[`typed-settings`]: https://typed-settings.readthedocs.io/en/stable/
 [`python-dotenv`]: https://pypi.org/project/python-dotenv/
 [`platformdirs`]: https://pypi.org/project/platformdirs/
 [`filelock`]: https://pypi.org/project/filelock/
+[Pydantic Settings]: https://docs.pydantic.dev/latest/concepts/pydantic_settings/
+[uv]: https://docs.astral.sh/uv/
+[PyApp]: https://ofek.dev/pyapp/latest/
 
 
 <!-- ====================================================================== -->
@@ -18,7 +21,7 @@ design. Before editing, read "README maintenance" in docs/Development.md.
 <div align="center">
 
 
-<!-- --- Title  -->
+<!-- --- Title -->
 <a id="project-overview"></a>
 <a id="apprc-application-runtime-config"></a>
 
@@ -32,17 +35,15 @@ design. Before editing, read "README maintenance" in docs/Development.md.
 [![Python](https://img.shields.io/pypi/pyversions/apprc)](https://pypi.org/project/apprc/)
 [![PyPI](https://img.shields.io/pypi/v/apprc)](https://pypi.org/project/apprc/)
 
-
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Pyright](https://img.shields.io/badge/type%20checked-pyright-blue)](https://microsoft.github.io/pyright/)
 [![pytest](https://img.shields.io/badge/tested%20with-pytest-0A9EDC)](https://docs.pytest.org/)
 
-
 </div>
 
 
-<!-- --- Abstract  -->
+<!-- --- Abstract -->
 
 AppRC provides configuration, installation, and lifecycle management for Python
 applications. Declare typed settings, opt into independent resources such as
@@ -50,14 +51,8 @@ config or cache, and add the interfaces your users need. When you ship a native
 installer, AppRC can also register the command, keep the app's resource locations
 across updates, and provide repair and uninstall.
 
-#### Main dependencies:
-- **[`typed-settings`]**: Convert and validate typed application settings.
-- **[`python-dotenv`]**: Read setting values from dotenv files.
-- **[`platformdirs`]**: Resolve native per-user application paths.
-- **[`filelock`]**: Serialize persistent configuration and resource operations.
 
-
-<!-- --- Graphical Abstract  -->
+<!-- --- Graphical Abstract -->
 
 <br>
 
@@ -75,32 +70,60 @@ across updates, and provide repair and uninstall.
 
 | Use the SDK | Ship an application | Use an installed application |
 | --- | --- | --- |
-| [Install the Python SDK](#installation) and [resolve typed settings](#load-settings). | [Build a release package](#ship-an-application) and [verify installation](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#validate-installation-on-your-machine). | [Install or register the app](#use-an-installed-application), then [run it](#run-the-application) or [manage it](#maintain-the-application). |
+| [Choose your components](#install-the-apprc-sdk), [load settings](#load-settings), and [connect your existing tools](#works-with-your-existing-application). | [Prepare a release](#ship-an-application), [build its installers](#build-a-release-package), and [check its lifecycle](#verify-installation-update-and-removal). | [Install the application](#choose-an-installation-route), [launch it](#run-the-application), and [manage updates and removal](#maintain-the-application). |
 
 <br>
 
 <!-- ====================================================================== -->
 ### Table of Contents
 
-1. [AppRC](#project-overview)
-2. [Installation](#installation)
+1. [`AppRC`](#apprc)
+2. [Why AppRC?](#why-apprc)
+3. [Installation](#installation)
    1. [Install the AppRC SDK](#install-the-apprc-sdk)
    2. [Install from a Cloned Repository](#install-from-a-cloned-repository)
    3. [Uninstall](#uninstall)
-3. [Usage](#usage)
+4. [Usage](#usage)
    1. [Load settings](#load-settings)
    2. [Choose application paths](#choose-application-paths)
    3. [Save user settings](#save-user-settings)
    4. [Add terminal commands](#add-terminal-commands)
    5. [Add a Gradio settings page](#add-a-gradio-settings-page)
-4. [Ship an application](#ship-an-application)
-5. [Use an installed application](#use-an-installed-application)
+   6. [Works with your existing application](#works-with-your-existing-application)
+5. [Ship an application](#ship-an-application)
+   1. [Build a release package](#build-a-release-package)
+   2. [Verify installation, update, and removal](#verify-installation-update-and-removal)
+   3. [Publish one-line install scripts](#publish-one-line-install-scripts)
+6. [Use an installed application](#use-an-installed-application)
    1. [Choose an installation route](#choose-an-installation-route)
    2. [Run the application](#run-the-application)
    3. [Maintain the application](#maintain-the-application)
-6. [Documentation](#documentation)
+   4. [Try a preview beside the regular application](#try-a-preview-beside-the-regular-application)
+   5. [Review removal and keep configuration](#review-removal-and-keep-configuration)
+7. [Documentation](#documentation)
 
 ---
+
+
+<!-- ====================================================================== -->
+<br>
+
+# Why AppRC?
+
+[Pydantic Settings], [`typed-settings`], [uv], and [PyApp] provide useful
+foundations for configuration, dependency management, and executable delivery.
+AppRC links those tools through one application declaration that supplies
+settings, resource locations, and installation identity.
+
+| Define once | Reuse across the application |
+| --- | --- |
+| [Settings and field metadata](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-sections-and-fields) | Typed application values, validation, help, settings editors, and source diagnostics. |
+| [Application resources](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#application-paths) | Known configuration, appdata, cache, and state locations with explicit ownership. |
+| [Installation identity and placement](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#installation) | Installed commands, runtime replacement, inspection, and removal. |
+
+Your application keeps its business logic, data models, and interface. AppRC
+provides the configuration and lifecycle operations around them, with explicit
+[hooks for application-specific behavior](https://github.com/HisQu/apprc/blob/main/docs/References.md#application-hooks-and-command-dispatch).
 
 <!-- ====================================================================== -->
 <br>
@@ -113,34 +136,31 @@ across updates, and provide repair and uninstall.
 
 ## Install the AppRC SDK
 
-These SDK packages require Python 3.12 or newer. The commands below install
-the published SDK from PyPI. The distribution and lifecycle guides describe AppRC
-on `main`. The features available in a downloaded installer depend on the
-application release that built it.
+**Choose what your application needs.** These commands are for application
+developers. If you received an application, follow its
+[installation instructions](#use-an-installed-application).
 
-| Command | Includes |
-| --- | --- |
-| `python -m pip install apprc` | Core configuration, Typer commands, prompts, and Textual editor. |
-| `python -m pip install apprc-core` | Configuration and noninteractive path/maintenance APIs. |
-| `python -m pip install apprc-gui` | Configuration and Gradio settings editor. |
+The SDK requires Python 3.12 or newer.
 
-`apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
-`from apprc_gui import ConfigEditor`. Terminal and GUI distributions install the
-matching `apprc-core` release.
+| You need | Install | Includes |
+| --- | --- | --- |
+| Configuration and management APIs | `python -m pip install apprc-core` | Typed settings and noninteractive path and maintenance APIs. |
+| Terminal commands and settings editing | `python -m pip install apprc` | The core, Typer integration, prompts, and the Textual editor. |
+| An embedded browser settings editor | `python -m pip install apprc-gui` | The core and the Gradio editor. |
 
-**Caution**
+Choose paths, saved preferences, workspaces, and managed distribution separately.
+A settings-only application needs no managed files; a cache-only application
+needs no configuration directory. The [capability model](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#optional-capabilities)
+and [example selector](https://github.com/HisQu/apprc/blob/main/docs/EXAMPLES.md#choose-a-setup) show the combinations.
 
-Version 0.32 makes a breaking API and on-disk configuration cutover. Existing
-`Storage`, `storage`, `apprc_dir`, and `--storage` integrations must be changed
-to the new contracts described in the
-[upgrade guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#migrate-existing-applications).
-AppRC does not move, rename, scan, delete, or automatically upgrade old user
-files. Keep any old files as-is and deliberately configure the new paths.
+Both `apprc-core` and `apprc` use `import apprc`. The GUI provides
+`from apprc_gui import ConfigEditor`. Terminal and GUI distributions depend on
+the matching core release and can be used together.
 
-CI runs on Ubuntu: core checks cover Python 3.12, 3.13, and 3.14, and GUI/browser
-checks cover Python 3.12. Windows and macOS runtime and installer code remain,
-but those platforms are unverified by this CI policy and have
-[known native test failures](https://github.com/HisQu/apprc/blob/main/BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails).
+These commands install published SDK releases. This README and the linked
+source guides describe `main`; an application's installer includes the
+features supplied by the release that built it. See
+[release and upgrade guidance](#release-context-and-upgrades).
 
 <br>
 
@@ -154,17 +174,17 @@ Ordinary pip installations do not require uv.
 
 ## Uninstall
 
-Use the same Python environment as for installation. To remove all three
-AppRC distributions:
+To remove the SDK packages from the Python environment where you installed them:
 
 ```shell
 python -m pip uninstall apprc apprc-gui apprc-core
 ```
 
-Remove only the distributions you no longer need. Keep `apprc-core` if another
-installed application or library depends on it. Package removal does not purge
-application configuration, data, cache, state, or workspaces; application-owned
-resource maintenance is a separate, explicit operation.
+Remove only the distributions you no longer need. Keep `apprc-core` when another
+installed application depends on it. SDK package removal leaves application
+resources in place; an application's
+[uninstall workflow](#review-removal-and-keep-configuration) handles its program
+and managed resources.
 
 
 <!-- ====================================================================== -->
@@ -176,145 +196,171 @@ resource maintenance is a separate, explicit operation.
 
 ## Load settings
 
-Create one [`AppRC`](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#apprc), register
-[config sections](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-sections-and-fields), then build
-typed settings from a `ResolvedConfig`:
+**Give a setting one definition that application code and configuration tools
+can share.**
+
+Create an [`AppRC`](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#apprc), register a
+[config section](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-sections-and-fields), and resolve
+typed values. This complete example prints `10`:
 
 ```python
 import apprc as rc
 
-MyRC = rc.AppRC(app_id="demo")
+MyRC = rc.AppRC(app_id="yourapp")
 
-@MyRC.config("client", prefix="DEMO_")
+@MyRC.config("client", prefix="YOURAPP_")
 class ClientSettings(rc.Config):
-    timeout: int = rc.field("DEMO_TIMEOUT", default=30)
+    timeout: int = rc.field(
+        "YOURAPP_TIMEOUT",
+        default=30,
+        description="Seconds to wait for a response.",
+    )
 
-resolved = MyRC.resolve(environment={"DEMO_TIMEOUT": "10"})
+resolved = MyRC.resolve(environment={"YOURAPP_TIMEOUT": "10"})
 settings = resolved.build(ClientSettings)
-assert settings.timeout == 10
+print(settings.timeout)
 ```
 
-`resolve()` reads configuration and captures a snapshot; `build()` converts
-values and validates required fields. Add [dotenv files](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#load-dotenv-files)
-or [packaged defaults](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#ship-defaults-with-the-application)
-when required. [Provenance](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#provenance) records which source
-supplied each value. Resolution does not write files or alter `os.environ`.
+`resolve()` captures the configuration sources; `build()` converts values and
+validates required fields. Resolution leaves files and `os.environ` unchanged.
+[Provenance](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#provenance) records where a value came from,
+so a surprising setting has an explanation.
+
+Add [dotenv files](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#load-dotenv-files) or
+[packaged defaults](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#ship-defaults-with-the-application)
+as needed. Related sections can share a
+[config bundle](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#pass-several-settings-sections-together),
+and [temporary overrides](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#reload-settings-or-use-temporary-overrides)
+let one operation use different values without rewriting saved preferences.
 
 <br>
 
 ## Choose application paths
 
-Declare only the managed components the application uses:
+**Know where the application's files belong.** Enable `config`, `appdata`,
+`cache`, and `state` independently. This complete example declares only a cache:
 
 ```python
 import apprc as rc
 
 MyRC = rc.AppRC(
-    app_id="demo",
+    app_id="yourapp",
     paths=rc.Paths(cache=True),
     layout=rc.Layout.native(),
 )
 
-paths = MyRC.paths()                   # inspect; no filesystem writes
-cache_dir = MyRC.ensure_path("cache")  # create privately and record ownership
+paths = MyRC.paths()                   # inspect without creating directories
+cache_dir = MyRC.ensure_path("cache")  # initialize and record ownership
 ```
 
-`Paths` independently enables `config`, `appdata`, `cache`, and `state`.
-`Layout.native()` uses platform user locations; `Layout.single_root(root)` places
-enabled categories beneath one explicit root. `AppPaths` reports disabled
-locations as `None`; `ensure_path(kind)` initializes only the requested
-component. See [path declarations](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#application-paths) and
-the [path reference](https://github.com/HisQu/apprc/blob/main/docs/References.md#application-paths).
-
-Managed installers preserve the selected layout in a durable
-[installation record](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#installation). Reinstallation reuses
-that choice; an invocation override does not rewrite it. Single-root groups the
-enabled application resource directories, not the Python environment or fixed
-native installation support. Plain `pip install -e .` remains independent of
-this optional installation workflow.
-
-**Enable the resources your app needs**
-
-A cache-only declaration gives your code a cache directory on demand. Add a
-config directory and user dotenv if people need to save preferences. The
-[capability map](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#optional-capabilities) shows how workspaces
-and other resources fit.
-
-
-Applications that need selectable named working directories declare
-`Workspaces()`. A [`WorkspaceManager`](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#workspaces) manages
-the registry and archive operations separately from `AppPaths`; selecting a
-workspace does not relocate configuration, cache, or state. `registry=False`
-permits direct-directory selection without enabling config. Call
-`WorkspaceManager.initialize_workspace(root)` or use `workspace init PATH` to
-prepare the workspace dotenv; this writes no config or registry file.
+[`Layout.native()`](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#choose-and-initialize-application-paths)
+uses platform user locations; `Layout.single_root(root)` groups enabled
+resource directories. Managed [installation](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#installation)
+retains the selected placement. Runtime and installation-support locations
+remain separate. Optional [workspaces](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#workspaces) select
+working directories and configuration overrides without relocating application
+resources.
 
 <br>
 
 ## Save user settings
 
-`user_dotenv=rc.UserDotenv()` opts into `apprc.user.env` inside the enabled config
-directory. `UserDotenv` requires `paths=rc.Paths(config=True)`; it never enables
-config implicitly. Obtain a [`ConfigManager`](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#configmanager)
-with `MyRC.manage()` for settings inspection, setup, and reviewed edits. The
-[saved-preference guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#save-a-user-preference)
-contains a complete example. Saved secrets use private companion files; the
-[secret explanation](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#secret-companions) describes their limits.
+**Let users keep their choices between runs.** Declare
+`paths=rc.Paths(config=True)` and `user_dotenv=rc.UserDotenv()` to save user
+overrides in `apprc.user.env`. Obtain a
+[`ConfigManager`](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#configmanager) with `MyRC.manage()` for
+inspection, setup, and reviewed edits.
+
+AppRC preserves unrelated dotenv entries and comments when editing settings.
+Its editors use the declared types, choices, help, and editability metadata.
+Fields marked `restart_required=True` tell users when a saved change needs a
+restart. Declared secrets are masked in AppRC displays and saved in private
+[secret companion files](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#secret-companions).
+
+Follow the [saved-preference guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#save-a-user-preference)
+for a complete example, or use [workspace settings](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#select-a-workspace)
+when different projects need different overrides.
 
 <br>
 
 ## Add terminal commands
 
-Use `rc.cli.mount_app_cli(app, MyRC)` to add configuration and application
-maintenance alongside the host's commands. `config` and `workspace` appear when
-their capabilities exist; `app paths` and `app doctor` are always available.
-`config setup [--adopt] [--yes/-y]` initializes only enabled user configuration.
-Installation offers configuration only for missing required user settings without
-fallbacks, and skips the offer for non-interactive input.
-Setup completion points to `app paths --json` and `app doctor --json`; AppRC
-provides descriptions for its generated options in each command's `--help`.
-The maintenance group defaults to `app` and can be renamed with
-`maintenance_group_name`. The returned mapping identifies actual mounted paths,
-such as `app.cache`, for application extensions. See the
-[Typer guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
-and [command reference](https://github.com/HisQu/apprc/blob/main/docs/References.md#terminal-commands).
+Mount configuration and maintenance commands alongside the application's Typer
+commands. This integration excerpt assumes your application exposes `MyRC`:
 
-Resource commands are nested under `app`: `app data backup/restore`,
-`app cache prune/clear`, and `app state prune/reset` appear only for supported
-operations. Declaring a path alone does not enable these commands or create its
-directory. `app repair`, `app uninstall`, and `app migrate` require
-`installation_management=True`, which also enables editable `app install -e`.
-Managed installation uses the native setup executable or an explicit
-`installer_entrypoint` callable. There are no resource `init` or `purge` CLI
-aliases. Python `ensure_path` and maintenance purge planning remain available
-with their existing [ownership and safety boundaries](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#maintenance).
+```python
+import apprc as rc
+import typer
+from my_app.config import MyRC
 
-The [removal guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#remove-a-managed-program)
-covers the uninstall preview, confirmation, and what each option retains.
+app = typer.Typer(cls=rc.cli.AppRCRootGroup)
+rc.cli.mount_app_cli(app, MyRC)
+```
 
-Passing `launcher_spec` and `launcher_handlers` adds optional root `launch`,
-which opens the existing Textual management launcher. It is separate from a
-foreground application command and from saved distribution launch support.
-Hosts can opt into separated root help panels with
-`typer.Typer(cls=rc.cli.AppRCRootGroup)`: host commands and options appear first
-in cyan, AppRC panels follow in magenta, and common help/completion options
-appear last in a dim panel. Descriptions stay neutral; nested help stays standard.
-See [root help and color controls](https://github.com/HisQu/apprc/blob/main/docs/References.md#root-help-and-runtime-options).
+The [complete Typer example](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
+shows settings edits and inspection. `app paths` and `app doctor` are available;
+other commands follow declared capabilities. Opting into installation management
+adds editable registration and maintenance; managed installation uses native
+setup or an explicit installer delegate. Resource operations require
+[application maintenance handlers](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#supply-application-maintenance-operations).
 
-The [Textual editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-editor) and
-[Gradio editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#gradio-editor) edit config settings; when a
-workspace registry exists, callers supply the separate `WorkspaceManager`.
-Editors do not initialize application state merely by opening.
+The [command reference](https://github.com/HisQu/apprc/blob/main/docs/References.md#terminal-commands) covers help,
+grouping, and runtime options. An optional
+[Textual launcher](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#launch-the-optional-textual-application-screen)
+provides a management screen.
 
 <br>
 
 ## Add a Gradio settings page
 
-Embed `apprc_gui.ConfigEditor(manager)` in an application-owned Gradio `Blocks`.
-If the application declares registry-backed workspaces, provide
-`workspaces=MyRC.workspaces()` as well. The
-[Gradio guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-a-gradio-settings-page) shows the
-integration.
+**Reuse the same settings declaration in the application's browser interface.**
+Embed the editor in your existing Gradio `Blocks`. This excerpt uses a
+configuration-enabled `MyRC` from your application:
+
+```python
+import gradio as gr
+from apprc_gui import ConfigEditor
+from my_app.config import MyRC
+
+with gr.Blocks() as page:
+    with gr.Tab("Settings"):
+        ConfigEditor(MyRC.manage()).render()
+```
+
+The application owns the page, server, and launch behavior. For registry-backed
+workspaces, pass `workspace_manager=MyRC.workspaces()` to `ConfigEditor`.
+The [Gradio guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-a-gradio-settings-page)
+covers the complete integration and initialization behavior.
+
+<br>
+
+## Works with your existing application
+
+| Existing tool or component | How AppRC fits |
+| --- | --- |
+| **Pydantic models** | Pass resolved settings into existing application or API models through explicit construction or attribute-based validation. |
+| **Typer** | [Mount AppRC commands](#add-terminal-commands) alongside application commands. |
+| **Textual and Gradio** | Use the [terminal editor](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#inspect-and-edit-settings-in-the-terminal) or [embed Gradio controls](#add-a-gradio-settings-page) driven by the same fields. |
+| **Dependencies using AppRC** | [Map dependency settings](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#import-settings-from-a-dependency) into fields owned by the parent application. |
+| **Other runtimes and environment-based libraries** | Share dotenv configuration or [explicitly export file-contributed values](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#supply-settings-to-environment-only-code) into the process environment for those components. |
+
+For a project that already uses Pydantic, the following continues the
+[settings example](#load-settings). Matching attributes become validated model
+values through [Pydantic's public API](https://docs.pydantic.dev/latest/concepts/models/#arbitrary-class-instances):
+
+```python
+from pydantic import BaseModel
+
+class ClientOptions(BaseModel):
+    timeout: int
+
+options = ClientOptions.model_validate(settings, from_attributes=True)
+assert options.timeout == 10
+```
+
+This is an explicit value handoff. AppRC's registered settings classes remain
+`rc.Config` or `rc.ConfigBase`; the existing Pydantic model keeps its own schema.
+
 
 <!-- ====================================================================== -->
 <br>
@@ -323,34 +369,89 @@ integration.
 
 <br>
 
-Use the optional [distribution authoring APIs](https://github.com/HisQu/apprc/blob/main/docs/References.md#distribution-generation)
-to build a release package from a committed, locked project snapshot. The
-application supplies a build backend. Final executables and `SHA256SUMS` go
-in ignored `dist/`. Build intermediates stay in `.cache/apprc/`.
+## Build a release package
 
-In an opted-in source checkout, the host command provides `dist build` and
-`dist check`. Installation management also enables `dist test`. Use `-t` with
-build or check for the current platform, and `dist test --managed` for guided
-testing of a release installation.
-With `AppRCRootGroup`, these commands live under **AppRC: Commands**.
-
-Configure [One-line installer (OLI) generation](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#generate-one-line-install-scripts)
-with `dist build --olis-repo OWNER/REPO` or `RELEASE_REPO_OLIS`. Publish the
-installer executables and checksums as application release assets and host the
-OLI scripts at a trusted URL. An OLI selects an executable from the
-application's latest published GitHub release.
-
-**From a commit to an installed command**
-
-Build from committed source, publish a checksummed setup, and let setup
-prepare the application runtime on the recipient's machine. Follow the
-[release package guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#prepare-a-release-package)
-for build and verification steps.
+The distribution workflow packages a committed project snapshot and `uv.lock`
+into a native setup executable. After verifying that executable, the recipient
+runs it to prepare the locked runtime and publish the application command.
 
 
-See the [authoring requirements](https://github.com/HisQu/apprc/blob/main/docs/Development.md#native-application-frontends)
-for toolchain prerequisites, application icons, installation messages, and
-[configuring the app's default action](https://github.com/HisQu/apprc/blob/main/docs/Development.md#choose-a-default-action-for-an-installed-command).
+To add distribution to an existing application:
+
+1. Declare the runtime and command metadata in `pyproject.toml` using the
+   [native application declarations](https://github.com/HisQu/apprc/blob/main/docs/Development.md#native-application-frontends).
+2. Compose the public [snapshot and native distribution builders](https://github.com/HisQu/apprc/blob/main/docs/References.md#distribution-generation)
+   in your application's authored build module, and register its authoring backend.
+3. Prepare the [native setup toolchain](https://github.com/HisQu/apprc/blob/main/docs/Development.md#native-setup-toolchain)
+   and commit the source and lockfile you want to distribute.
+4. Build and check the setup for the chosen targets.
+
+For a configured application whose command is `yourapp`, run these from its checkout:
+
+```shell
+uv run --locked yourapp dist build -t
+uv run --locked yourapp dist check -t
+```
+
+`-t` selects the current platform. Final setup executables and `SHA256SUMS`
+appear in ignored `dist/`; build intermediates stay in `.cache/apprc/`.
+Follow the [release package guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#prepare-a-release-package)
+for target requirements and artifact verification. Compiler failures include
+Cargo diagnostics in the reported error.
+
+For applications with a static web frontend, prepare the assets during authoring
+and include them in the project snapshot. Recipients then use those built
+assets without installing the frontend build tools. Dependency acquisition
+follows uv and may require network access or private repository credentials.
+
+<br>
+
+## Verify installation, update, and removal
+
+**Check the experience your users will actually receive.** In a checkout with
+distribution authoring and installation management enabled, `dist test` guides
+you through the selected lifecycle:
+
+| Command | What it exercises |
+| --- | --- |
+| `yourapp dist test` | Register an editable installation, check it, and uninstall it. |
+| `yourapp dist test --managed` | Install a built release, check it, and uninstall it. |
+| `yourapp dist test --update-from OLD_SETUP` | Install the supplied older setup, update to the current checked setup, verify, and uninstall. |
+
+Run these through `uv run --locked` in the application checkout. The workflow
+performs real installation and removal and writes its report under
+`.cache/apprc/dist-test/`. Automated checks and manual observations are recorded
+separately. The [validation guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#validate-installation-on-your-machine)
+explains the prompts, update checks, and reports.
+
+<br>
+
+## Publish one-line install scripts
+
+Publish the setup executables and `SHA256SUMS` as application release assets.
+You can also generate **One-line install scripts (OLIS)** for Bash and PowerShell
+and host them at a trusted URL. For a public GitHub release:
+
+**Bash**
+
+```bash
+RELEASE_PUBLIC=true uv run --locked yourapp dist build --olis-repo OWNER/REPO
+```
+
+**PowerShell**
+
+```powershell
+$env:RELEASE_PUBLIC = "true"
+uv run --locked yourapp dist build --olis-repo OWNER/REPO
+```
+
+Private releases use `RELEASE_PUBLIC=false` and require authenticated GitHub
+access. Supply the application's release repository with `--olis-repo` or
+`RELEASE_REPO_OLIS`. The published script selects, downloads, verifies, and
+launches setup from the latest published release. For an analysis tied to a
+specific release, share that release's identified setup. See the
+[script generation guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#generate-one-line-install-scripts).
+
 
 <!-- ====================================================================== -->
 <br>
@@ -361,49 +462,122 @@ for toolchain prerequisites, application icons, installation messages, and
 
 ## Choose an installation route
 
-The application supplies the release assets, command name, and installation
-instructions. Start with the route that matches what you have.
+The application publisher supplies the download, command name, and setup
+instructions. Choose the route matching what you received:
 
-| Route | Where to start | Result |
+| What you have | Route | Result |
 | --- | --- | --- |
-| **One-line installer (OLI)** | [Run the app's published command](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#run-a-published-installer). It downloads, verifies, and launches the released executable. | Release installation |
-| **Released Binary Executable (RBE)** | [Verify and run the binary](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#run-a-published-installer) from the application's release. | Release installation |
-| **Editable Source Checkout (eSC)** | [Prepare and register a checkout](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#install-from-a-checkout) with `<app> app install -e` in its environment. | Editable installation |
-| **Source Build (SB)** | [Build or reuse a local executable](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#install-from-a-source-build) with `<app> app install` in a distribution-enabled checkout. | Release installation |
+| A published install command | [One-line installer (OLI)](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#run-a-published-installer) | Download, verify, and run the released setup. |
+| A downloaded setup executable | [Released Binary Executable (RBE)](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#run-a-published-installer) | Install the release directly. |
+| A development checkout to keep editing | [Editable Source Checkout (eSC)](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#install-from-a-checkout) | Register the checkout's command and reuse its existing environment. |
+| A checkout from which to install a release | [Source Build (SB)](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#install-from-a-source-build) | Build or reuse the setup, then install a release. |
 
-Installation reports the applicable steps, resolved paths, and final result.
-An application can show a **Next step** after successful setup. On Windows,
-double-clicked setup displays its result before asking you to press Enter.
+Native setup shows the [installed and incoming versions](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#update-an-application)
+before reporting its resolved paths, result, and application-supplied next step.
+On Windows, a double-clicked setup keeps its result visible until you press Enter.
 
 <br>
 
 ## Run the application
 
-Use the published command in a terminal or open an installed shortcut.
-Setup can create a desktop shortcut, and editable registration also accepts
-`<app> app install -e --desktop`. If setup changed user PATH, open a new
-terminal before using the command. A bare command runs the action chosen by
-the application. For example, it may start a local server and open its
-browser UI. See the [launch guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#run-the-installed-application)
-for command publication and shortcuts.
+Use the installed command or an installed shortcut. The application chooses
+what a bare command does, such as opening a browser interface or starting a
+local server.
+
+Setup can create a desktop shortcut; editable registration also accepts
+`yourapp app install -e --desktop`. If setup changed user PATH, open a new terminal
+before using the command. The [launch guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#run-the-installed-application)
+covers command publication, shortcuts, and Windows application registration.
 
 <br>
 
 ## Maintain the application
 
-[Run a newer installer](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#update-an-application) to update
-a release installation. Update a registered checkout using Git and uv.
-Use the [inspection and repair guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#inspect-or-repair-installation)
-to diagnose the saved installation. Review the
-[uninstall preview](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#remove-a-managed-program)
-before removing the program and its managed resources.
+### Update the application
 
-**Update through the same command**
+From an installation that supports updates, stop the application and run:
 
-Setup prepares and validates a replacement while the current runtime is still
-selected. On success, the installed command switches to the new runtime and
-keeps the saved resource locations. See the
-[lifecycle diagram and recovery details](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#activation-repair-and-rollback).
+```shell
+yourapp app update
+```
+
+The shorter `yourapp update` alias is enabled by default. A host with its own
+root `update` command can set `AppRC(update_alias=False)` and keep the nested
+`yourapp app update` command.
+
+Managed updates use the publisher's configured release source. You can also
+run a newer verified setup. The [update guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#update-an-application)
+explains release selection, version checks, and the Git/uv workflow for
+editable checkouts. Update support depends on the version the application ships.
+
+### Keep the installation's saved placement
+
+Managed setup prepares and validates a replacement runtime before activating it.
+Successful activation keeps the saved resource locations. A failed candidate
+is not activated; AppRC restores its changes or reports the recovery state.
+Application-specific data migrations and external service effects remain the
+application's responsibility.
+
+
+The [installation explanation](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#activation-repair-and-rollback)
+describes activation, recovery, and retained runtimes.
+
+### Inspect before choosing a recovery action
+
+Use `yourapp app paths --json` to inspect placement and `yourapp app doctor --json`
+for structured diagnostics. The [inspection and repair guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#inspect-or-repair-installation)
+explains which recovery action applies. Managed `app repair` rebuilds the
+recorded project without selecting a newer source or changing its placement.
+
+<br>
+
+## Try a preview beside the regular application
+
+An opted-in preview has its own application identity, command, registration,
+and managed resources. It can run alongside the regular installation.
+
+| Command | Result |
+| --- | --- |
+| `<setup> --preview` | Install or update the preview and leave it installed. |
+| `<setup> --smoke` | Install a fresh preview, verify its runtime, and wait for uninstall to finish. |
+| `<preview-command> app uninstall` | Remove the preview through its ordinary uninstall workflow. |
+
+An opted-in checkout also offers these options in `yourapp app install --help`
+for a [Source Build](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#install-from-a-source-build).
+For applications that run servers, give regular and preview instances different
+configurable TCP ports or socket paths. The application also owns its external
+service and shared database settings.
+
+Follow the [preview guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#install-a-preview-or-run-a-smoke-test)
+for shell-specific commands and smoke requirements. Authors should also follow
+the [preview identity and endpoint policy](https://github.com/HisQu/apprc/blob/main/docs/Development.md#verify-an-opted-in-preview-identity).
+
+<br>
+
+## Review removal and keep configuration
+
+Stop the application, including running servers. For an installed application
+named `yourapp`:
+
+```shell
+yourapp app uninstall --keep-config --dry-run
+yourapp app uninstall --keep-config
+```
+
+The dry run shows **Delete** and **Keep** targets. `--keep-config` retains
+configuration, including saved settings and secrets, for a later reinstall.
+An update keeps configuration in place. An uninstall that removes configuration
+leaves the next install to configure the application again.
+
+
+Interactive uninstall offers to keep existing configuration. Unattended
+`--yes` removes configuration unless `--keep-config` is also supplied.
+Appdata, cache, and state remain removal targets. Back up needed application
+data outside the listed targets before confirming removal. Editable uninstall
+preserves the checkout and development environment by default.
+
+The [removal guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#remove-a-managed-program)
+defines the retention choices, ownership checks, and explicit repository removal.
 
 
 <!-- ====================================================================== -->
@@ -412,18 +586,39 @@ keeps the saved resource locations. See the
 # Documentation
 
 ### Using the project
-- [Documentation](https://github.com/HisQu/apprc/blob/main/docs/README.md) — Start here for component names and learning order.
-- [How-to user guides](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md) — Complete specific tasks with independent examples.
-- [Examples](https://github.com/HisQu/apprc/blob/main/docs/EXAMPLES.md) — Choose and run complete application setups, including cache-only.
-- [Explanations](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md) — Understand components and how they connect.
-- [References](https://github.com/HisQu/apprc/blob/main/docs/References.md) — Look up exact APIs, files, commands, and behavior.
+
+- [Documentation](https://github.com/HisQu/apprc/blob/main/docs/README.md): Choose a reader journey and find the right page.
+- [How-to user guides](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md): Complete tasks with independent examples.
+- [Examples](https://github.com/HisQu/apprc/blob/main/docs/EXAMPLES.md): Choose and run complete application setups.
+- [Explanations](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md): Understand components and their relationships.
+- [References](https://github.com/HisQu/apprc/blob/main/docs/References.md): Look up APIs, files, commands, and exact behavior.
 
 ### Contributing and maintaining
-- [Development](https://github.com/HisQu/apprc/blob/main/docs/Development.md) — Change, verify, build, and release AppRC.
-  - [Development environment](https://github.com/HisQu/apprc/blob/main/docs/Development.md#environment)
-  - [Source ownership](https://github.com/HisQu/apprc/blob/main/docs/Development.md#source-ownership)
-  - [Documentation checks](https://github.com/HisQu/apprc/blob/main/docs/Development.md#documentation-checks)
-  - [README maintenance](https://github.com/HisQu/apprc/blob/main/docs/Development.md#readme-maintenance)
-  - [Verification](https://github.com/HisQu/apprc/blob/main/docs/Development.md#checks)
-  - [Releases](https://github.com/HisQu/apprc/blob/main/docs/Development.md#release-procedure)
-- [Changelog](https://github.com/HisQu/apprc/blob/main/CHANGELOG.md) — Complete release history and migration requirements.
+
+- [Development](https://github.com/HisQu/apprc/blob/main/docs/Development.md): Change, verify, build, and release AppRC.
+- [Documentation checks](https://github.com/HisQu/apprc/blob/main/docs/Development.md#documentation-checks) and [README maintenance](https://github.com/HisQu/apprc/blob/main/docs/Development.md#readme-maintenance): Preserve the documentation contracts and Buildben presentation.
+- [Changelog](https://github.com/HisQu/apprc/blob/main/CHANGELOG.md): Release history and migration requirements.
+
+<a id="main-dependencies"></a>
+
+### Built on
+
+- **[`typed-settings`]**: Typed conversion and validation.
+- **[`python-dotenv`]**: Dotenv input.
+- **[`platformdirs`]**: Native per-user application paths.
+- **[`filelock`]**: Serialized persistent configuration and resource operations.
+- **[uv] and [PyApp]**: Dependency installation and native runtime bootstrapping.
+
+### Release context and upgrades
+
+Existing integrations should follow the
+[migration guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#migrate-existing-applications),
+including the 0.32 API and on-disk configuration changes. AppRC does not
+automatically move or convert old user files; preserve them and configure
+the new paths deliberately.
+
+CI runs on Ubuntu for core Python 3.12, 3.13, and 3.14 and GUI/browser Python
+3.12. Native platform follow-ups are tracked in the
+[platform status](https://github.com/HisQu/apprc/blob/main/BACKLOG.md#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
+and [shortcut validation](https://github.com/HisQu/apprc/blob/main/BACKLOG.md#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows)
+entries.

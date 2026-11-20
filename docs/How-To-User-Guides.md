@@ -543,6 +543,9 @@ move, remove, archive, and restore. Unregistering never deletes workspace
 payloads. The [workspace reference](References.md#workspace-selection) defines
 selector precedence and direct paths.
 
+For research software, record the application release and project settings
+alongside the input data, analysis parameters, and validation decisions.
+
 `Workspaces(registry=False)` permits direct path selection without config or a
 registry. Relative paths resolve against invocation current working directory;
 a bare value supplied as a workspace selector fails because names require a

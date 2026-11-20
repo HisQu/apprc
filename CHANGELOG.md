@@ -28,27 +28,28 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [\[0.38.0\] - 2026-11-19](#0380---2026-11-19)
-4. [\[0.37.0\] - 2026-11-18](#0370---2026-11-18)
-5. [\[0.36.0\] - 2026-11-17](#0360---2026-11-17)
-6. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
-7. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
-8. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
-9. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
-10. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
-11. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
-12. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
-13. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
-14. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
-15. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
-16. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
-17. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
-18. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
-19. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
-20. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
-21. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
-22. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
-23. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
+3. [\[0.39.0\] - 2026-11-20](#0390---2026-11-20)
+4. [\[0.38.0\] - 2026-11-19](#0380---2026-11-19)
+5. [\[0.37.0\] - 2026-11-18](#0370---2026-11-18)
+6. [\[0.36.0\] - 2026-11-17](#0360---2026-11-17)
+7. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
+8. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
+9. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
+10. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
+11. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
+12. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
+13. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
+14. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
+15. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
+16. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
+17. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
+18. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
+19. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
+20. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
+21. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
+22. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
+23. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
+24. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -56,7 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/HisQu/apprc/compare/v0.36.1...v0.37.0
 [0.36.1]: https://github.com/HisQu/apprc/compare/v0.36.0...v0.36.1
@@ -96,6 +98,25 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+### 🛠️ Changed
+
+- Build and verify release packages locally. GitHub retains three betas and
+  three release candidates, along with all stable releases and Git tags.
+
+### 🗑️ Deprecated
+
+### 🔥 Removed
+
+### 🐛 Fixed
+
+### 🔒 Security
+
+<br>
+
+## [0.39.0] - 2026-11-20
+
+### ✨ Added
+
 - Opt-in native setup can install a preview beside the regular application.
   Smoke mode verifies a fresh preview and waits for its uninstall. Generated
   OLI scripts forward setup options.
@@ -104,15 +125,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   an exact reinstall.
 - Add `app update` for managed releases and editable checkouts. Hosts can
   disable the default root `update` alias with `AppRC(update_alias=False)`.
-
-### 🛠️ Changed
-
-- Build and verify release packages locally. GitHub keeps the newest three
-  Beta releases and three Pre-releases, with all stable releases and Git tags retained.
-
-### 🗑️ Deprecated
-
-### 🔥 Removed
 
 ### 🐛 Fixed
 
@@ -127,8 +139,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - Native build errors show recent compiler output even when the application
   removes the temporary build workspace. Windows build errors give specific
   guidance for denied symbolic links and a missing LLVM linker.
-
-### 🔒 Security
 
 <br>
 

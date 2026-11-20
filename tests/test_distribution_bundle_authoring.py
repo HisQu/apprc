@@ -299,9 +299,29 @@ def test_native_compiler_writes_into_private_directories(
         assert _path_permissions_are_private(path.parent)
 
 
-@pytest.mark.parametrize("use_stderr", [True, False])
+@pytest.mark.parametrize(
+    ("use_stderr", "compiler_error", "guidance"),
+    [
+        (True, "error: link failed", "Check the Rust MSVC target"),
+        (False, "error: link failed", "Check the Rust MSVC target"),
+        (
+            True,
+            "unable to symlink from SDK include (os error 1314)",
+            "Developer Mode (Entwicklermodus)",
+        ),
+        (
+            True,
+            "error: linker `lld-link` not found",
+            "Add LLVM's bin directory to PATH",
+        ),
+    ],
+)
 def test_native_build_failure_includes_sanitized_compiler_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, use_stderr: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    use_stderr: bool,
+    compiler_error: str,
+    guidance: str,
 ) -> None:
     runtime_archive = tmp_path / "runtime.zip"
     with ZipFile(runtime_archive, "w") as archive:
@@ -325,8 +345,8 @@ def test_native_build_failure_includes_sanitized_compiler_output(
     ) -> subprocess.CompletedProcess[str]:
         if "build" not in command:
             return subprocess.CompletedProcess(command, 0, "", "")
-        detail = "compile progress\n" * 1000 + (
-            "error: link failed (fixture-secret)\n"
+        detail = (
+            "compile progress\n" * 1000 + f"{compiler_error} (fixture-secret)\n"
         )
         stdout, stderr = ("", detail) if use_stderr else (detail, "")
         return subprocess.CompletedProcess(command, 101, stdout, stderr)
@@ -342,6 +362,7 @@ def test_native_build_failure_includes_sanitized_compiler_output(
 
     message = str(error.value)
     assert "x86_64-pc-windows-msvc exited with code 101" in message
-    assert "error: link failed ([redacted])" in message
+    assert guidance in message
+    assert f"{compiler_error} ([redacted])" in message
     assert "fixture-secret" not in message
     assert len(message) < 5000

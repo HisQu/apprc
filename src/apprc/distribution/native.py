@@ -623,19 +623,34 @@ class NativeFrontendBuilder:
                 observations=observations,
             )
             if result.returncode:
-                tools = (
-                    "the Rust MSVC target, Cargo-xwin, and LLVM (Clang and LLD)"
-                    if windows
-                    else "the Rust GNU target and host C compiler and linker"
-                )
                 diagnostic = _diagnostics(
                     result.stderr.strip() or result.stdout.strip(), environment
                 )
+                guidance = (
+                    "Check the Rust GNU target and host C compiler and linker."
+                )
+                if windows:
+                    guidance = (
+                        "Check the Rust MSVC target, Cargo-xwin, and LLVM "
+                        "(Clang and LLD)."
+                    )
+                    if (
+                        "unable to symlink" in diagnostic
+                        and "os error 1314" in diagnostic
+                    ):
+                        guidance = (
+                            "Windows denied symbolic link creation. Enable Developer "
+                            "Mode (Entwicklermodus) in Windows Settings and retry."
+                        )
+                    elif "linker `lld-link` not found" in diagnostic:
+                        guidance = (
+                            "Add LLVM's bin directory to PATH in the build shell, "
+                            "verify that lld-link is available, and retry."
+                        )
                 detail = "\n".join(diagnostic.splitlines()[-30:])[-4000:]
                 raise InstallationError(
                     f"Native compilation for {target} exited with code "
-                    f"{result.returncode}. Check {tools}. "
-                    f"{NATIVE_TOOLCHAIN_DOCS}"
+                    f"{result.returncode}. {guidance} {NATIVE_TOOLCHAIN_DOCS}"
                     + (f"\n\n{detail}" if detail else "")
                 )
             if (source / "Cargo.lock").read_bytes() != self._cargo_lock:

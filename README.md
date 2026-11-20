@@ -363,8 +363,9 @@ flowchart LR
     Release -->|Verify and run setup| Installed["App runtime + installed command"]
 ```
 
-See the [authoring requirements](docs/Development.md#native-application-frontends)
-for toolchain prerequisites, application icons, installation messages, and
+Set up the [native setup toolchain](docs/Development.md#native-setup-toolchain)
+before compiling. See the [authoring requirements](docs/Development.md#native-application-frontends)
+for application icons, installation messages, and
 [configuring the app's default action](docs/Development.md#choose-a-default-action-for-an-installed-command).
 
 <!-- ====================================================================== -->

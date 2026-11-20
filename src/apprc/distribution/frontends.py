@@ -31,6 +31,7 @@ from apprc.distribution.models import (
     read_native_bindings,
 )
 from apprc.distribution.native import (
+    NATIVE_TOOLCHAIN_DOCS,
     UV_MIN_VERSION,
     UV_REQUIREMENT,
     NativeArtifact,
@@ -675,7 +676,10 @@ def build_native_distribution(
         raise ValueError("Native build requested an unsupported target.")
     assert_no_links(uv)
     if not uv.is_absolute() or not uv.is_file():
-        raise ValueError("Native authoring requires an absolute uv executable.")
+        raise ValueError(
+            f"Native authoring requires the absolute path to an installed "
+            f"{UV_REQUIREMENT} executable. {NATIVE_TOOLCHAIN_DOCS}"
+        )
     uv_version = subprocess.run(
         (str(uv), "--version"), check=False, capture_output=True, text=True
     )
@@ -690,7 +694,7 @@ def build_native_distribution(
     ):
         raise ValueError(
             f"Native authoring requires {UV_REQUIREMENT}; "
-            f"found {uv_version.stdout.strip()!r}."
+            f"found {uv_version.stdout.strip()!r}. {NATIVE_TOOLCHAIN_DOCS}"
         )
     if (
         not project.archive.is_file()

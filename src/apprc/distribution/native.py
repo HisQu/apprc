@@ -21,6 +21,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import BinaryIO, Literal, NotRequired, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
+from apprc.definition.installation import InstallationError
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
     create_private_directory,
@@ -29,6 +30,11 @@ from apprc.user_files.app_home.permissions import (
 
 UV_MIN_VERSION = "0.11.6"
 UV_REQUIREMENT = f"uv>={UV_MIN_VERSION}"
+NATIVE_TOOLCHAIN_DOCS = (
+    "https://github.com/HisQu/apprc/blob/main/docs/Development.md"
+    "#native-setup-toolchain"
+)
+CARGO_XWIN_VERSION = "0.23.1"
 PYAPP_VERSION = "0.31.0"
 PYAPP_SOURCE_SHA256 = (
     "16bc883dd936584eef8d0d838feef3e839c340f201f36cc05eb810f29df92c22"
@@ -340,7 +346,6 @@ class NativeFrontendBuilder:
         environment: Mapping[str, str],
         cwd: Path,
         observations: list[dict[str, object]],
-        check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         observation: dict[str, object] = {
             "command": [
@@ -367,19 +372,87 @@ class NativeFrontendBuilder:
             observation["stderr"] = _diagnostics(
                 (exc.stderr or b"").decode(errors="replace"), environment
             )
-            raise RuntimeError(
-                "Native compiler command exceeded 1800 seconds."
+            raise InstallationError(
+                f"Native compiler command exceeded 1800 seconds. "
+                f"Toolchain setup: {NATIVE_TOOLCHAIN_DOCS}"
             ) from exc
         observation.update(
             returncode=result.returncode,
             stdout=_diagnostics(result.stdout, environment),
             stderr=_diagnostics(result.stderr, environment),
         )
-        if check and result.returncode:
-            raise RuntimeError(
-                "Native compiler command failed; see the workspace build report."
-            )
         return result
+
+    def _check_toolchain(
+        self,
+        target: NativeTarget,
+        environment: dict[str, str],
+        observations: list[dict[str, object]],
+    ) -> str:
+        """Find a working host Rust toolchain before downloading compiler inputs."""
+        search_path = environment.get("PATH", os.defpath)
+        cargo = shutil.which("cargo", path=search_path)
+        rustc = shutil.which("rustc", path=search_path)
+        rust_setup = (
+            "Install Rust with rustup, then check `cargo --version` and "
+            f"`rustc --version` in the build shell. {NATIVE_TOOLCHAIN_DOCS}"
+        )
+        if cargo is None or rustc is None:
+            missing = ", ".join(
+                tool
+                for tool, path in (("cargo", cargo), ("rustc", rustc))
+                if path is None
+            )
+            raise FileNotFoundError(
+                f"Missing from PATH: {missing}. {rust_setup}"
+            )
+        cargo = str(Path(cargo).absolute())
+        rustc = str(Path(rustc).absolute())
+        if (
+            "RUSTUP_TOOLCHAIN" not in environment
+            and Path(cargo).resolve().stem == "rustup"
+        ):
+            rustup = Path(cargo).with_name(
+                "rustup.exe" if os.name == "nt" else "rustup"
+            )
+            result = self._run(
+                [str(rustup), "show", "active-toolchain"],
+                environment=environment,
+                cwd=self._authoring_directory,
+                observations=observations,
+            )
+            selected = result.stdout.split()
+            if result.returncode or not selected:
+                raise InstallationError(
+                    f"Rustup could not select an installed toolchain. {rust_setup}"
+                )
+            environment["RUSTUP_TOOLCHAIN"] = selected[0]
+        for executable, flag in ((rustc, "-vV"), (cargo, "--version")):
+            result = self._run(
+                [executable, flag],
+                environment=environment,
+                cwd=self._authoring_directory,
+                observations=observations,
+            )
+            if result.returncode:
+                raise InstallationError(
+                    f"`{Path(executable).stem} {flag}` failed. {rust_setup}"
+                )
+        if target == "x86_64-pc-windows-msvc":
+            result = self._run(
+                [cargo, "xwin", "--version"],
+                environment=environment,
+                cwd=self._authoring_directory,
+                observations=observations,
+            )
+            if result.returncode:
+                raise InstallationError(
+                    f"`cargo xwin --version` failed for {target}. "
+                    f"Install with `cargo install --locked cargo-xwin "
+                    f"--version {CARGO_XWIN_VERSION}` and check PATH. "
+                    f"{NATIVE_TOOLCHAIN_DOCS}"
+                )
+        return cargo
 
     def build(
         self,
@@ -458,6 +531,7 @@ class NativeFrontendBuilder:
         }
         environment = self._environment.copy()
         try:
+            cargo = self._check_toolchain(target, environment, observations)
             source = self._acquire_source()
             inputs = source / "apprc-inputs" / attempt.name
             create_private_directory(inputs)
@@ -500,35 +574,6 @@ class NativeFrontendBuilder:
                 output.write(stub.encode())
             with _create_file(inputs / "requirements.txt") as output:
                 output.write(requirements)
-            search_path = environment.get("PATH", os.defpath)
-            cargo = shutil.which("cargo", path=search_path)
-            rustc = shutil.which("rustc", path=search_path)
-            if cargo is None or rustc is None:
-                raise FileNotFoundError(
-                    "Provision the Rust authoring toolchain before native builds."
-                )
-            cargo = str(Path(cargo).absolute())
-            rustc = str(Path(rustc).absolute())
-            if (
-                "RUSTUP_TOOLCHAIN" not in environment
-                and Path(cargo).resolve().stem == "rustup"
-            ):
-                rustup = str(
-                    Path(cargo).with_name(
-                        "rustup.exe" if os.name == "nt" else "rustup"
-                    )
-                )
-                selected = self._run(
-                    [rustup, "show", "active-toolchain"],
-                    environment=environment,
-                    cwd=self._authoring_directory,
-                    observations=observations,
-                ).stdout.split()
-                if not selected:
-                    raise RuntimeError(
-                        "Rustup did not report the selected authoring toolchain."
-                    )
-                environment["RUSTUP_TOOLCHAIN"] = selected[0]
             configured_target_directory = environment.get("CARGO_TARGET_DIR")
             if configured_target_directory is None:
                 target_directory = self.workspace / "cargo-target"
@@ -561,26 +606,7 @@ class NativeFrontendBuilder:
             environment["XWIN_ARCH"] = "x86_64"
             report["settings"] = settings
             report["cargo_target_directory"] = str(target_directory)
-            self._run(
-                [rustc, "-vV"],
-                environment=environment,
-                cwd=source,
-                observations=observations,
-            )
-            self._run(
-                [cargo, "--version"],
-                environment=environment,
-                cwd=source,
-                observations=observations,
-            )
             windows = target == "x86_64-pc-windows-msvc"
-            if windows:
-                self._run(
-                    [cargo, "xwin", "--version"],
-                    environment=environment,
-                    cwd=source,
-                    observations=observations,
-                )
             command = [
                 cargo,
                 *(["xwin"] if windows else []),
@@ -590,12 +616,24 @@ class NativeFrontendBuilder:
                 "--target",
                 target,
             ]
-            self._run(
+            result = self._run(
                 command,
                 environment=environment,
                 cwd=source,
                 observations=observations,
             )
+            if result.returncode:
+                tools = (
+                    "the Rust MSVC target, Cargo-xwin, and LLVM (Clang and LLD)"
+                    if windows
+                    else "the Rust GNU target and host C compiler and linker"
+                )
+                raise InstallationError(
+                    f"Native compilation for {target} exited with code "
+                    f"{result.returncode}. Check {tools}. "
+                    f"See the workspace build report if retained. "
+                    f"{NATIVE_TOOLCHAIN_DOCS}"
+                )
             if (source / "Cargo.lock").read_bytes() != self._cargo_lock:
                 raise ValueError(
                     "Native compilation changed the pinned upstream Cargo.lock."
@@ -689,6 +727,5 @@ class NativeFrontendBuilder:
                     environment=environment,
                     cwd=source,
                     observations=observations,
-                    check=False,
                 )
         report["llvm_tools"] = tools

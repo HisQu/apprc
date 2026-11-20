@@ -966,8 +966,8 @@ Use the same authored project-snapshot/native build as for Linux. Declare
 [distribution builders](References.md#distribution-generation) in the
 application's `<app>_distr` build command.
 
-With the existing authoring dependencies and cross-compilation toolchain
-available, the application runs `just make-artifacts`. Its ignored `dist/`
+Set up the [native setup toolchain](Development.md#native-setup-toolchain),
+then run the application's `just make-artifacts` recipe. Its ignored `dist/`
 contains Windows and Linux setup executables plus `SHA256SUMS`; intermediates
 stay in `.cache/apprc/`. The Windows setup installs the same stable native command
 used for diagnosis, repair and uninstall.
@@ -1335,6 +1335,8 @@ AppRC reuses a verified setup in `dist/` when it matches the current platform
 and committed revision. If the setup is missing without a checksum entry, or
 its checksum verifies but its source is stale, AppRC offers to build it from
 committed source. Pass `--yes` to authorize that build without a prompt.
+If the checkout needs to compile setup, prepare the
+[native setup toolchain](Development.md#native-setup-toolchain) first.
 A checksum mismatch, an unlisted setup, or a checksum entry with no setup
 stops the command. The checkout reports when it checks setup and when it
 needs to build. The native setup then reports its installation stages.

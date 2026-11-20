@@ -15,6 +15,7 @@
 - [Build and release AppRC](#build-and-release-apprc)
   - [Build the three distributions](#build-the-three-distributions)
   - [Native application frontends](#native-application-frontends)
+  - [Native setup toolchain](#native-setup-toolchain)
   - [Verify an application distribution](#verify-an-application-distribution)
   - [Release procedure](#release-procedure)
 
@@ -519,12 +520,81 @@ use locked non-editable sync with no default groups and only selected extras.
 Editable registration uses the developer's existing `.venv` without syncing or
 copying it.
 
-The compiler authenticates pinned PyApp 0.31.0 source and supports uv >=0.11.6 for authoring and the embedded manager.
-Authoring requires the matching core/terminal SDK metadata and existing Rust/LLVM
-toolchain. Windows x86-64 cross-compilation uses Cargo-xwin 0.23.1,
-`x86_64-pc-windows-msvc` and Microsoft SDK inputs. It produces a Windows console
-executable but does not execute it from WSL or establish native Windows behavior.
-macOS remains deferred; do not introduce platform runners implicitly.
+## Native setup toolchain
+
+Install the toolchain on the host that builds the setup. A Source Build needs
+it when the checkout has to compile a setup. A verified, current setup can
+run directly. Building also requires the application's locked authoring
+environment with matching `apprc-core` and `apprc` versions.
+
+| Build target | Required tools and inputs |
+| --- | --- |
+| Either target | Git, uv 0.11.6 or newer, and a working Rust toolchain with `cargo` and `rustc` in the build shell. AppRC downloads and verifies PyApp 0.31.0. |
+| Linux x86-64 | Rust target `x86_64-unknown-linux-gnu`, a host C compiler and linker, and libc development headers. |
+| Windows x86-64 | Rust target `x86_64-pc-windows-msvc`, Cargo-xwin, and LLVM with Clang and LLD. Cargo-xwin 0.23.1 is the documented version. Its default backend uses `clang-cl`, `lld-link` and `llvm-lib` and fetches the Microsoft CRT and Windows SDK inputs. |
+
+Use Rust 1.89.0 as the starting point for these commands. Building Cargo-xwin
+0.23.1 from source requires at least that version. The first build needs
+network access to GitHub and Cargo's dependency registry. The Windows target
+also needs access to Cargo-xwin's Microsoft downloads.
+
+### Build on Windows x64
+
+On Windows, install Rust with rustup and use the MSVC host toolchain. The
+Desktop development with C++ workload provides the host linker and SDK for
+compiling Cargo-xwin from source. Run the commands for tools you still need.
+Select the option to add LLVM to PATH in its installer. [Rust MSVC prerequisites](https://github.com/rust-lang/rustup/blob/main/doc/user-guide/src/installation/windows-msvc.md) · [Visual Studio C++ workload](https://learn.microsoft.com/en-us/visualstudio/install/workload-component-id-vs-build-tools) · [uv installation](https://docs.astral.sh/uv/getting-started/installation/)
+
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override '--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+winget install --id LLVM.LLVM -e --interactive
+winget install --id Rustlang.Rustup -e
+```
+
+Open a new PowerShell session. Select the toolchain for this session, install
+Cargo-xwin, and verify that the commands resolve before building.
+
+```powershell
+rustup toolchain install 1.89.0-x86_64-pc-windows-msvc
+$env:RUSTUP_TOOLCHAIN = '1.89.0-x86_64-pc-windows-msvc'
+cargo install --locked cargo-xwin --version 0.23.1
+
+git --version
+uv --version
+rustc --version
+cargo --version
+cargo xwin --version
+Get-Command clang, clang-cl, lld-link, llvm-lib
+```
+
+Run the checkout build in that PowerShell session. Cargo-xwin may create
+symbolic links in its cache. If Windows reports a symbolic-link privilege
+error, check Developer Mode and your machine's policy for creating links.
+[Cargo-xwin 0.23.1](https://github.com/rust-cross/cargo-xwin/blob/v0.23.1/README.md) · [Windows Developer Mode](https://learn.microsoft.com/en-us/windows/apps/get-started/developer-mode-features-and-debugging)
+
+### Build on Linux x86-64 or WSL
+
+On Debian or Ubuntu, install the native compiler and Git with
+`sudo apt install build-essential git`. Install rustup and uv using their
+official instructions. For the Windows target, also install LLVM with
+`sudo apt install clang lld llvm`, then add the Rust target and Cargo-xwin.
+[Rust installation](https://rust-lang.org/tools/install/) · [uv installation](https://docs.astral.sh/uv/getting-started/installation/)
+
+```shell
+rustup toolchain install 1.89.0
+rustup target add --toolchain 1.89.0 x86_64-pc-windows-msvc
+cargo +1.89.0 install --locked cargo-xwin --version 0.23.1
+export RUSTUP_TOOLCHAIN=1.89.0
+cargo xwin --version
+```
+
+The Windows target produces a Windows console executable. Cross-compiling
+from Linux or WSL verifies artifact creation. Native behavior is verified
+from a Windows session. macOS support remains deferred.
+
+### Verify on Windows
 
 For deferred native Windows verification, use the exact checksummed setup
 artifact in a normal user session. Double-click a fresh setup and confirm that

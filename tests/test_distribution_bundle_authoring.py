@@ -8,6 +8,7 @@ import os
 import struct
 import subprocess
 import tarfile
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
@@ -160,6 +161,62 @@ def test_native_authoring_validates_snapshot_for_selected_workspace_member(
         ):
             _validate_prepared_project(spec, prepared, workspace)
     assert list(workspace.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("rust_on_path", "expected_error", "guidance"),
+    [
+        (False, FileNotFoundError, "Missing from PATH: cargo, rustc"),
+        (
+            True,
+            ValueError,
+            "cargo install --locked cargo-xwin --version 0.23.1",
+        ),
+    ],
+)
+def test_windows_build_explains_missing_toolchain_before_downloading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rust_on_path: bool,
+    expected_error: type[Exception],
+    guidance: str,
+) -> None:
+    runtime_archive = tmp_path / "runtime.zip"
+    with ZipFile(runtime_archive, "w") as archive:
+        archive.writestr("bootstrap-requirements.txt", native.UV_REQUIREMENT)
+    monkeypatch.setattr(
+        native.shutil,
+        "which",
+        lambda name, **_kwargs: str(tmp_path / name) if rust_on_path else None,
+    )
+    builder = native.NativeFrontendBuilder(
+        tmp_path / "compiler", environment={"RUSTUP_TOOLCHAIN": "fixture"}
+    )
+
+    def run_tool(
+        command: Sequence[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command, int("xwin" in command), "", ""
+        )
+
+    monkeypatch.setattr(builder, "_run", run_tool)
+    monkeypatch.setattr(
+        builder,
+        "_acquire_source",
+        lambda: pytest.fail(
+            "Build must check the toolchain before downloading."
+        ),
+    )
+    with pytest.raises(expected_error) as error:
+        builder.build(
+            target="x86_64-pc-windows-msvc",
+            destination=tmp_path / "compiled" / "setup.exe",
+            runtime_archive=runtime_archive,
+            entrypoint="apprc.distribution.runtime._manager",
+        )
+    assert guidance in str(error.value)
+    assert "Development.md#native-setup-toolchain" in str(error.value)
 
 
 def test_native_compiler_writes_into_private_directories(

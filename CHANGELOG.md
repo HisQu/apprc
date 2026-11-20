@@ -114,6 +114,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - Windows Source Builds apply a private ACL to snapshot validation staging
   and compiler directories before writing source files, build inputs, reports,
   or the compiled setup.
+- Native setup builds report missing Rust tools and Cargo-xwin before
+  downloading PyApp and link to toolchain setup instructions.
 
 ### 🔒 Security
 

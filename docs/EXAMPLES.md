@@ -45,6 +45,14 @@ registry.
 | [User preferences and workspaces](#user-preferences-and-workspaces) | Config | User dotenv and registry-backed `Workspaces()` | Users share preferences and select named working directories. |
 | [Parent-owned dependency settings](#parent-owned-dependency-settings) | Parent's chosen paths | Imported config binding | The host owns dependency field names and values. |
 
+If you use a coding agent to integrate AppRC, give it the closest maintained
+example and specify the settings, resources, interfaces, and distribution
+features the application needs. Use public APIs and supported callbacks to
+preserve the host's existing behavior and commands. Verify the resolved settings
+sources and public entry point. For distribution work, run
+[guided lifecycle validation](How-To-User-Guides.md#validate-installation-on-your-machine)
+and report automated checks and manual observations separately.
+
 ### What the example profiles write
 
 The profiles below show how the same SDK can operate with no managed files,

@@ -1442,3 +1442,55 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     assert "overlaps a protected path" in blocked.stderr
     assert legacy_sentinel.read_text() == "regular data"
     assert (preview_dir / "installation.json").exists()
+
+
+def test_installed_update_uses_verified_release_and_preserves_command(
+    tmp_path: Path, native_product: NativeProduct
+) -> None:
+    project, _, original_setup, _, spec, _ = native_product
+    release_assets = project.parent / "fixture-b" / "dist"
+    environment, commands = _host(tmp_path / "host")
+    gh = commands / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\n"
+        "import json, shutil, sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "assert args[0] == 'release' and args[args.index('--repo') + 1] == 'github.com/fixture/app'\n"
+        "if args[1] == 'view':\n"
+        "  print(json.dumps({'tagName': 'v2.0.0', 'isDraft': False, 'isPrerelease': False}))\n"
+        "else:\n"
+        "  assert args[1] == 'download' and args[-1] == 'v2.0.0'\n"
+        "  destination = Path(args[args.index('--dir') + 1])\n"
+        "  for index, arg in enumerate(args):\n"
+        "    if arg == '--pattern':\n"
+        f"      shutil.copyfile(Path({str(release_assets)!r}) / args[index + 1], destination / args[index + 1])\n",
+        encoding="utf-8",
+    )
+    gh.chmod(0o700)
+    run(
+        _install(original_setup, commands),
+        environment=environment,
+        cwd=tmp_path,
+    )
+    command = commands / spec.metadata.identity.commands[0]
+    directory = installation_directory(
+        spec.metadata.identity.app_id, environment=environment
+    )
+    before = _record(directory)
+
+    result = run(
+        [str(command), "update", "--yes"], environment=environment, cwd=tmp_path
+    )
+    assert "from 1.0.0 to 2.0.0" in result.stdout
+    after = _record(directory)
+    assert before["placement"] == after["placement"]
+    assert before["active_runtime"]["version"] == "1.0.0"
+    assert after["active_runtime"]["version"] == "2.0.0"
+    assert command.exists()
+
+    again = run(
+        [str(command), "app", "update"], environment=environment, cwd=tmp_path
+    )
+    assert "Already up to date (2.0.0)" in again.stdout
+    assert _record(directory) == after

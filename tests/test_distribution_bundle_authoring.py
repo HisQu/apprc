@@ -22,7 +22,7 @@ from apprc.distribution.frontends import (
     _validate_prepared_project,
 )
 from apprc.distribution.metadata import read_distribution_spec
-from apprc.distribution.models import decode_native_binding
+from apprc.distribution.models import GitHubReleaseSource, decode_native_binding
 from apprc.distribution.project import PreparedProject
 from apprc.user_files.app_home.permissions import (
     _path_permissions_are_private,
@@ -61,7 +61,8 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
         encoding="utf-8",
     )
     spec = read_distribution_spec(declaration)
-    sdk_bytes = _sdk_archive(spec, project, ("gui",))
+    source_setting = GitHubReleaseSource("fixture/project", False)
+    sdk_bytes = _sdk_archive(spec, project, ("gui",), source_setting)
 
     with ZipFile(BytesIO(sdk_bytes)) as sdk:
         names = set(sdk.namelist())
@@ -79,6 +80,13 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
         assert binding.identity == spec.metadata.identity
         assert binding.source == source
         assert binding.selection.extras == ("gui",)
+        assert binding.release_source == source_setting
+        legacy = json.loads(binding_bytes)
+        del legacy["release_source"]
+        del legacy["capabilities"]["update_alias"]
+        older = decode_native_binding(json.dumps(legacy).encode())
+        assert older.release_source is None
+        assert older.capabilities.update_alias
         unknown = json.loads(binding_bytes)
         unknown["unrecognized"] = True
         with pytest.raises(ValueError):

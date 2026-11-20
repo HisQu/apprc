@@ -1130,3 +1130,44 @@ def test_uninstall_path_tree_shares_windows_parents_and_preserves_unc():
     assert str(checkout) in output and ".venv  Keep" in output
     assert str(checkout / ".venv") not in output
     assert str(unc) in output
+
+
+@pytest.mark.parametrize("arguments", [("app", "update"), ("update",)])
+def test_update_command_routes_share_confirmation(
+    arguments: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apprc.distribution.runtime import update
+
+    def recorded_update(
+        *_args: object, confirm: Callable[[str], None], **_kwargs: object
+    ) -> int:
+        confirm("Replace 1.0 with 2.0?")
+        return 0
+
+    monkeypatch.setattr(update, "update_application", recorded_update)
+    args = [*arguments]
+    app = _app(args=args)
+    refused = CliRunner().invoke(app, args)
+    assert refused.exit_code != 0
+    assert "Rerun with --yes" in refused.output
+    args.append("--yes")
+    accepted = CliRunner().invoke(app, args)
+    assert accepted.exit_code == 0, accepted.output
+    assert "Replace 1.0 with 2.0?" in accepted.output
+
+
+def test_update_alias_opt_out_keeps_host_update() -> None:
+    app = typer.Typer()
+    app.command("update")(lambda: typer.echo("host update"))
+    with pytest.raises(RuntimeError, match="update"):
+        rc.cli.mount_app_cli(
+            app, rc.AppRC(app_id="alias-conflict"), installation_management=True
+        )
+    rc.cli.mount_app_cli(
+        app,
+        rc.AppRC(app_id="alias-opt-out", update_alias=False),
+        installation_management=True,
+    )
+    runner = CliRunner()
+    assert "host update" in runner.invoke(app, ["update"]).output
+    assert runner.invoke(app, ["app", "update", "--help"]).exit_code == 0

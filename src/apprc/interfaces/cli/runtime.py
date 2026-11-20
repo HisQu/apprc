@@ -483,6 +483,9 @@ class CliRuntime(Generic[OptionsT, StateT]):
             context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
         if self._installation_command_requested(ctx):
+            ctx.meta["apprc.update.maintenance_group"] = (
+                self.maintenance_group_name
+            )
             if help_requested_before_separator(
                 self.current_args(), value_options=self.cli_value_options
             ):
@@ -641,6 +644,17 @@ class CliRuntime(Generic[OptionsT, StateT]):
             resource_diagnostics=resource_diagnostics,
             resource_group_extensions=resource_group_extensions,
         )
+        if installation_management:
+            from apprc.interfaces.cli.installation_command import update_command
+
+            mounted[self.maintenance_group_name].command(
+                "update",
+                rich_help_panel=maintenance_help_panel,
+            )(update_command)
+            if self.apprc.schema.update_alias:
+                staging.command(
+                    "update", rich_help_panel=maintenance_help_panel
+                )(update_command)
         config_enabled = bool(
             self.apprc.schema.paths.config
             or self.apprc.schema.owners
@@ -762,6 +776,21 @@ class CliRuntime(Generic[OptionsT, StateT]):
 
     def _installation_command_requested(self, ctx: typer.Context) -> bool:
         """Select lifecycle recovery and configured launch before path resolution."""
+        if ctx.invoked_subcommand == "update" and isinstance(
+            ctx.command, TyperGroup
+        ):
+            from apprc.interfaces.cli.installation_command import update_command
+
+            command = ctx.command.get_command(ctx, "update")
+            callback = command.callback if command is not None else None
+            if (
+                callback is not None
+                and inspect.unwrap(callback) is update_command
+            ):
+                ctx.meta["apprc.update.maintenance_group"] = (
+                    self.maintenance_group_name
+                )
+                return True
         if ctx.invoked_subcommand == "launch" and isinstance(
             ctx.command, TyperGroup
         ):
@@ -788,7 +817,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             not parsed.separator_before_action
             and bool(parsed.action_tokens)
             and parsed.action_tokens[0]
-            in {"install", "repair", "uninstall", "migrate"}
+            in {"install", "repair", "uninstall", "migrate", "update"}
         )
 
     def _doctor_requested(self, ctx: typer.Context) -> bool:

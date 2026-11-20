@@ -96,7 +96,13 @@ def _app(
 
 @pytest.mark.parametrize(
     "help_args",
-    [("--help",), ("dist", "build", "--help"), ("app", "install", "--help")],
+    [
+        ("--help",),
+        ("dist", "build", "--help"),
+        ("app", "install", "--help"),
+        ("app", "update", "--help"),
+        ("update", "--help"),
+    ],
 )
 def test_distribution_help_is_lazy_in_a_fresh_process(
     checkout: Path, help_args: tuple[str, ...]
@@ -145,6 +151,7 @@ except SystemExit as exc:
     assert exc.code == 0
 assert "authoring_fixture" not in sys.modules
 assert "apprc.distribution.native" not in sys.modules
+assert "apprc.distribution.runtime.update" not in sys.modules
 assert "textual" not in sys.modules
 assert "prompt_toolkit" not in sys.modules
 """,
@@ -172,13 +179,20 @@ assert "prompt_toolkit" not in sys.modules
             line.split()[:2] == ["│", "dist"]
             for line in apprc_help.splitlines()
         )
+        assert any(
+            line.split()[:2] == ["│", "update"]
+            for line in apprc_help.splitlines()
+        )
     elif help_args[:2] == ("dist", "build"):
         assert "--target-current" in output
         assert "--olis-repo" in output
-    else:
+    elif help_args[:2] == ("app", "install"):
         assert "Source Build (SB)" in output
         assert "--preview" in output
         assert "--smoke" in output
+    else:
+        assert "--yes" in output
+        assert "Update the registered release or editable checkout." in output
 
 
 @pytest.mark.parametrize("flag", [None, "-o", "--olis-repo"])

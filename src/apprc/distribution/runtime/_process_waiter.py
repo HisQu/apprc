@@ -218,3 +218,56 @@ def _wait_open_process(waiter) -> None:
             handle.control(None, 1, None)
         finally:
             handle.close()
+
+
+def update_process_identities(
+    executables: tuple[Path, ...], environment: Path | None = None
+) -> tuple[tuple[int, str], ...]:
+    """Identify the caller and Windows launchers whose files may be replaced."""
+    from apprc.distribution.runtime._setup_terminal import _process_details
+
+    kernel, _ = _windows_api()
+    query = kernel.QueryFullProcessImageNameW
+    query.argtypes = (
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    query.restype = wintypes.BOOL
+    identities = [(os.getpid(), process_start_token(os.getpid()))]
+    selected = {path.resolve() for path in (*executables, Path(sys.executable))}
+    parent = os.getppid()
+    while parent > 0:
+        details = _process_details({parent}).get(parent)
+        if details is None:
+            break
+        handle = kernel.OpenProcess(0x1000, False, parent)
+        if not handle:
+            if any(
+                path.name.casefold() == details[1].casefold()
+                for path in selected
+            ):
+                raise OSError(
+                    ctypes.get_last_error(),
+                    "Could not verify the update launcher.",
+                )
+            break
+        try:
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = wintypes.DWORD(len(buffer))
+            if not query(handle, 0, buffer, ctypes.byref(length)):
+                raise OSError(
+                    ctypes.get_last_error(),
+                    "Could not identify the update launcher.",
+                )
+            image = Path(buffer.value).resolve()
+            if image not in selected and (
+                environment is None or not image.is_relative_to(environment)
+            ):
+                break
+            identities.append((parent, _windows_process_token(handle, parent)))
+        finally:
+            kernel.CloseHandle(handle)
+        parent = details[0]
+    return tuple(identities)

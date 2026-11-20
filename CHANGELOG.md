@@ -99,6 +99,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - Opt-in native setup can install a preview beside the regular application.
   Smoke mode verifies a fresh preview and waits for its uninstall. Generated
   OLI scripts forward setup options.
+- Add `app update` for managed releases and editable checkouts. Hosts can
+  disable the default root `update` alias with `AppRC(update_alias=False)`.
 
 ### 🛠️ Changed
 

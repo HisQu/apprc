@@ -412,8 +412,10 @@ for command publication and shortcuts.
 
 ## Maintain the application
 
-[Run a newer installer](docs/How-To-User-Guides.md#update-an-application) to update
-a release installation. Update a registered checkout using Git and uv.
+Run `<app> app update` to update a release installation or registered checkout.
+The root `<app> update` alias is enabled by default. See the
+[update guide](docs/How-To-User-Guides.md#update-an-application) for publisher
+setup and editable checkout behavior.
 Use the [inspection and repair guide](docs/How-To-User-Guides.md#inspect-or-repair-installation)
 to diagnose the saved installation. Review the
 [uninstall preview](docs/How-To-User-Guides.md#remove-a-managed-program)

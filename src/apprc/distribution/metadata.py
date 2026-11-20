@@ -409,4 +409,5 @@ def inspect_capabilities(apprc: AppRC) -> AppCapabilities:
         spec.user_dotenv is not None,
         spec.workspaces is not None,
         spec.workspaces.registry if spec.workspaces is not None else False,
+        spec.update_alias,
     )

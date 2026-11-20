@@ -44,6 +44,7 @@ class AppConfigSpec:
     setup_next_step: str | None
     workspace_selector_env_key: str | None
     command_name: str | None
+    update_alias: bool
     defaults_dotenv_filename: str
     user_dotenv_filename: str
     workspace_dotenv_filename: str
@@ -64,6 +65,7 @@ class AppConfigSpec:
         workspaces: Workspaces | None = None,
         setup_next_step: str | None = None,
         command_name: str | None = None,
+        update_alias: bool = True,
     ) -> None:
         """Capture explicitly enabled paths, settings and workspace capabilities.
 
@@ -79,6 +81,7 @@ class AppConfigSpec:
         :param workspaces: Optional external workspace selection.
         :param setup_next_step: Guidance shown after explicit setup.
         :param command_name: Executable name used in guidance.
+        :param update_alias: Enable the root alias for installation updates.
         """
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", app_id) is None:
             raise ValueError(
@@ -121,6 +124,7 @@ class AppConfigSpec:
                 else None
             ),
             "command_name": command_name,
+            "update_alias": update_alias,
             "defaults_dotenv_filename": DEFAULT_DEFAULTS_DOTENV_FILENAME,
             "user_dotenv_filename": DEFAULT_USER_DOTENV_FILENAME,
             "workspace_dotenv_filename": DEFAULT_WORKSPACE_DOTENV_FILENAME,

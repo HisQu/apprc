@@ -4,31 +4,32 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
-import io
 import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
-import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path, PurePosixPath
-from zipfile import BadZipFile, ZipFile
 
 from apprc.definition.installation import RuntimeSelection
 from apprc.definition.paths import Layout
 from apprc.distribution._archives import _deterministic_zip
+from apprc.distribution._release_assets import (
+    _inspect_native_setup,
+    _read_native_checksums,
+)
 from apprc.distribution.metadata import _validate_project_declaration
 from apprc.distribution.models import (
     Artifact,
+    GitHubReleaseSource,
     DistributionSpec,
     NativeBinding,
     encode_native_binding,
-    read_native_bindings,
 )
 from apprc.distribution.native import (
     NATIVE_TOOLCHAIN_DOCS,
@@ -37,7 +38,6 @@ from apprc.distribution.native import (
     NativeArtifact,
     NativeFrontendBuilder,
     NativeTarget,
-    _artifact_info,
 )
 from apprc.distribution.project import PreparedProject
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
@@ -180,6 +180,7 @@ def _sdk_archive(
     spec: DistributionSpec,
     project: PreparedProject,
     extras: Sequence[str],
+    release_source: GitHubReleaseSource | None = None,
 ) -> bytes:
     """Package exact SDK source and binding without an application dependency graph."""
     requirements = _bootstrap_requirements()
@@ -231,6 +232,7 @@ def _sdk_archive(
         spec.hooks,
         spec.launch_enabled,
         config_group_name=spec.config_group_name,
+        release_source=release_source,
     )
     project_bytes = project.archive.read_bytes()
     if hashlib.sha256(project_bytes).hexdigest() != project.source.digest:
@@ -255,34 +257,6 @@ def _sdk_archive(
         "\n".join((*requirements, UV_REQUIREMENT)) + "\n"
     ).encode()
     return _deterministic_zip(entries.items())
-
-
-def _read_native_checksums(path: Path, *, app_id: str) -> dict[str, str]:
-    """Parse a native manifest independently of local target completeness."""
-    assert_no_links(path)
-    result: dict[str, str] = {}
-    lines = (
-        path.read_text(encoding="ascii").splitlines() if path.exists() else []
-    )
-    if path.exists() and not lines:
-        raise ValueError(
-            "Existing SHA256SUMS is empty; refusing output replacement."
-        )
-    allowed = {
-        f"{app_id}-setup-linux-x86_64",
-        f"{app_id}-setup-windows-x86_64.exe",
-    }
-    for line in lines:
-        match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.-]+)", line)
-        if match is None or match.group(2) in result:
-            raise ValueError(
-                "Existing SHA256SUMS is malformed; refusing output replacement."
-            )
-        digest, name = match.groups()
-        if name not in allowed:
-            raise ValueError("Existing SHA256SUMS contains an unknown output.")
-        result[name] = digest
-    return result
 
 
 def _parse_previous_checksums(
@@ -318,73 +292,6 @@ class MissingNativeArtifact(ValueError):
 
 class StaleNativeArtifact(ValueError):
     """An authenticated requested setup contains another source revision."""
-
-
-def _inspect_native_setup(
-    path: Path, *, app_id: str, target: NativeTarget
-) -> NativeBinding:
-    """Inspect a setup's executable and embedded project without executing it.
-
-    :param path: Native setup executable, including its appended SDK archive.
-    :param app_id: Expected application identity.
-    :param target: Expected executable format and architecture.
-    :return: Decoded binding after embedded project integrity checks.
-    """
-    assert_no_links(path)
-    _artifact_info(path, target)
-    try:
-        with ZipFile(path) as archive:
-            if len(archive.namelist()) != len(set(archive.namelist())):
-                raise ValueError("Native archive has duplicate entries.")
-            binding, preview = read_native_bindings(archive)
-            project = archive.read("project.zip")
-        if binding.identity.app_id != app_id:
-            raise ValueError("Native artifact belongs to another application.")
-        if hashlib.sha256(project).hexdigest() != binding.source.digest:
-            raise ValueError("Native project archive SHA-256 differs.")
-        with ZipFile(io.BytesIO(project)) as snapshot:
-            if len(snapshot.namelist()) != len(set(snapshot.namelist())):
-                raise ValueError("Project archive has duplicate entries.")
-            relative = PurePosixPath(binding.source.project_path)
-            metadata = tomllib.loads(
-                snapshot.read(str(relative / "pyproject.toml")).decode("utf-8")
-            )
-            lock = next(
-                (
-                    str(parent / "uv.lock")
-                    for parent in (relative, *relative.parents)
-                    if str(parent / "uv.lock") in snapshot.namelist()
-                ),
-                None,
-            )
-            if (
-                lock is None
-                or hashlib.sha256(snapshot.read(lock)).hexdigest()
-                != binding.source.lock_digest
-            ):
-                raise ValueError("Native project lock SHA-256 differs.")
-            declaration = metadata.get("project", {})
-            if declaration.get("version") != binding.version:
-                raise ValueError("Native binding and project versions differ.")
-            project_name = declaration.get("name", "")
-            if (
-                not isinstance(project_name, str)
-                or re.sub(r"[-_.]+", "-", project_name).lower()
-                != binding.identity.distribution
-            ):
-                raise ValueError(
-                    "Native binding and project distribution differ."
-                )
-            for product in (binding, preview):
-                if product is not None and not set(
-                    product.identity.commands
-                ).issubset(declaration.get("scripts", {})):
-                    raise ValueError(
-                        "Native command is absent from the project."
-                    )
-        return binding
-    except (BadZipFile, KeyError, UnicodeError) as error:
-        raise ValueError(f"Invalid native artifact {path}: {error}") from error
 
 
 def _check_old_setup(
@@ -597,6 +504,18 @@ def _publish(
     return Artifact(PurePosixPath("dist/SHA256SUMS"), checksums, False, root)
 
 
+def _release_source(
+    environment: Mapping[str, str],
+) -> GitHubReleaseSource | None:
+    repository = environment.get("RELEASE_REPO_OLIS", "")
+    if not repository:
+        return None
+    visibility = environment.get("RELEASE_PUBLIC", "") or "false"
+    if visibility not in {"true", "false"}:
+        raise ValueError("RELEASE_PUBLIC must be true or false.")
+    return GitHubReleaseSource(repository, visibility == "true")
+
+
 def _write_olis(
     dist: Path, app_id: str, environment: Mapping[str, str]
 ) -> None:
@@ -606,7 +525,6 @@ def _write_olis(
     :param app_id: Validated application ID used in native setup filenames.
     :param environment: Authoring settings used only to select and render OLIS.
     """
-    repository = environment.get("RELEASE_REPO_OLIS", "")
     variants = (("sh", "linux-x86_64"), ("ps1", "windows-x86_64.exe"))
     existing = False
     try:
@@ -616,30 +534,24 @@ def _write_olis(
                 dist / f"install_from_github.{ext}" for ext, _ in variants
             )
         )
-        if not repository:
+        source = _release_source(environment)
+        if source is None:
             if existing:
                 logger.warning(
                     "Existing OLIS files may be stale. Set RELEASE_REPO_OLIS or pass "
                     "--olis-repo OWNER/REPO to refresh them."
                 )
             return
-        if not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+", repository
-        ) or repository.rsplit("/", 1)[1] in {".", ".."}:
-            raise ValueError("RELEASE_REPO_OLIS must be a GitHub OWNER/REPO.")
-        visibility = environment.get("RELEASE_PUBLIC", "") or "false"
-        if visibility not in {"true", "false"}:
-            raise ValueError("RELEASE_PUBLIC must be true or false.")
-        mode = "public" if visibility == "true" else "private"
+        mode = "public" if source.public else "private"
         templates = files("apprc.distribution").joinpath("_templates")
         outputs = []
         for extension, setup_suffix in variants:
             content = templates.joinpath(
                 f"github_{mode}.{extension}"
             ).read_text(encoding="utf-8")
-            content = content.replace("@@REPOSITORY@@", repository).replace(
-                "@@SETUP@@", f"{app_id}-setup-{setup_suffix}"
-            )
+            content = content.replace(
+                "@@REPOSITORY@@", source.repository
+            ).replace("@@SETUP@@", f"{app_id}-setup-{setup_suffix}")
             output = dist / f"install_from_github.{extension}"
             assert_no_links(output)
             outputs.append((output, content.encode("utf-8")))
@@ -709,7 +621,17 @@ def build_native_distribution(
         set_windows_private_acl(workspace)
     _validate_prepared_project(spec, project, workspace)
     runtime_archive = workspace / "runtime.zip"
-    archive_bytes = _sdk_archive(spec, project, extras)
+    authoring_environment = os.environ if environment is None else environment
+    try:
+        release_source = _release_source(authoring_environment)
+    except ValueError:
+        # > Optional OLI configuration is reported after successful publication.
+        release_source = None
+    archive_bytes = (
+        _sdk_archive(spec, project, extras, release_source)
+        if release_source is not None
+        else _sdk_archive(spec, project, extras)
+    )
     with runtime_archive.open("xb") as stream:
         stream.write(archive_bytes)
     builder = NativeFrontendBuilder(
@@ -751,6 +673,6 @@ def build_native_distribution(
     _write_olis(
         dist,
         spec.metadata.identity.app_id,
-        os.environ if environment is None else environment,
+        authoring_environment,
     )
     return NativeDistribution(published_artifacts, checksums)

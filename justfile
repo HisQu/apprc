@@ -216,7 +216,7 @@ _release-artifact-check directory:
     PYTHONPATH=src python src/apprc_dev/packaging/gui_metadata.py --check
     PYTHONPATH=src python -m apprc_dev.packaging.example_metadata --check
     for project in apprc-core apprc apprc-gui; do
-        uv build --python 3.12 --no-sources --package "$project" --out-dir "$directory"
+        uv build --python 3.12 --no-sources --no-create-gitignore --no-build-logs --package "$project" --out-dir "$directory"
     done
     uv run --with twine --no-project -- twine check "$directory"/*
     uv run --isolated --no-project --python 3.12 \

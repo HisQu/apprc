@@ -57,7 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b1...HEAD
+[0.39.1b1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b1
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/HisQu/apprc/compare/v0.36.1...v0.37.0
@@ -100,12 +101,22 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🛠️ Changed
 
-- Build and verify release packages locally. GitHub retains three betas and
-  three release candidates, along with all stable releases and Git tags.
-
 ### 🗑️ Deprecated
 
 ### 🔥 Removed
+
+### 🐛 Fixed
+
+### 🔒 Security
+
+<br>
+
+## [0.39.1b1] - 2026-11-21
+
+### 🛠️ Changed
+
+- Build and verify release packages locally. GitHub retains three betas and
+  three release candidates, along with all stable releases and Git tags.
 
 ### 🐛 Fixed
 
@@ -116,8 +127,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   migration if either dotenv file changes after it was read.
 - Retry editable registration even when Git is current. Update failures
   identify the remaining synchronization or registration steps.
-
-### 🔒 Security
 
 <br>
 

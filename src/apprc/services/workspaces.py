@@ -285,6 +285,9 @@ class WorkspaceManager:
                     f"Workspace {name!r} changed while waiting to move it. "
                     "Review its registered root and retry."
                 )
+            # > The paths can change during lock acquisition even when the record matches.
+            assert_no_links(source)
+            assert_no_links(destination)
             ensure_owned_path(self.spec, self.app_paths, "config")
             return move_workspace(
                 name=name, destination=destination, path=registry_path

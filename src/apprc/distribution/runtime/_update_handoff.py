@@ -157,7 +157,8 @@ def run_update(
                 )
             except (OSError, subprocess.CalledProcessError) as error:
                 raise ValueError(
-                    f"Dependency sync failed. From {cwd}, retry {work['sync_retry']}."
+                    f"Dependency sync failed. From {cwd}, retry {work['sync_retry']}. "
+                    "Run the update again to finish synchronization and refresh registration."
                 ) from error
             print("Dependencies synchronized.", flush=True)
 
@@ -169,16 +170,22 @@ def run_update(
     except OSError as error:
         if work["setup_digest"] is not None:
             raise
-        raise ValueError(
-            f"Registration failed. From {cwd}, retry {work['registration_retry']}."
-        ) from error
+        raise ValueError(_registration_failure(work, cwd)) from error
     if code and work["setup_digest"] is None:
         print(
-            f"Registration failed. From {cwd}, retry {work['registration_retry']}.",
+            _registration_failure(work, cwd),
             file=sys.stderr,
             flush=True,
         )
     return code
+
+
+def _registration_failure(work: UpdateWork, cwd: Path) -> str:
+    return (
+        "Registration failed. Run the update again to retry registration. "
+        f"If the installation is incomplete, retry registration directly from {cwd}: "
+        f"{work['registration_retry']}."
+    )
 
 
 def _main(plan_file: Path) -> int:

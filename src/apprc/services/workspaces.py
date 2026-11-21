@@ -40,6 +40,7 @@ from apprc.user_files.workspace_roots.archive import (
 )
 from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 from apprc.user_files.workspace_roots.move import (
+    WorkspaceMoveError,
     WorkspaceMoveResult,
     move_workspace,
 )
@@ -266,7 +267,8 @@ class WorkspaceManager:
         current = workspace_registry.load_workspace_registry_or_empty(
             registry_path
         )
-        source = current.selected(name).root
+        record = current.selected(name)
+        source = record.root
         destination = resolve_workspace_root_path(
             root, base=registry_path.parent
         )
@@ -275,6 +277,17 @@ class WorkspaceManager:
         assert_no_links(source)
         self._reject_managed_overlap(source)
         with self._write_lock(registry_path.parent, source, destination):
+            current = workspace_registry.load_workspace_registry_or_empty(
+                registry_path
+            )
+            if current.workspaces.get(name) != record:
+                raise WorkspaceMoveError(
+                    f"Workspace {name!r} changed while waiting to move it. "
+                    "Review its registered root and retry."
+                )
+            # > The paths can change during lock acquisition even when the record matches.
+            assert_no_links(source)
+            assert_no_links(destination)
             ensure_owned_path(self.spec, self.app_paths, "config")
             return move_workspace(
                 name=name, destination=destination, path=registry_path

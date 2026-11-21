@@ -44,7 +44,6 @@ from apprc.distribution.runtime._install_progress import report, warn
 from apprc.distribution.runtime._os_integration import (
     command_is_owned,
     publish_global_command,
-    restore_windows_registration,
     validate_command_directory,
     validate_global_command,
 )
@@ -86,9 +85,6 @@ from apprc.user_files.installation.operations import (
 if TYPE_CHECKING:
     from apprc.definition.resolution import CliRuntimeOptionsProtocol
     from apprc.services.installation import InstallationManager
-    from apprc.distribution.runtime._os_integration import (
-        WindowsRegistrationSnapshot,
-    )
 
 LOG = logging.getLogger(__name__)
 
@@ -993,7 +989,6 @@ def _failed_operation(
     error: BaseException,
     *,
     resources: _ResourceSnapshot,
-    registry: WindowsRegistrationSnapshot | None,
     candidate_existed: bool,
     activation_started: bool,
 ) -> InstallationInspection | None:
@@ -1007,7 +1002,6 @@ def _failed_operation(
     :param prior: Authority captured before this attempt.
     :param error: Original failure, preserved if rollback succeeds.
     :param resources: Resource existence before initialization.
-    :param registry: Registry state captured before publication.
     :param candidate_existed: Whether the managed candidate predates this attempt.
     :param activation_started: Whether activation was called before the failure.
     :return: Committed success after a read-back failure, otherwise ``None``.
@@ -1056,8 +1050,6 @@ def _failed_operation(
                 "Installation authority changed; rollback was not authorized."
             )
         operation = record.operation
-        if registry is not None:
-            restore_windows_registration(registry)
         for item in reversed(operation.publication):
             if not _restore_pending_publication(manager, item.path):
                 raise InstallationError(
@@ -1303,7 +1295,6 @@ def _install_managed_candidate(
     prior_outputs = previous.owned_outputs if previous is not None else ()
     resources = _resource_snapshot(plan.target.placement)
     candidate_existed = (directory / "runtimes" / str(runtime.slot_id)).exists()
-    registry: WindowsRegistrationSnapshot | None = None
     activation_started = False
     try:
         current = manager.begin_operation(plan)
@@ -1438,7 +1429,6 @@ def _install_managed_candidate(
             prior,
             error,
             resources=resources,
-            registry=registry,
             candidate_existed=candidate_existed,
             activation_started=activation_started,
         )
@@ -2484,7 +2474,6 @@ def register_editable_application(
                 prior,
                 error,
                 resources=resources,
-                registry=None,
                 candidate_existed=False,
                 activation_started=activation_started,
             )

@@ -25,9 +25,13 @@
 
 ## Environment
 
-CI runs only on Ubuntu: core checks cover Python 3.12, 3.13, and 3.14, and
-GUI/browser checks cover Python 3.12. Windows and macOS runtime and installer
-code remain, but those platforms are unverified by this CI policy. Existing
+Ordinary pushes and pull requests run core checks on Ubuntu with Python 3.12.
+Release-candidate tags run the extended core matrix on Python 3.12, 3.13, and
+3.14, plus GUI/browser checks on Python 3.14. Stable tags run the same matrix
+unless the workflow finds successful CI from a matching release candidate.
+In that case, the stable tag runs only the core Python 3.12 checks. Beta tags
+run core Python 3.12 checks when hosted CI is required and skip them otherwise.
+Windows and macOS runtime and installer code remain outside this CI policy. Existing
 [native installation and UI test failures](../BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails)
 remain unresolved; a green Linux run does not establish native compatibility.
 `uv`, `direnv`, and `just` are conveniences. Runtime, builds, and pip development
@@ -116,11 +120,12 @@ recovered once.
 If preparation fails after advancing a checkpoint, failure journaling reads the
 latest on-disk revision.
 For caught pre-activation errors, the installer restores recorded command
-before-images, captured Windows registration, and newly created empty resource
-artifacts before restoring prior authority. Use the existing shared failure
-path rather than a second transaction framework. A publisher can mutate and
-then raise, so recovery follows recorded intent rather than returned-output
-flags. Recheck saved authority after activation errors; successful activation
+before-images and newly created empty resource artifacts before restoring prior
+authority. Windows Installed apps registration runs after installation
+authority commits and retains its recovery journal and retry path. Use the
+shared failure path for command publication recovery. A publisher can mutate
+and then raise, so recovery follows recorded intent for each changed output.
+Recheck saved authority after activation errors. A committed activation
 must survive housekeeping failures. Application hook effects and database
 compatibility remain application responsibilities. Incomplete rollback and
 process interruption retain honest recovery checkpoints.

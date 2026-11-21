@@ -305,13 +305,35 @@ class ConfigManager:
         owner, spec = resolve_config_field_reference(
             self.schema.owners, reference
         )
-        path = self.writable_path(
-            scope, workspace=workspace, secret=spec.secret
-        )
+        ordinary = self.writable_path(scope, workspace=workspace)
+        path = ordinary
         if spec.secret:
+            path = secret_companion_path(ordinary)
             self._require_private_secret_edit(
-                scope, owner.env_key(spec.name), workspace=workspace
+                ordinary, path, owner.env_key(spec.name)
             )
+        return self._plan_update_for_path(
+            reference, raw_value, scope=scope, path=path, private=spec.secret
+        )
+
+    def _plan_update_for_path(
+        self,
+        reference: str,
+        raw_value: str,
+        *,
+        scope: WriteScope,
+        path: Path,
+        private: bool,
+    ) -> EnvFileEditPlan:
+        """Plan a file edit and attach authority for its captured path.
+
+        :param reference: Full environment key or field reference.
+        :param raw_value: User-provided value before validation.
+        :param scope: Writable layer determining directory ownership.
+        :param path: Previously selected dotenv destination.
+        :param private: Whether the file requires a private write.
+        :return: Revision-checked edit with its lock roots and authority.
+        """
         config_root = self.paths.config_dir
         lock_roots = tuple(
             dict.fromkeys(
@@ -325,7 +347,7 @@ class ConfigManager:
                 raw_value=raw_value,
                 owners=self.schema.owners,
                 layer_name=path.name,
-                private=spec.secret,
+                private=private,
             ),
             lock_roots=lock_roots,
             authority=InstallationWriteAuthority(
@@ -352,6 +374,10 @@ class ConfigManager:
         :param workspace: Explicit workspace selector when applicable.
         :return: Grouped revision-checked writes without filesystem changes.
         """
+        if not values:
+            return plan_env_file_batch(())
+        ordinary = self.writable_path(scope, workspace=workspace)
+        private = secret_companion_path(ordinary)
         edits: list[EnvFileEditPlan] = []
         for reference, value in values.items():
             owner, spec = resolve_config_field_reference(
@@ -359,12 +385,16 @@ class ConfigManager:
             )
             if spec.secret:
                 self._require_private_secret_edit(
-                    scope, owner.env_key(spec.name), workspace=workspace
+                    ordinary, private, owner.env_key(spec.name)
                 )
             try:
                 edits.append(
-                    self.plan_update(
-                        reference, value, scope=scope, workspace=workspace
+                    self._plan_update_for_path(
+                        reference,
+                        value,
+                        scope=scope,
+                        path=private if spec.secret else ordinary,
+                        private=spec.secret,
                     )
                 )
             except ValueError:
@@ -401,12 +431,12 @@ class ConfigManager:
         owner, spec = resolve_config_field_reference(
             self.schema.owners, reference
         )
-        path = self.writable_path(
-            scope, workspace=workspace, secret=spec.secret
-        )
+        ordinary = self.writable_path(scope, workspace=workspace)
+        path = ordinary
         if spec.secret:
+            path = secret_companion_path(ordinary)
             self._require_private_secret_edit(
-                scope, owner.env_key(spec.name), workspace=workspace
+                ordinary, path, owner.env_key(spec.name)
             )
         plan = plan_env_file_value_removal(
             path=path,
@@ -439,10 +469,9 @@ class ConfigManager:
         )
 
     def _require_private_secret_edit(
-        self, scope: WriteScope, env_key: str, *, workspace: str | None
+        self, ordinary: Path, private: Path, env_key: str
     ) -> None:
         """Avoid unsafe writes or revealing a legacy ordinary-file value."""
-        regular = self.writable_path(scope, workspace=workspace)
         environment = filter_dependency_environment(
             self.environment, self._imported_configs
         )
@@ -450,15 +479,15 @@ class ConfigManager:
             dependency_environment_exclusions(self._imported_configs)
         )
         if env_key in parse_dotenv_file(
-            regular,
+            ordinary,
             environment=environment,
             excluded_env_keys=excluded_env_keys,
             excluded_env_prefixes=excluded_env_prefixes,
         ):
             raise ValueError(
-                f"{env_key} is still in {regular.name}. Run `config secrets migrate` first."
+                f"{env_key} is still in {ordinary.name}. Run `config secrets migrate` first."
             )
-        status = self.secret_status(scope, workspace=workspace)
+        status = inspect_secret_file(private)
         if not status.available:
             raise ValueError(status.issue or "Secret file is unavailable.")
 

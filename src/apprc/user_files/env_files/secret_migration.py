@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 
@@ -57,14 +58,8 @@ def plan_secret_migration(
     :param secret_keys: Keys declared with ``secret=True``.
     :return: Revision-checked plan with no values in its representation.
     """
-    ordinary = (
-        ordinary_path.read_text(encoding="utf-8")
-        if ordinary_path.is_file()
-        else ""
-    )
-    secret = (
-        secret_path.read_text(encoding="utf-8") if secret_path.is_file() else ""
-    )
+    ordinary, ordinary_revision = _read_dotenv_snapshot(ordinary_path)
+    secret, secret_revision = _read_dotenv_snapshot(secret_path)
     existing = _assignments(secret)
     moving = {
         key: value
@@ -95,11 +90,25 @@ def plan_secret_migration(
         ordinary_path=ordinary_path,
         secret_path=secret_path,
         keys=tuple(sorted(set(moving) | commented)),
-        ordinary_revision=file_revision(ordinary_path),
-        secret_revision=file_revision(secret_path),
+        ordinary_revision=ordinary_revision,
+        secret_revision=secret_revision,
         ordinary_text=new_ordinary,
         secret_text=new_secret,
     )
+
+
+def _read_dotenv_snapshot(path: Path) -> tuple[str, str | None]:
+    """Read the text and revision from the same bytes.
+
+    :param path: Dotenv file to inspect.
+    :return: Text with universal newlines and a digest for an existing file.
+    """
+    try:
+        content = path.read_bytes()
+    except FileNotFoundError:
+        return "", None
+    text = content.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return text, sha256(content).hexdigest()
 
 
 def apply_secret_migration(plan: SecretMigrationPlan) -> None:

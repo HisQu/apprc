@@ -543,6 +543,13 @@ move, remove, archive, and restore. Unregistering never deletes workspace
 payloads. The [workspace reference](References.md#workspace-selection) defines
 selector precedence and direct paths.
 
+To move a registered workspace, run `demo workspace move NAME DESTINATION`
+using your application's command in place of `demo`. The command prints the
+new root when the registry is updated. If cleanup leaves a directory in place,
+the command reports it on stderr and still returns success for the completed
+move. If the workspace was repointed while the move waited, review its
+registered root and retry.
+
 For research software, record the application release and project settings
 alongside the input data, analysis parameters, and validation decisions.
 
@@ -1404,9 +1411,10 @@ demo app update
 ```
 
 `demo update` is an alias when the application enables the root alias.
-An available update asks for confirmation. Add `--yes` for an unattended
-run. On Windows the command may hand work to a helper while the original
-launcher closes. Read the helper or setup output for the final result.
+An available release update or an editable checkout refresh asks for
+confirmation. Add `--yes` for an unattended run. On Windows the command may
+hand work to a helper while the original launcher closes. Read the helper or
+setup output for the final result.
 
 A release installation uses the publisher's configured GitHub release
 source. The command verifies the downloaded setup before running it and keeps
@@ -1426,11 +1434,13 @@ through the normal installation steps.
 
 An editable installation uses its recorded checkout and environment. It
 requires a clean Git checkout on a branch with an upstream and advances the
-branch only by fast-forward. It then runs `uv sync --locked` and refreshes
-registration as needed. Sync uses the project's default dependency selection
-and may remove packages outside that selection. If sync or registration
-fails, the command reports any Git change and prints the command for retrying
-the failed step. Use [inspection and repair](#inspect-or-repair-installation)
+branch only by fast-forward. It then runs `uv sync --locked` and refreshes the
+existing registration, even when Git is already current. Sync uses the
+project's default dependency selection and may remove packages outside that
+selection. If sync or registration fails, the command reports any Git change
+and gives recovery steps. Run the update again to finish a ready installation.
+If AppRC reports an incomplete installation, retry registration with the
+printed command. Use [inspection and repair](#inspect-or-repair-installation)
 when the saved runtime has stopped working.
 
 ## Keep or switch the saved layout

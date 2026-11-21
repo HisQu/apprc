@@ -258,6 +258,7 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
         Callable[..., subprocess.CompletedProcess[str]], subprocess.run
     )
     calls: list[tuple[list[str], dict[str, object]]] = []
+    fail_registration = outcome == "registration"
 
     def run(arguments: Sequence[str], **kwargs: object):
         command = list(arguments)
@@ -274,7 +275,7 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
                     command[0] == sys.executable
                     and outcome == "sync"
                     or command[0] != sys.executable
-                    and outcome == "registration"
+                    and fail_registration
                 )
                 else 0
             )
@@ -339,6 +340,14 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             assert str(command_dir) in calls[1][0]
         if outcome == "registration":
             assert "retry" in capsys.readouterr().err
+            fail_registration = False
+            calls.clear()
+            confirmed.clear()
+            assert perform() == 0
+            assert _git(checkout, "rev-parse", "HEAD") == end
+            assert confirmed
+            assert calls[-1][0][0] == str(prefix / "bin" / record.command_name)
+            assert "--apprc-update-revision" in calls[-1][0]
 
 
 def test_expected_update_rejects_a_stale_record(tmp_path: Path) -> None:

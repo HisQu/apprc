@@ -109,6 +109,14 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Preserve unrelated directories during workspace move rollback and reject
+  moves when the registered source changes while waiting. The CLI reports
+  the committed destination and any cleanup warnings.
+- Keep grouped settings edits in the captured workspace. Reject secret
+  migration if either dotenv file changes after it was read.
+- Retry editable registration even when Git is current. Update failures
+  identify the remaining synchronization or registration steps.
+
 ### 🔒 Security
 
 <br>

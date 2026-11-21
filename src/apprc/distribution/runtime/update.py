@@ -175,7 +175,7 @@ def _editable_update(
     work: UpdateWork,
     maintenance_group: str,
     confirm: Callable[[str], None],
-) -> bool:
+) -> None:
     project, prefix = runtime.project, runtime.environment
     assert_no_links(project)
     assert_no_links(prefix)
@@ -235,26 +235,15 @@ def _editable_update(
         )
     environment["UV_PROJECT_ENVIRONMENT"] = str(prefix)
     sync = [uv, "sync", "--locked"]
-    if (
-        candidate == head
-        and subprocess.run(
-            [*sync, "--check"],
-            cwd=cwd,
-            env=environment,
-            capture_output=True,
-            check=False,
-        ).returncode
-        == 0
-    ):
-        print("The checkout and environment are already up to date.")
-        return False
+    # > A current checkout and environment can still need registration.
+    # > Reuse confirmed registration and its idempotent initialization.
     change = (
         f"Fast-forward {head[:12]} to {candidate[:12]} and synchronize"
         if head != candidate
-        else "Synchronize"
+        else "The checkout is current. Synchronize"
     )
     confirm(
-        f"{change} the recorded environment at {prefix} using the project's default dependency selection?"
+        f"{change} the recorded environment at {prefix} using the project's default dependency selection and refresh registration?"
     )
     command_dir = recorded_command_directory(
         record, Path(work["authority"]).parent
@@ -311,7 +300,6 @@ def _editable_update(
             work["revision"],
         ],
     )
-    return True
 
 
 def _stage_windows_helper(stage: Path) -> Path:
@@ -486,12 +474,12 @@ def update_application(
             registration_retry="",
         )
         if editable is not None:
-            confirmed = _editable_update(
+            _editable_update(
                 record, editable, environment, work, maintenance_group, confirm
             )
         else:
             assert binding is not None and isinstance(runtime, RuntimeSlot)
-            confirmed = _managed_update(
+            if not _managed_update(
                 record,
                 runtime,
                 binding,
@@ -500,9 +488,8 @@ def update_application(
                 work,
                 confirm,
                 regular_app_id=regular_app_id or binding.identity.app_id,
-            )
-        if not confirmed:
-            return 0
+            ):
+                return 0
         if os.name == "nt":
             _hand_off_windows(
                 stage,

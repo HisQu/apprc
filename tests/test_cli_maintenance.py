@@ -564,3 +564,43 @@ def test_workspace_terminal_report_preserves_json_and_redirected_registry_output
         assert f"\x1b[36m{path}" in report.stdout
     assert registry_path.read_bytes() == before
     assert live_root.is_dir() and archived_root.is_dir() and archive.is_file()
+
+
+def test_workspace_move_reports_destination_and_cleanup_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    declaration = rc.AppRC(
+        app_id="workspace-move-report",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "app"),
+        workspaces=rc.Workspaces(),
+    )
+    manager = declaration.workspaces(environment={})
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    manager.register_workspace("alpha", source)
+    (source / "payload").write_text("keep", encoding="utf-8")
+    app = typer.Typer()
+    rc.cli.mount_app_cli(app, declaration)
+    real_rmdir = Path.rmdir
+
+    def fail_cleanup(path: Path) -> None:
+        if (
+            path.name.startswith(".destination.apprc-empty-")
+            and (destination / "payload").is_file()
+        ):
+            raise OSError("cleanup unavailable")
+        real_rmdir(path)
+
+    monkeypatch.setattr(Path, "rmdir", fail_cleanup)
+    result = CliRunner().invoke(
+        app, ["workspace", "move", "alpha", str(destination)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert str(destination) in " ".join(result.stdout.split())
+    assert "cleanup unavailable" in " ".join(result.stderr.split())
+    assert (destination / "payload").read_text(encoding="utf-8") == "keep"
+    assert manager.registry().selected("alpha").root == destination
+    assert not source.exists()

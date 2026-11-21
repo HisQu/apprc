@@ -748,9 +748,21 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
             ],
         ) -> None:
             """Move a workspace and update its registered root."""
-            _workspace_manager(ctx, apprc).move_workspace(
-                name=name, root=destination
+            from apprc.interfaces._terminal_console import cli_line
+
+            try:
+                result = _workspace_manager(ctx, apprc).move_workspace(
+                    name=name, root=destination
+                )
+            except (OSError, ValueError) as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            cli_line(
+                ctx, "Workspace moved", path=result.destination, style="success"
             )
+            for warning in result.warnings:
+                cli_line(
+                    ctx, f"Warning: {warning}", style="warning", error=True
+                )
 
         @child.command("remove")
         def remove_workspace(

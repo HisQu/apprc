@@ -5,6 +5,7 @@ from __future__ import annotations
 # == Standard Library ===========================================
 import os
 import shutil
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,9 +82,12 @@ def move_workspace(
         )
 
     target = resolve_workspace_root_path(destination, base=registry.path.parent)
-    _validate_destination(source=source, destination=target)
-    destination_existed = target.is_dir()
-    backup = _park_empty_destination(target) if destination_existed else None
+    target_identity = _validate_destination(source=source, destination=target)
+    backup = (
+        _park_empty_destination(target, target_identity)
+        if target_identity is not None
+        else None
+    )
 
     try:
         same_filesystem = source.stat().st_dev == target.parent.stat().st_dev
@@ -107,11 +111,14 @@ def move_workspace(
         raise
 
 
-def _validate_destination(*, source: Path, destination: Path) -> None:
+def _validate_destination(
+    *, source: Path, destination: Path
+) -> os.stat_result | None:
     """Reject destinations that could merge or overwrite workspace data.
 
     :param source: Existing workspace directory.
     :param destination: Proposed destination.
+    :return: Identity of an existing empty destination, if present.
     :raises WorkspaceMoveError: If the destination is unsafe.
     """
     if destination == source:
@@ -122,31 +129,38 @@ def _validate_destination(*, source: Path, destination: Path) -> None:
         raise WorkspaceMoveError(
             "Workspace source and destination must not contain each other."
         )
-    if destination.is_symlink():
+    try:
+        identity = destination.lstat()
+    except FileNotFoundError:
+        if not destination.parent.is_dir():
+            raise WorkspaceMoveError(
+                "Workspace destination parent does not exist or is not a directory: "
+                f"{destination.parent}"
+            ) from None
+        return None
+    if stat.S_ISLNK(identity.st_mode):
         raise WorkspaceMoveError(
             f"Workspace destination must not be a symbolic link: {destination}"
         )
-    if destination.exists():
-        if not destination.is_dir():
-            raise WorkspaceMoveError(
-                f"Workspace destination is not a directory: {destination}"
-            )
-        if any(destination.iterdir()):
-            raise WorkspaceMoveError(
-                f"Workspace destination must be new or empty: {destination}"
-            )
-    elif not destination.parent.is_dir():
+    if not stat.S_ISDIR(identity.st_mode):
         raise WorkspaceMoveError(
-            "Workspace destination parent does not exist or is not a directory: "
-            f"{destination.parent}"
+            f"Workspace destination is not a directory: {destination}"
         )
+    if any(destination.iterdir()):
+        raise WorkspaceMoveError(
+            f"Workspace destination must be new or empty: {destination}"
+        )
+    return identity
 
 
-def _park_empty_destination(destination: Path) -> Path:
+def _park_empty_destination(
+    destination: Path, identity: os.stat_result
+) -> tuple[Path, os.stat_result]:
     """Rename an empty destination until the workspace move commits.
 
     :param destination: Existing empty directory.
-    :return: Private sibling backup path.
+    :param identity: Identity captured when validating the destination.
+    :return: Private sibling backup path and original directory identity.
     """
     backup = Path(
         tempfile.mkdtemp(
@@ -155,8 +169,39 @@ def _park_empty_destination(destination: Path) -> Path:
         )
     )
     backup.rmdir()
+    if not _owns_directory(destination, identity) or any(destination.iterdir()):
+        raise WorkspaceMoveError(
+            f"Workspace destination changed: {destination}"
+        )
+    _require_absent(backup)
     os.replace(destination, backup)
-    return backup
+    return backup, identity
+
+
+def _owns_directory(path: Path, expected: os.stat_result) -> bool:
+    """Check a directory entry's identity without following a replacement link.
+
+    :param path: Entry that the operation expects to own.
+    :param expected: Metadata captured before publishing or parking it.
+    :return: Whether the entry is still the expected directory.
+    """
+    try:
+        actual = path.lstat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISDIR(actual.st_mode) and os.path.samestat(actual, expected)
+
+
+def _require_absent(path: Path) -> None:
+    """Raise if another writer has occupied a destination.
+
+    :param path: Path expected to be vacant before a move or restoration.
+    """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    raise WorkspaceMoveError(f"Workspace directory is occupied: {path}")
 
 
 def _move_by_rename(
@@ -165,7 +210,7 @@ def _move_by_rename(
     source: Path,
     destination: Path,
     registry_path: Path,
-    backup: Path | None,
+    backup: tuple[Path, os.stat_result] | None,
 ) -> WorkspaceMoveResult:
     """Commit a same-filesystem directory rename.
 
@@ -176,14 +221,27 @@ def _move_by_rename(
     :param backup: Parked original empty destination.
     :return: Completed move details.
     """
+    identity = source.lstat()
+    published = False
     try:
+        _require_absent(destination)
         os.replace(source, destination)
+        published = True
+        if not _owns_directory(destination, identity):
+            raise WorkspaceMoveError(
+                f"Workspace destination changed: {destination}"
+            )
         repoint_workspace(name=name, root=destination, path=registry_path)
     except Exception as exc:
-        if destination.exists() and not source.exists():
+        if published:
             try:
+                if not _owns_directory(destination, identity):
+                    raise WorkspaceMoveError(
+                        f"Published workspace directory changed: {destination}"
+                    )
+                _require_absent(source)
                 os.replace(destination, source)
-            except OSError as rollback_exc:
+            except (OSError, WorkspaceMoveError) as rollback_exc:
                 raise WorkspaceMoveError(
                     f"{exc}; rollback also failed: {rollback_exc}"
                 ) from exc
@@ -203,7 +261,7 @@ def _move_by_copy(
     source: Path,
     destination: Path,
     registry_path: Path,
-    backup: Path | None,
+    backup: tuple[Path, os.stat_result] | None,
 ) -> WorkspaceMoveResult:
     """Commit a verified cross-filesystem copy.
 
@@ -214,6 +272,7 @@ def _move_by_copy(
     :param backup: Parked original empty destination.
     :return: Completed move details.
     """
+    source_identity = source.lstat()
     snapshot = _directory_snapshot(source)
     staging = Path(
         tempfile.mkdtemp(
@@ -221,6 +280,8 @@ def _move_by_copy(
             dir=destination.parent,
         )
     )
+    identity = staging.lstat()
+    published = False
     try:
         shutil.copytree(source, staging, dirs_exist_ok=True, symlinks=True)
         if _directory_snapshot(source) != snapshot:
@@ -228,19 +289,37 @@ def _move_by_copy(
                 "Workspace source changed while it was copied; no registry "
                 "change was made."
             )
+        _require_absent(destination)
         os.replace(staging, destination)
+        published = True
+        if not _owns_directory(destination, identity):
+            raise WorkspaceMoveError(
+                f"Workspace destination changed: {destination}"
+            )
         repoint_workspace(name=name, root=destination, path=registry_path)
     except Exception as exc:
-        candidate = destination if destination.exists() else staging
-        if candidate.exists() and candidate.is_dir():
-            shutil.rmtree(candidate)
+        candidate = destination if published else staging
+        try:
+            if _owns_directory(candidate, identity):
+                shutil.rmtree(candidate)
+        except OSError as rollback_exc:
+            raise WorkspaceMoveError(
+                f"{exc}; rollback also failed: {rollback_exc}"
+            ) from exc
         if isinstance(exc, WorkspaceMoveError):
             raise
         raise WorkspaceMoveError(str(exc)) from exc
 
     warnings: list[str] = []
     try:
-        if _directory_snapshot(source) == snapshot:
+        if not _owns_directory(destination, identity):
+            warnings.append(
+                f"Destination changed after registry update. Previous workspace root kept: {source}"
+            )
+        elif (
+            _owns_directory(source, source_identity)
+            and _directory_snapshot(source) == snapshot
+        ):
             shutil.rmtree(source)
         else:
             warnings.append(
@@ -292,28 +371,42 @@ def _directory_snapshot(
 
 def _restore_empty_destination(
     destination: Path,
-    backup: Path | None,
+    backup: tuple[Path, os.stat_result] | None,
 ) -> None:
     """Restore a parked empty destination after a failed move.
 
     :param destination: Intended workspace destination.
     :param backup: Parked empty directory, if one existed.
     """
-    if backup is None or not backup.exists() or destination.exists():
+    if backup is None:
         return
-    os.replace(backup, destination)
+    path, identity = backup
+    if not _owns_directory(path, identity):
+        return
+    try:
+        _require_absent(destination)
+    except WorkspaceMoveError:
+        return
+    os.replace(path, destination)
 
 
-def _discard_empty_backup(backup: Path | None) -> str | None:
+def _discard_empty_backup(
+    backup: tuple[Path, os.stat_result] | None,
+) -> str | None:
     """Remove a parked empty directory after commit.
 
     :param backup: Parked empty directory, if one existed.
     :return: Cleanup warning, if removal failed.
     """
-    if backup is None or not backup.exists():
+    if backup is None:
         return None
+    path, identity = backup
     try:
-        backup.rmdir()
+        if not _owns_directory(path, identity):
+            if os.path.lexists(path):
+                return f"Empty destination backup changed and was kept: {path}"
+            return None
+        path.rmdir()
     except OSError as exc:
-        return f"Could not remove empty destination backup {backup}: {exc}"
+        return f"Could not remove empty destination backup {path}: {exc}"
     return None

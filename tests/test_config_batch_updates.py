@@ -8,17 +8,20 @@ import pytest
 from dotenv import dotenv_values
 
 import apprc as rc
+from apprc.services import manager as manager_module
+from apprc.services.manager import ConfigManager
 from apprc.user_files.app_home.writes import StaleEditError
 from apprc.user_files.env_files import updates
 
 
-def _manager(tmp_path: Path):
-    """Prepare real private user configuration without external services."""
+def _app(tmp_path: Path) -> rc.AppRC:
+    """Declare editable settings usable in the user and workspace layers."""
     app = rc.AppRC(
         app_id="batch-settings",
         paths=rc.Paths(config=True),
         layout=rc.Layout.single_root(tmp_path / "application"),
         user_dotenv=rc.UserDotenv(),
+        workspaces=rc.Workspaces(),
     )
 
     @app.config("database", prefix="BATCH_")
@@ -28,6 +31,12 @@ def _manager(tmp_path: Path):
         password: str = rc.field("BATCH_PASSWORD", default="", secret=True)
         port: int = rc.field("BATCH_PORT", default=3306)
 
+    return app
+
+
+def _manager(tmp_path: Path) -> ConfigManager:
+    """Prepare real private user configuration without external services."""
+    app = _app(tmp_path)
     manager = app.manage(environment={})
     manager.setup()
     return manager
@@ -65,6 +74,53 @@ def test_grouped_save_coalesces_regular_values_and_keeps_password_private(
     assert "private-value" not in regular.read_text()
     assert "private-value" in private.read_text()
     assert "private-value" not in repr(result)
+
+
+def test_grouped_edit_uses_the_initial_workspace_after_selection_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _app(tmp_path)
+    manager = app.manage(environment={})
+    workspaces = app.workspaces(environment={})
+    for name in ("initial", "other"):
+        workspaces.register_workspace(name, tmp_path / name)
+    workspaces.select_workspace("initial")
+    regular = manager.writable_path("workspace")
+    private = manager.writable_path("workspace", secret=True)
+    other_regular = manager.writable_path("workspace", workspace="other")
+    other_private = manager.writable_path(
+        "workspace", workspace="other", secret=True
+    )
+    before_other = other_regular.read_bytes(), other_private.read_bytes()
+    original = manager_module.plan_env_file_value_update
+
+    def plan_and_switch(**kwargs):
+        edit = original(**kwargs)
+        if edit.env_key == "BATCH_SERVER":
+            workspaces.select_workspace("other")
+        return edit
+
+    monkeypatch.setattr(
+        manager_module, "plan_env_file_value_update", plan_and_switch
+    )
+    plan = manager.plan_updates(
+        {
+            "BATCH_SERVER": "host",
+            "BATCH_USER": "account",
+            "BATCH_PASSWORD": "private-value",
+        },
+        scope="workspace",
+    )
+    manager.apply_updates(plan)
+
+    assert dotenv_values(regular)["BATCH_SERVER"] == "host"
+    assert dotenv_values(regular)["BATCH_USER"] == "account"
+    assert dotenv_values(private)["BATCH_PASSWORD"] == "private-value"
+    assert (
+        other_regular.read_bytes(),
+        other_private.read_bytes(),
+    ) == before_other
+    assert workspaces.registry().selected_workspace == "other"
 
 
 @pytest.mark.parametrize("failure", ["stale", "invalid", "privacy"])

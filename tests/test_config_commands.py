@@ -14,6 +14,7 @@ from apprc.interfaces.cli.mount import mount_app_cli
 from apprc.user_files.app_home.application import AppFiles
 from apprc.user_files.app_home.writes import StaleEditError
 from apprc.user_files.env_files import secret_migration
+from apprc.user_files.env_files.secrets import ensure_secret_file
 
 
 def _root_cli(app_rc: rc.AppRC) -> tuple[typer.Typer, dict[str, typer.Typer]]:
@@ -212,6 +213,75 @@ def test_secret_migration_moves_value_to_private_companion(
         manager.resolve().source.values["SECRET_MIGRATION_TOKEN"]
         == "private-value"
     )
+
+
+@pytest.mark.parametrize("changed_file", ("ordinary", "secret"))
+def test_secret_migration_rejects_an_intervening_write_during_planning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed_file: str
+) -> None:
+    managed = tmp_path / "managed"
+    ordinary = managed / "apprc.user.env"
+    secret = managed / "apprc.user.secret.env"
+    captured_ordinary = b'MIGRATION_TOKEN="fixture-token"\r\n'
+    assert ensure_secret_file(secret).available
+    ordinary.write_bytes(captured_ordinary)
+    changed = ordinary if changed_file == "ordinary" else secret
+    foreign = b"# Another writer changed this file\r\n"
+    original = secret_migration.set_dotenv_document_value
+
+    def set_after_intervening_write(text: str, *, env_key: str, value: str):
+        changed.write_bytes(foreign)
+        return original(text, env_key=env_key, value=value)
+
+    # > Interleave a write after the planner has read both source documents.
+    monkeypatch.setattr(
+        secret_migration,
+        "set_dotenv_document_value",
+        set_after_intervening_write,
+    )
+    plan = secret_migration.plan_secret_migration(
+        ordinary, secret, {"MIGRATION_TOKEN"}
+    )
+
+    with pytest.raises(StaleEditError):
+        secret_migration.apply_secret_migration(plan)
+    assert changed.read_bytes() == foreign
+    if changed_file == "secret":
+        assert ordinary.read_bytes() == captured_ordinary
+
+
+@pytest.mark.parametrize("companion_exists", (False, True))
+def test_secret_migration_distinguishes_an_absent_and_empty_companion(
+    tmp_path: Path, companion_exists: bool
+) -> None:
+    managed = tmp_path / "managed"
+    ordinary = managed / "apprc.user.env"
+    secret = managed / "apprc.user.secret.env"
+    assert ensure_secret_file(secret).available
+    captured_ordinary = b'MIGRATION_TOKEN="fixture-token"\r\nKEEP=true\r\n'
+    ordinary.write_bytes(captured_ordinary)
+    if not companion_exists:
+        secret.unlink()
+    plan = secret_migration.plan_secret_migration(
+        ordinary, secret, {"MIGRATION_TOKEN"}
+    )
+
+    if companion_exists:
+        secret.unlink()
+    else:
+        assert ensure_secret_file(secret).available
+
+    with pytest.raises(StaleEditError):
+        secret_migration.apply_secret_migration(plan)
+    assert secret.exists() is not companion_exists
+    assert ordinary.read_bytes() == captured_ordinary
+
+    fresh = secret_migration.plan_secret_migration(
+        ordinary, secret, {"MIGRATION_TOKEN"}
+    )
+    secret_migration.apply_secret_migration(fresh)
+    assert ordinary.read_bytes() == b"KEEP=true\n"
+    assert dotenv_values(secret)["MIGRATION_TOKEN"] == "fixture-token"
 
 
 def test_secret_migration_recovers_with_fresh_plan_after_ordinary_write_fails(

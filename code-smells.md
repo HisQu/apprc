@@ -6,9 +6,27 @@ Identify defects and cleanup opportunities that make AppRC easier to maintain an
 
 **Specifics**
 
-Reviewed `main` at `11927a` (tree `3a0c57`) on Linux with Python 3.14.2. The review covered the SDK, CLI, Textual and Gradio interfaces, workspace and installation operations, packaging, workflows, docs, examples, and relevant tests. The user selected deeper edge cases and asked to consider breaking proposals. All findings are open and linked from the [backlog](BACKLOG.md#2026-11-21).
+Reviewed `main` at `11927a` (tree `3a0c57`) on Linux with Python 3.14.2. The review covered the SDK, CLI, Textual and Gradio interfaces, workspace and installation operations, packaging, workflows, docs, examples, and relevant tests. The user selected deeper edge cases and asked to consider breaking proposals.
 
-Start with the workspace move findings. A failed cross-filesystem move can delete a directory AppRC never published, and a queued move can act on a workspace root that differs from the one it locked. The secret migration snapshot has a separate stale-write risk. These findings follow from source inspection. The existing Linux tests pass and do not exercise these particular interleavings. [CSC-11](#csc-11) · [CSC-12](#csc-12) · [CSC-13](#csc-13)
+The correctness pass fixed eight findings. The [backlog](BACKLOG.md#2026-11-21) retains the five deferred items.
+
+| Finding | Disposition |
+| --- | --- |
+| [CSC-01](#csc-01) | Explicitly deferred at P3. |
+| [CSC-02](#csc-02) | Explicitly deferred at P3. |
+| [CSC-03](#csc-03) | Explicitly deferred. |
+| [CSC-04](#csc-04) | Fixed. Grouped edits use one captured workspace and destination set. |
+| [CSC-05](#csc-05) | Explicitly deferred. |
+| [CSC-06](#csc-06) | Fixed. Development documents the active CI profiles. |
+| [CSC-07](#csc-07) | Fixed. A confirmed editable update refreshes registration when Git is current. |
+| [CSC-08](#csc-08) | Fixed. The CLI reports the committed destination and cleanup warnings. |
+| [CSC-09](#csc-09) | Fixed. The dead installer rollback path is removed. |
+| [CSC-10](#csc-10) | Explicitly deferred. The alias remains available. |
+| [CSC-11](#csc-11) | Fixed. Rollback checks directory identity before moving or removing an owned path. |
+| [CSC-12](#csc-12) | Fixed. The move rejects a changed workspace record after acquiring locks. |
+| [CSC-13](#csc-13) | Fixed. Migration plans bind text and revision to the same byte capture. |
+
+The original scan prioritized workspace move rollback, a queued move acting on a different source, and the secret migration snapshot. Source inspection identified those interleavings. The correctness pass subsequently added regression cases that failed on the baseline and passed with the fixes. [CSC-11](#csc-11) · [CSC-12](#csc-12) · [CSC-13](#csc-13)
 
 ## Obvious bugs
 
@@ -18,7 +36,7 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 <a id="csc-01"></a>
 
-### CSC-01 · P2 · Make managed and editable activation easier to trace
+### CSC-01 · P3 · Make managed and editable activation easier to trace
 
 **Evidence and impact.** The 2,704-line runtime installer prepares runtime candidates, captures publication before-images, restores resources, publishes commands, commits installation authority, and handles post-commit Windows integration. Managed and editable paths each implement the latter sequence, including publication, checkpoints, commit, and finalization. Following a change to one of those steps requires checking both paths and the shared recovery function. The existing split between preparation and activation is a useful starting point. [Managed activation](src/apprc/distribution/runtime/installation.py#L1270) · [Candidate preparation](src/apprc/distribution/runtime/installation.py#L1559) · [Editable activation](src/apprc/distribution/runtime/installation.py#L2412)
 
@@ -28,7 +46,7 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 <a id="csc-02"></a>
 
-### CSC-02 · P2 · Give CLI command classification one internal entry point
+### CSC-02 · P3 · Give CLI command classification one internal entry point
 
 **Evidence and impact.** `CliRuntime.prepare` handles the distribution route directly, then consults separate installation, diagnostic, and runtime-skip predicates. The predicates repeatedly get the current arguments, identify the nested command, and parse leading options. Some routes depend on callback identity, which distinguishes generated commands from a host command with the same name. Adding a route requires tracing several predicates to determine whether it gets installation metadata, diagnostic context, or full application state. [Preparation](src/apprc/interfaces/cli/runtime.py#L450) · [Runtime skip](src/apprc/interfaces/cli/runtime.py#L713) · [Installation and diagnostics](src/apprc/interfaces/cli/runtime.py#L777)
 
@@ -152,4 +170,4 @@ The duplicate JSON-key checks in the uninstall handoff and namespace finalizer s
 
 The installation review followed operation planning, publication before-images, revision-checked activation, caught rollback, post-commit cleanup, lease handling, and saved uninstall handoff. The existing uninstall resource admission issue remains a separate coordination problem. The workspace and dotenv review followed public managers through locking, revision and ownership checks, and file changes. The review checked matching CLI and editor consumers, functional and architecture tests, and documentation for these routes. [Uninstall resource admission](BACKLOG.md#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
 
-The edge-case findings are static evidence, and the follow-up tests listed with them are pending. Native Windows/macOS, opt-in PyApp installer execution, Gradio browser interaction (Chromium absent), hosted workflow execution, live release publishing, and downstream app migrations are outside the executed checks. No performance benchmark was run. [Deferred native validation](BACKLOG.md#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
+The scan began with source evidence for the edge cases. The correctness pass records its additional tests separately. The initial scan used Linux fixtures, skipped opt-in PyApp and browser checks, and did not benchmark performance. [Pass checklist](TODO.md) · [Deferred native validation](BACKLOG.md#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)

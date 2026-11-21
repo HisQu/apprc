@@ -74,17 +74,11 @@ Treat this as the parking lot for actionable problems discovered while working b
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
 2. [2026-11-21](#2026-11-21)
-   1. [P1 / E1 \[Bug risk\] - *Keep workspace move rollback within owned paths*](#p1--e1-bug-risk---keep-workspace-move-rollback-within-owned-paths)
-   2. [P2 / E2 \[Bug risk\] - *Derive secret migration revisions from the planned bytes*](#p2--e2-bug-risk---derive-secret-migration-revisions-from-the-planned-bytes)
-   3. [P2 / E2 \[Bug risk\] - *Resume an editable update after partial completion*](#p2--e2-bug-risk---resume-an-editable-update-after-partial-completion)
-   4. [P2 / E3 \[Code smell\] - *Surface workspace move warnings in the CLI*](#p2--e3-code-smell---surface-workspace-move-warnings-in-the-cli)
-   5. [P2 / E1 \[Code smell\] - *Simplify installer activation and remove obsolete rollback*](#p2--e1-code-smell---simplify-installer-activation-and-remove-obsolete-rollback)
-   6. [P2 / E1 \[Code smell\] - *Unify internal CLI command classification*](#p2--e1-code-smell---unify-internal-cli-command-classification)
-   7. [P2 / E2 \[Code smell\] - *Capture one target for grouped configuration edits*](#p2--e2-code-smell---capture-one-target-for-grouped-configuration-edits)
-   8. [P3 / E2 \[Code smell\] - *Group dependency configuration tests by contract*](#p3--e2-code-smell---group-dependency-configuration-tests-by-contract)
-   9. [P3 / E1 \[Code smell\] - *Bound source snapshot memory*](#p3--e1-code-smell---bound-source-snapshot-memory)
-   10. [P3 / E3 \[Docs drift\] - *Document the current hosted CI profiles*](#p3--e3-docs-drift---document-the-current-hosted-ci-profiles)
-   11. [P3 / E3 \[Question\] - *Decide when to retire shared_default*](#p3--e3-question---decide-when-to-retire-shared_default)
+   1. [P3 / E1 \[Code smell\] - *Simplify installer activation*](#p3--e1-code-smell---simplify-installer-activation)
+   2. [P3 / E1 \[Code smell\] - *Unify internal CLI command classification*](#p3--e1-code-smell---unify-internal-cli-command-classification)
+   3. [P3 / E2 \[Code smell\] - *Group dependency configuration tests by contract*](#p3--e2-code-smell---group-dependency-configuration-tests-by-contract)
+   4. [P3 / E1 \[Code smell\] - *Bound source snapshot memory*](#p3--e1-code-smell---bound-source-snapshot-memory)
+   5. [P3 / E3 \[Question\] - *Decide when to retire shared_default*](#p3--e3-question---decide-when-to-retire-shared_default)
 3. [2026-11-18](#2026-11-18)
    1. [P3 / E3 \[Bug risk\] - *Verify managed desktop shortcuts on Windows*](#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows)
    2. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
@@ -101,62 +95,18 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 # 2026-11-21
 
-## P1 / E1 [Bug risk] - *Keep workspace move rollback within owned paths*
-
-- **Area:** `src/apprc/user_files/workspace_roots/move.py` and `src/apprc/services/workspaces.py`
-- **Observed while:** Tracing copy failures and queued moves in the CSC.
-- **Why not fixed now:** The fixes need deterministic coverage for cross-filesystem failure and lock ordering.
-- **Evidence:** Copy rollback uses destination existence to decide what to remove. The manager locks one source root, while the move can read a different root from the registry later. [CSC-11](code-smells.md#csc-11) · [CSC-12](code-smells.md#csc-12)
-- **Context:** A failed copy can remove an unrelated destination. A concurrent repoint can change the root before the move uses it.
-- **Suggested next step:** Track the identity of the published directory and compare the workspace record under lock. Cover the two failure paths and preserve the [CLI cleanup warnings](#p2--e3-code-smell---surface-workspace-move-warnings-in-the-cli).
-
-<br>
-
-## P2 / E2 [Bug risk] - *Derive secret migration revisions from the planned bytes*
-
-- **Area:** `src/apprc/user_files/env_files/secret_migration.py`
-- **Observed while:** Comparing secret migration and ordinary dotenv edit planning.
-- **Why not fixed now:** The migration write change needs a focused stale-plan regression.
-- **Evidence:** Migration computes the replacement documents before rereading both files for their revisions. [CSC-13](code-smells.md#csc-13)
-- **Context:** The locked apply step can accept an older plan that carries a newer revision.
-- **Suggested next step:** Derive text and revisions from one capture per file and verify that an intervening write makes the plan stale. Keep the [literal interpolation decision](#p2--e2-bug-risk---literal-secret-interpolation-needs-an-explicit-contract) separate from this write-safety fix.
-
-<br>
-
-## P2 / E2 [Bug risk] - *Resume an editable update after partial completion*
-
-- **Area:** `src/apprc/distribution/runtime/update.py` and `src/apprc/distribution/runtime/_update_handoff.py`
-- **Observed while:** Tracing editable update failure and retry.
-- **Why not fixed now:** Retrying needs a way to identify outstanding registration.
-- **Evidence:** The up-to-date check uses Git and dependency sync. Registration can fail after both have succeeded. [CSC-07](code-smells.md#csc-07)
-- **Context:** The failed command prints a direct retry. A repeat update can skip the registration step.
-- **Suggested next step:** Check whether existing installation evidence can establish registration freshness. Verify a retry after a simulated failure between sync and registration and show the remaining recovery commands.
-
-<br>
-
-## P2 / E3 [Code smell] - *Surface workspace move warnings in the CLI*
-
-- **Area:** `src/apprc/interfaces/cli/maintenance_command.py`
-- **Observed while:** Comparing CLI and Textual workspace moves.
-- **Why not fixed now:** The command output change needs an explicit fixture for a committed move with cleanup remaining.
-- **Evidence:** The CLI discards `WorkspaceMoveResult`, while Textual displays its warnings. [CSC-08](code-smells.md#csc-08)
-- **Context:** The service already distinguishes a completed move from its best-effort source cleanup.
-- **Suggested next step:** Report the new root and warnings through shared terminal output. Reuse the result when verifying [workspace rollback ownership](#p1--e1-bug-risk---keep-workspace-move-rollback-within-owned-paths).
-
-<br>
-
-## P2 / E1 [Code smell] - *Simplify installer activation and remove obsolete rollback*
+## P3 / E1 [Code smell] - *Simplify installer activation*
 
 - **Area:** `src/apprc/distribution/runtime/installation.py`
-- **Observed while:** Following managed setup, editable registration, and caught-failure restoration.
-- **Why not fixed now:** Activation changes need the existing checkpoint and rollback suite plus targeted Windows fixtures.
-- **Evidence:** Managed and editable paths repeat activation orchestration. Both always pass `None` to a rollback parameter for Windows registration, which now runs after commit. [CSC-01](code-smells.md#csc-01) · [CSC-09](code-smells.md#csc-09)
-- **Context:** The installation file combines preparation, publication, recovery, and user-facing setup. The obsolete branch obscures the commit boundary.
-- **Suggested next step:** Delete the unreachable branch and correct Development. Then consolidate the shared activation sequence while keeping both preparation paths and live uninstall recovery explicit.
+- **Observed while:** Following managed setup and editable registration.
+- **Why not fixed now:** The CSC correctness pass deferred the larger refactor.
+- **Evidence:** Managed and editable paths repeat part of the activation orchestration. [CSC-01](code-smells.md#csc-01)
+- **Context:** The installer combines preparation, publication, recovery, and setup output.
+- **Suggested next step:** Consolidate the shared activation sequence while keeping both preparation paths and the existing recovery checkpoints explicit.
 
 <br>
 
-## P2 / E1 [Code smell] - *Unify internal CLI command classification*
+## P3 / E1 [Code smell] - *Unify internal CLI command classification*
 
 - **Area:** `src/apprc/interfaces/cli/runtime.py`
 - **Observed while:** Following CLI help, installation commands, diagnostic commands, and host runtime setup.
@@ -164,17 +114,6 @@ Treat this as the parking lot for actionable problems discovered while working b
 - **Evidence:** Runtime preparation repeats nested action parsing across multiple predicates and handles generated command identity in separate branches. [CSC-02](code-smells.md#csc-02)
 - **Context:** An added route can affect which context a command receives and whether help imports runtime code.
 - **Suggested next step:** Consolidate internal classification with the existing argument parser and verify aliases, host collisions, and fresh-process help.
-
-<br>
-
-## P2 / E2 [Code smell] - *Capture one target for grouped configuration edits*
-
-- **Area:** `src/apprc/services/manager.py`
-- **Observed while:** Following grouped settings from field planning to managed file writes.
-- **Why not fixed now:** Capturing the target once needs a test for changing workspace selection during planning.
-- **Evidence:** Each field repeats workspace inspection and secret fields repeat privacy checks. [CSC-04](code-smells.md#csc-04)
-- **Context:** Repeated reads increase the work per field and allow a batch using implicit selection to capture different roots.
-- **Suggested next step:** Capture the workspace and file destinations once, then reuse them for field-specific validation and revision checks.
 
 <br>
 
@@ -197,17 +136,6 @@ Treat this as the parking lot for actionable problems discovered while working b
 - **Evidence:** The snapshot path buffers the Git tar, input file bytes, and compressed ZIP in memory. [CSC-05](code-smells.md#csc-05)
 - **Context:** Larger prepared assets increase peak memory during a local build.
 - **Suggested next step:** Measure a representative large snapshot and stream the project archive through the existing private stage while preserving its exact bytes and checks.
-
-<br>
-
-## P3 / E3 [Docs drift] - *Document the current hosted CI profiles*
-
-- **Area:** `docs/Development.md` and `.github/workflows/ci.yml`
-- **Observed while:** Comparing documented verification with the profile job.
-- **Why not fixed now:** This CSC records changes for follow-up.
-- **Evidence:** Ordinary core runs use Python 3.12. Extended release runs add 3.13 and 3.14 and use 3.14 for GUI checks. [CSC-06](code-smells.md#csc-06)
-- **Context:** The guide gives a single matrix and mentions the prior GUI version.
-- **Suggested next step:** Describe each active profile and how to interpret a green run while retaining the [native platform coverage issue](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred).
 
 <br>
 
@@ -262,7 +190,6 @@ Treat this as the parking lot for actionable problems discovered while working b
 - **Evidence:** String normalization strips surrounding whitespace, and existing dotenv loading expands literal `${VAR}` text in saved quoted values. The credential UI now checks normalized new values and retains existing secrets without rewriting them, using the manager's captured environment for retained-secret parsing.
 - **Context:** A newly entered literal secret containing interpolation syntax can differ when reloaded. This behavior predates grouped edits; no actual credentials or exploit are recorded here.
 - **Suggested next step:** Define literal-secret storage and reload semantics separately from ordinary configuration interpolation, then add round-trip tests for whitespace, dollar/braced text, and captured-versus-ambient environments without exposing values.
-- **Related:** [Secret migration revision binding](#p2--e2-bug-risk---derive-secret-migration-revisions-from-the-planned-bytes) covers concurrent file changes during planning.
 
 <br>
 
@@ -296,6 +223,5 @@ Treat this as the parking lot for actionable problems discovered while working b
   of the rebuilt installer remains manual and deferred.
 - **Suggested next step:** Leave the native jobs disabled while this work is deferred. Revisit when Windows/macOS validation is explicitly back in scope, starting with the recorded installation/ACL and standalone dependency failures, then path/interpreter and secret/UI workflows. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
 - **Related:** The [desktop shortcut follow-up](#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows) covers native shortcut creation, launch, and removal.
-- **Related:** [Hosted CI profile documentation](#p3--e3-docs-drift---document-the-current-hosted-ci-profiles) covers which Linux jobs the current workflow schedules.
 
 <br>

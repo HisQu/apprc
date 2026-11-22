@@ -9,6 +9,7 @@ from dotenv import dotenv_values
 
 import apprc as rc
 from apprc.services import manager as manager_module
+from apprc.services.inspection import ConfigInspection
 from apprc.services.manager import ConfigManager
 from apprc.user_files.app_home.writes import StaleEditError
 from apprc.user_files.env_files import updates
@@ -29,6 +30,7 @@ def _app(tmp_path: Path) -> rc.AppRC:
         server: str = rc.field("BATCH_SERVER", default="old-host")
         user: str = rc.field("BATCH_USER", default="old-user")
         password: str = rc.field("BATCH_PASSWORD", default="", secret=True)
+        token: str = rc.field("BATCH_TOKEN", default="", secret=True)
         port: int = rc.field("BATCH_PORT", default=3306)
 
     return app
@@ -74,6 +76,40 @@ def test_grouped_save_coalesces_regular_values_and_keeps_password_private(
     assert "private-value" not in regular.read_text()
     assert "private-value" in private.read_text()
     assert "private-value" not in repr(result)
+
+
+def test_literal_secret_preview_and_grouped_save_round_trip(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    manager = app.manage(environment={"SUBSTITUTE": "expanded"})
+    manager.setup()
+    private = manager.writable_path("user", secret=True)
+    private.write_text(
+        'BATCH_TOKEN="${SUBSTITUTE}" # keep this comment\n', encoding="utf-8"
+    )
+    private.chmod(0o600)
+    password = ' \t${SUBSTITUTE} café 日本語 "\\quoted"\n\r\b '
+    token = "  ${SUBSTITUTE} 🦉 \\u1234 "
+
+    def values(inspection: ConfigInspection) -> dict[str, object]:
+        return {item.field.name: item.value for item in inspection.fields}
+
+    single = manager.plan_update("BATCH_PASSWORD", password, scope="user")
+    preview = values(manager.preview_edit(single))
+    assert preview["password"] == password
+    assert preview["token"] == "expanded"
+    assert "BATCH_PASSWORD" not in private.read_text(encoding="utf-8")
+
+    batch = manager.plan_updates(
+        {"BATCH_PASSWORD": password, "BATCH_TOKEN": token}, scope="user"
+    )
+    assert len(batch.edits) == 1
+    manager.apply_updates(batch)
+    reloaded = values(app.manage(environment={"SUBSTITUTE": "other"}).inspect())
+    assert reloaded["password"] == password
+    assert reloaded["token"] == token
+    assert "keep this comment" in private.read_text(encoding="utf-8")
 
 
 def test_grouped_edit_uses_the_initial_workspace_after_selection_changes(

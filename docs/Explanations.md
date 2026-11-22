@@ -266,6 +266,12 @@ its ordinary dotenv, so secrets override ordinary assignments in that same
 layer. The [secret guide](How-To-User-Guides.md#save-and-repair-secret-settings)
 covers deliberate secret repair and movement within the current secret workflow.
 
+AppRC saves newly entered string secrets exactly as supplied, including
+surrounding whitespace and text such as `${VAR}`. The saved assignment uses an
+AppRC literal comment so preview and reload read the same value. Existing
+unmarked dotenv assignments keep their interpolation behavior when read or
+moved by secret migration.
+
 AppRC does not encrypt these files. On Linux and macOS, the parent directory
 must be mode `0700` and the file `0600`; on Windows AppRC checks access by
 ordinary other users. `config secrets repair` changes permissions only after

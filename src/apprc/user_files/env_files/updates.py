@@ -26,7 +26,10 @@ from apprc.user_files.env_files._document import (
     clear_dotenv_document_value,
     set_dotenv_document_value,
 )
-from apprc.user_files.env_files.values import normalize_env_value
+from apprc.user_files.env_files.values import (
+    is_literal_secret,
+    normalize_env_value,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +78,7 @@ class EnvFileEditPlan:
     duplicate_lines: tuple[int, ...] = ()
     private_directories: tuple[Path, ...] = ()
     authority: InstallationWriteAuthority | None = None
+    literal: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +121,10 @@ def plan_env_file_batch(
                     "Grouped settings changed during planning; inspect and retry."
                 )
             changed = set_dotenv_document_value(
-                previous.text, env_key=edit.env_key, value=edit.value
+                previous.text,
+                env_key=edit.env_key,
+                value=edit.value,
+                literal=edit.literal,
             )
             edit = replace(edit, text=changed.text)
         files[edit.path] = edit
@@ -249,7 +256,10 @@ def plan_env_file_value_update(
     except FileNotFoundError:
         original = None
     text = original.decode("utf-8") if original is not None else ""
-    edit = set_dotenv_document_value(text, env_key=env_key, value=value)
+    literal = is_literal_secret(spec)
+    edit = set_dotenv_document_value(
+        text, env_key=env_key, value=value, literal=literal
+    )
     warnings = _duplicate_warnings(
         path=env_path,
         env_key=env_key,
@@ -265,6 +275,7 @@ def plan_env_file_value_update(
         private=private,
         warnings=warnings,
         duplicate_lines=edit.disabled_duplicate_lines,
+        literal=literal,
     )
 
 

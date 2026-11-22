@@ -11,6 +11,8 @@ from pathlib import Path
 from dotenv.parser import parse_stream
 from dotenv.variables import parse_variables
 
+from apprc.user_files.env_files._document import literal_assignment_value
+
 LOG = logging.getLogger(__name__)
 
 
@@ -57,6 +59,10 @@ def parse_dotenv_text(
             continue
         if binding.value is None:
             values[binding.key] = None
+            continue
+        literal = literal_assignment_value(binding)
+        if literal is not None:
+            values[binding.key] = literal
             continue
         context = {**captured, **values}
         values[binding.key] = "".join(

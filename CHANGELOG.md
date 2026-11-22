@@ -107,6 +107,10 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Newly saved string secrets preserve whitespace, Unicode, and literal dotenv
+  syntax through preview and reload. Existing unmarked assignments keep their
+  interpolation behavior.
+
 ### 🔒 Security
 
 <br>

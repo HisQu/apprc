@@ -99,5 +99,6 @@ Treat this as the parking lot for actionable problems discovered while working b
 <a id="p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows"></a>
 
 - **Desktop shortcut verification (Windows):** The automated test uses a stand-in for Windows Script Host. Verify shortcut creation, launch, and removal for managed and editable installs on native Windows. Check the icon in Windows Installed apps and the classic-console uninstall window.
+- **Executable version verification (Windows):** Check the actual PowerShell command, numeric and textual versions, prerelease flag, and uninstall entry on a fresh PersoDB installation and after an update replaces its launcher. [Windows verification](docs/Development.md#verify-on-windows)
 
 <br>

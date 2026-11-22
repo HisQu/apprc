@@ -3,25 +3,186 @@
 from __future__ import annotations
 
 import re
+import struct
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from _win32typing import PyResourceId
+
+_STAGES = {
+    suffix: stage
+    for stage, suffixes in (
+        (0, ("dev",)),
+        (1, ("a", "alpha")),
+        (2, ("b", "beta")),
+        (3, ("rc", "c", "pre", "preview")),
+        (5, ("post", "rev", "r")),
+    )
+    for suffix in suffixes
+}
+_SHORT_VERSION = re.compile(
+    r"\s*v?(?P<release>[0-9]+(?:\.[0-9]+){0,2})"
+    r"(?:(?:[-_.]?(?P<stage>"
+    + "|".join(_STAGES)
+    + r")[-_.]?(?P<serial>[0-9]*))|-(?P<post>[0-9]+))?\s*",
+    re.IGNORECASE,
+)
+_FOUR_PART_VERSION = re.compile(r"[0-9]+(?:\.[0-9]+){3}")
+_PRERELEASE = 0x02
+_VERSION_TYPE = 16
+_VERSION_NAME = 1
+_NEUTRAL_LANGUAGE = 0
+_STRING_LANG = 0x0409
+_UNICODE_CODEPAGE = 1200
+_STRING_TABLE = f"{_STRING_LANG:04x}{_UNICODE_CODEPAGE:04x}"
+
+type _VersionNumbers = tuple[int, int, int, int]
 
 
-def numeric_product_version(version: str) -> tuple[int, int, int, int] | None:
-    """Convert a plain release version to the four Windows numeric fields.
+def numeric_product_version(version: str) -> _VersionNumbers | None:
+    """Project a supported PEP 440 version to the Windows numeric fields.
 
-    Prereleases and other nonnumeric versions cannot be represented without
-    losing information. Return ``None`` so the caller can warn and retain the
-    original launcher.
+    Short release tuples use a fourth field for the stage and serial. Plain
+    four-part releases keep their existing fourth component.
 
     :param version: Distribution version reported by the validated runtime.
     :return: Four numeric fields, or ``None`` when not exactly representable.
     """
-    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,3}", version):
+    projection = _project_version(version)
+    return projection[0] if projection is not None else None
+
+
+def _project_version(version: str) -> tuple[_VersionNumbers, bool] | None:
+    """Return the bounded numeric projection and native prerelease status."""
+    short = _SHORT_VERSION.fullmatch(version)
+    if short is None and not _FOUR_PART_VERSION.fullmatch(version):
         return None
-    parts = tuple(int(part) for part in version.split("."))
-    if any(part > 65535 for part in parts):
+    try:
+        parts = tuple(
+            map(int, (short["release"] if short else version).split("."))
+        )
+        serial = int(
+            (short["serial"] or short["post"] or "0") if short else "0"
+        )
+    except ValueError:
         return None
-    padded = (*parts, *(0 for _ in range(4 - len(parts))))
-    return padded[0], padded[1], padded[2], padded[3]
+    if any(part > 65535 for part in parts) or serial > 99:
+        return None
+    if short is None:
+        major, minor, patch, revision = parts
+        return (major, minor, patch, revision), False
+    suffix = short["stage"]
+    stage = _STAGES[suffix.lower()] if suffix else 5 if short["post"] else 4
+    major, minor, patch = parts + (0,) * (3 - len(parts))
+    return (major, minor, patch, stage * 100 + serial), stage < 4
+
+
+def _version_block(
+    key: str,
+    value: bytes = b"",
+    *,
+    text: bool = False,
+    children: tuple[bytes, ...] = (),
+) -> bytes:
+    """Encode one DWORD-aligned Windows version-resource block."""
+    key_bytes = (key + "\0").encode("utf-16le")
+    body = key_bytes + b"\0" * (-(6 + len(key_bytes)) % 4) + value
+    for child in children:
+        body += b"\0" * (-(6 + len(body)) % 4) + child
+    length = len(value) // 2 if text else len(value)
+    return struct.pack("<HHH", 6 + len(body), length, int(text)) + body
+
+
+def _version_resource(ms: int, ls: int, version: str, flags: int) -> bytes:
+    """Build fixed numeric fields, PEP 440 strings, and their translation."""
+    fixed = struct.pack(
+        "<13I",
+        0xFEEF04BD,
+        0x10000,
+        ms,
+        ls,
+        ms,
+        ls,
+        0x3F,
+        flags,
+        0x40004,
+        1,
+        0,
+        0,
+        0,
+    )
+    text = (version + "\0").encode("utf-16le")
+    strings = _version_block(
+        "StringFileInfo",
+        text=True,
+        children=(
+            _version_block(
+                _STRING_TABLE,
+                text=True,
+                children=(
+                    _version_block("FileVersion", text, text=True),
+                    _version_block("ProductVersion", text, text=True),
+                ),
+            ),
+        ),
+    )
+    translation = _version_block(
+        "VarFileInfo",
+        text=True,
+        children=(
+            _version_block(
+                "Translation",
+                struct.pack("<HH", _STRING_LANG, _UNICODE_CODEPAGE),
+            ),
+        ),
+    )
+    return _version_block(
+        "VS_VERSION_INFO", fixed, children=(strings, translation)
+    )
+
+
+def _replace_version_resource(path: Path, resource: bytes) -> None:
+    """Replace version entries from the setup or launcher while retaining other resources."""
+    import win32api
+
+    # > The Win32 wrapper accepts string names and integer resource IDs.
+    version_type = cast("PyResourceId", _VERSION_TYPE)
+    # > Map the executable as data so its code never runs.
+    module = win32api.LoadLibraryEx(str(path), 0, 0x02)
+    try:
+        try:
+            names = cast(
+                "list[PyResourceId]",
+                win32api.EnumResourceNames(module, version_type),
+            )
+        except win32api.error as error:
+            if error.winerror not in {1812, 1813}:  # No resource data or type
+                raise
+            names = ()
+        existing = [
+            (name, language)
+            for name in names
+            for language in win32api.EnumResourceLanguages(
+                module, version_type, name
+            )
+        ]
+    finally:
+        win32api.FreeLibrary(module)
+    handle = win32api.BeginUpdateResource(str(path), False)
+    try:
+        for name, language in existing:
+            if (name, language) != (_VERSION_NAME, _NEUTRAL_LANGUAGE):
+                win32api.UpdateResource(
+                    handle, version_type, name, None, language
+                )
+        win32api.UpdateResource(
+            handle, _VERSION_TYPE, _VERSION_NAME, resource, _NEUTRAL_LANGUAGE
+        )
+    except Exception:
+        win32api.EndUpdateResource(handle, True)
+        raise
+    win32api.EndUpdateResource(handle, False)
 
 
 def versioned_executable(content: bytes, version: str) -> bytes:
@@ -33,17 +194,18 @@ def versioned_executable(content: bytes, version: str) -> bytes:
     """
     import logging
     import os
-    import struct
     import tempfile
-    from pathlib import Path
 
     if os.name != "nt":
         return content
     try:
-        numbers = numeric_product_version(version)
-        if numbers is None:
+        projection = _project_version(version)
+        if projection is None:
             raise ValueError(
-                f"version {version!r} cannot be represented numerically"
+                f"unsupported automatic Windows version projection for {version!r}; "
+                "use up to three numeric components and one optional stage "
+                "suffix with serial 0–99, or a plain four-part release. "
+                "Numeric components must be 0–65535."
             )
         pe = struct.unpack_from("<I", content, 60)[0]
         if content[:2] != b"MZ" or content[pe : pe + 4] != b"PE\0\0":
@@ -66,48 +228,44 @@ def versioned_executable(content: bytes, version: str) -> bytes:
         if end > len(content):
             raise ValueError("invalid executable section bounds")
         overlay = content[end:]
-        major, minor, patch, revision = numbers
-        fixed = struct.pack(
-            "<13I",
-            0xFEEF04BD,
-            0x10000,
-            major << 16 | minor,
-            patch << 16 | revision,
-            major << 16 | minor,
-            patch << 16 | revision,
-            0x3F,
-            0,
-            0x40004,
-            1,
-            0,
-            0,
-            0,
-        )
-        key = "VS_VERSION_INFO\0".encode("utf-16le")
-        header = struct.pack(
-            "<HHH", 6 + len(key) + 2 + len(fixed), len(fixed), 0
-        )
-        resource = header + key + b"\0\0" + fixed
+        (major, minor, patch, revision), prerelease = projection
         import win32api
+
+        ms, ls = major << 16 | minor, patch << 16 | revision
+        flags = _PRERELEASE if prerelease else 0
+        resource = _version_resource(ms, ls, version, flags)
 
         with tempfile.TemporaryDirectory(prefix="apprc-version-") as staging:
             path = Path(staging) / "command.exe"
             path.write_bytes(content[:end])
-            handle = win32api.BeginUpdateResource(str(path), False)
-            try:
-                win32api.UpdateResource(handle, 16, 1, resource, 0)
-            except Exception:
-                win32api.EndUpdateResource(handle, True)
-                raise
-            win32api.EndUpdateResource(handle, False)
+            _replace_version_resource(path, resource)
             result = path.read_bytes() + overlay
             path.write_bytes(result)
             observed = win32api.GetFileVersionInfo(str(path), "\\")
-            if (observed["ProductVersionMS"], observed["ProductVersionLS"]) != (
-                major << 16 | minor,
-                patch << 16 | revision,
-            ):
-                raise ValueError("product version read-back failed")
+            # > pywin32 may return unsigned DWORDs as signed integers.
+            fixed_versions = tuple(
+                value & 0xFFFFFFFF
+                for value in (
+                    observed["FileVersionMS"],
+                    observed["FileVersionLS"],
+                    observed["ProductVersionMS"],
+                    observed["ProductVersionLS"],
+                )
+            )
+            if fixed_versions != (ms, ls, ms, ls):
+                raise ValueError(
+                    "numeric file or product version read-back failed"
+                )
+            for field in ("FileVersion", "ProductVersion"):
+                if (
+                    win32api.GetFileVersionInfo(
+                        str(path), f"\\StringFileInfo\\{_STRING_TABLE}\\{field}"
+                    )
+                    != version
+                ):
+                    raise ValueError(f"{field} read-back failed")
+            if observed["FileFlags"] & _PRERELEASE != flags:
+                raise ValueError("prerelease flag read-back failed")
             return result
     except Exception as error:
         from apprc.distribution.runtime._install_progress import warn

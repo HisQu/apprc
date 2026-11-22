@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from functools import partial
 import hashlib
 from pathlib import Path
 import sys
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -44,7 +45,12 @@ class _NativeCase:
     archive: Path
 
     def install(
-        self, *, commit: str = "c" * 40, setup_version: str | None = "1.0"
+        self,
+        *,
+        commit: str = "c" * 40,
+        setup_version: str | None = "1.0",
+        command_directory: Path | None = None,
+        expected_update: tuple[UUID, str] | None = None,
     ) -> InstallationInspection:
         """Run the real controller with a fresh candidate and isolated effects."""
         return installation.install_application(
@@ -61,6 +67,8 @@ class _NativeCase:
             project_archive=self.archive,
             manager_executable=self.setup,
             uv=self.uv,
+            command_directory=command_directory,
+            expected_update=expected_update,
         )
 
 
@@ -74,13 +82,14 @@ def _prepare(
     environment: Mapping[str, str],
     manager_executable: Path,
     resources: installation._ResourceSnapshot,
+    version: str = "1.0",
 ) -> tuple[RuntimeSlot, str]:
     """Replace dependency acquisition while exercising real lifecycle writes."""
     slot = manager.directory / "runtimes" / str(runtime.slot_id)
     slot.mkdir(parents=True)
     (slot / "project.zip").write_bytes(archive.read_bytes())
     (slot / ".venv").mkdir()
-    observed = replace(runtime, version="1.0", python_version="3.14")
+    observed = replace(runtime, version=version, python_version="3.14")
     current = manager.inspect()
     assert current.revision is not None
     current = manager.record_step(
@@ -149,6 +158,61 @@ def native_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _NativeCase:
         placement,
         *files,
     )
+
+
+def test_managed_setup_and_update_publish_the_probed_application_version(
+    native_case: _NativeCase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apprc.distribution.runtime import (
+        _windows_registration,
+        _windows_version,
+    )
+
+    command_directory = tmp_path / "bin"
+    command_directory.mkdir()
+    monkeypatch.setattr(
+        native_case.manager, "environment", {"PATH": str(command_directory)}
+    )
+    registered: list[str] = []
+
+    def stamp(content: bytes, version: str) -> bytes:
+        return content + version.encode()
+
+    def register(
+        inspection: InstallationInspection, version: str, *_args, **_kwargs
+    ) -> InstallationInspection:
+        registered.append(version)
+        return inspection
+
+    monkeypatch.setattr(_windows_version, "versioned_executable", stamp)
+    monkeypatch.setattr(_windows_registration, "publish_registration", register)
+
+    first, second = "0.23.1b1", "0.23.1b2"
+    command_name = installation._command_filename("fixture")
+    paths = (
+        native_case.manager.directory / command_name,
+        command_directory / command_name,
+    )
+    monkeypatch.setattr(
+        installation, "_prepare_candidate", partial(_prepare, version=first)
+    )
+    initial = native_case.install(
+        command_directory=command_directory, setup_version=first
+    )
+    assert initial.record is not None and initial.revision is not None
+    assert all(path.read_bytes() == b"setup0.23.1b1" for path in paths)
+
+    monkeypatch.setattr(
+        installation, "_prepare_candidate", partial(_prepare, version=second)
+    )
+    updated = native_case.install(
+        commit="d" * 40,
+        setup_version=second,
+        expected_update=(initial.record.generation_id, initial.revision),
+    )
+    assert updated.status == "ready"
+    assert all(path.read_bytes() == b"setup0.23.1b2" for path in paths)
+    assert registered == [first, second]
 
 
 def test_managed_setup_compares_installed_and_incoming_builds(

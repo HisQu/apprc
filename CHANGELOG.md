@@ -107,6 +107,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Windows launchers published by install and update carry the application's
+  numeric file and product version, full PEP 440 text, and prerelease flag.
+
 - Newly saved string secrets preserve whitespace, Unicode, and literal dotenv
   syntax through preview and reload. Existing unmarked assignments keep their
   interpolation behavior.

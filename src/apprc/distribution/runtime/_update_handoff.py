@@ -23,6 +23,10 @@ from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.installation._namespace_lock import namespace_lock
 
 
+class EditableUpdateRetryError(ValueError):
+    """An editable update failure with a literal retry command."""
+
+
 class UpdateWork(TypedDict):
     """One confirmed mutation and its optional editable preconditions."""
 
@@ -156,7 +160,7 @@ def run_update(
                     stdout=output,
                 )
             except (OSError, subprocess.CalledProcessError) as error:
-                raise ValueError(
+                raise EditableUpdateRetryError(
                     "Dependency sync failed. "
                     "Run the update again to finish synchronization and refresh registration.\n"
                     f"To retry only dependency synchronization, run this from {cwd}:\n"
@@ -172,7 +176,9 @@ def run_update(
     except OSError as error:
         if work["setup_digest"] is not None:
             raise
-        raise ValueError(_registration_failure(work, cwd)) from error
+        raise EditableUpdateRetryError(
+            _registration_failure(work, cwd)
+        ) from error
     if code and work["setup_digest"] is None:
         print(
             _registration_failure(work, cwd),

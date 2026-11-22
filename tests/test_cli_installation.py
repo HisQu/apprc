@@ -1157,6 +1157,34 @@ def test_update_command_routes_share_confirmation(
     assert "Replace 1.0 with 2.0?" in accepted.output
 
 
+@pytest.mark.parametrize("arguments", [("app", "update"), ("update",)])
+def test_update_prints_a_copyable_retry_command(
+    arguments: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer import rich_utils
+
+    from apprc.distribution.runtime import update
+    from apprc.distribution.runtime._update_handoff import (
+        EditableUpdateRetryError,
+    )
+
+    retry = "UV_PROJECT_ENVIRONMENT='some checkout/.venv' uv sync --locked"
+
+    def fail_update(*_args: object, **_kwargs: object) -> int:
+        raise EditableUpdateRetryError(f"Dependency sync failed.\n{retry}")
+
+    monkeypatch.setattr(update, "update_application", fail_update)
+    monkeypatch.setattr(rich_utils, "MAX_WIDTH", 40)
+    args = [*arguments, "--yes"]
+    result = CliRunner().invoke(_app(args=args), args)
+
+    assert result.exit_code == 1
+    assert result.stderr.splitlines() == [
+        "Error: Dependency sync failed.",
+        retry,
+    ]
+
+
 def test_update_alias_opt_out_keeps_host_update() -> None:
     app = typer.Typer()
     app.command("update")(lambda: typer.echo("host update"))

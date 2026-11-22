@@ -80,6 +80,10 @@ class ConfigEditor:
             inspection = self.manager.inspect(workspace=workspace)
             selection = inspection.resolved.workspace
             selector = selection.raw_value if selection is not None else None
+            # > Built-in edits use the displayed root even if its name is repointed.
+            write_workspace = (
+                str(selection.root) if selection is not None else None
+            )
             selected_name = (
                 selection.workspace_name if selection is not None else None
             )
@@ -94,7 +98,8 @@ class ConfigEditor:
                 status, revision, view_workspace, selected_name
             )
             scopes = self.manager.writable_scopes(
-                workspace=selector, include_workspace=selection is not None
+                workspace=write_workspace,
+                include_workspace=selection is not None,
             )
             scope = (
                 gr.Dropdown(
@@ -107,7 +112,9 @@ class ConfigEditor:
                 else None
             )
             if scope is not None:
-                self._render_secret_actions(scopes, status, revision, selector)
+                self._render_secret_actions(
+                    scopes, status, revision, write_workspace
+                )
             for owner in self.manager.schema.owners:
                 gr.Markdown(f"### {owner.title or owner.key}")
                 self._render_section(
@@ -123,20 +130,24 @@ class ConfigEditor:
                         scope=scope,
                         status=status,
                         revision=revision,
-                    )
+                    ),
+                    write_workspace=write_workspace,
                 )
 
-    def _render_section(self, context: ConfigSectionContext) -> None:
+    def _render_section(
+        self, context: ConfigSectionContext, *, write_workspace: str | None
+    ) -> None:
         """Dispatch one section to its host renderer or the normal field UI.
 
         :param context: Captured section and shared controls for this render.
+        :param write_workspace: Inspected absolute root for built-in edits.
         """
         renderer = self.section_renderers.get(context.owner.key)
         if renderer is not None:
             renderer(context)
             return
         for item in context.fields:
-            self._render_field(item, context)
+            self._render_field(item, context, write_workspace=write_workspace)
 
     def _render_workspace(
         self,
@@ -257,6 +268,8 @@ class ConfigEditor:
         self,
         item: FieldInspection,
         context: ConfigSectionContext,
+        *,
+        write_workspace: str | None,
     ) -> None:
         """Show a declared value, its winning source, and edit actions."""
         spec = item.field
@@ -310,7 +323,7 @@ class ConfigEditor:
                         key,
                         spec.secret,
                         spec.restart_required,
-                        workspace=context.workspace,
+                        workspace=write_workspace,
                     ),
                     inputs=[control, scope, context.revision],
                     outputs=[context.status, context.revision],
@@ -320,7 +333,7 @@ class ConfigEditor:
                         self._clear,
                         key,
                         spec.restart_required,
-                        workspace=context.workspace,
+                        workspace=write_workspace,
                     ),
                     inputs=[scope, context.revision],
                     outputs=[context.status, context.revision],

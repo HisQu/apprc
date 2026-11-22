@@ -959,7 +959,9 @@ Config-only applications can pass just `manager`. Registry-backed workspace
 controls require a workspace manager. An explicit browser selection updates the
 saved application default and keeps that selection for the current session.
 Sessions without an explicit selection follow the configured or saved selection
-when they render. Each rendered edit targets the workspace whose values it shows.
+when they render. Built-in workspace controls edit the directory inspected for
+that view. If a name is repointed while a view is open, refresh the page before
+editing the new directory.
 The application owns the start callback and builds its runtime only after
 `manager.inspect().ready`.
 

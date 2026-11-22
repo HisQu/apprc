@@ -66,6 +66,9 @@ def update_command(
     from zipfile import ZipFile
 
     from apprc.distribution.models import read_native_bindings
+    from apprc.distribution.runtime._update_handoff import (
+        EditableUpdateRetryError,
+    )
     from apprc.distribution.runtime.update import update_application
 
     context = _inspection(ctx)
@@ -111,6 +114,10 @@ def update_command(
             maintenance_group=group,
             confirm=confirm,
         )
+    except EditableUpdateRetryError as error:
+        # > Rich error panels wrap commands and add border characters.
+        typer.echo(f"Error: {_installation_error_message(error)}", err=True)
+        raise typer.Exit(code=1) from error
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         raise click.ClickException(
             _installation_error_message(error)

@@ -26,7 +26,10 @@ from apprc.distribution.models import (
     NativeBinding,
 )
 from apprc.distribution.runtime import update
-from apprc.distribution.runtime._update_handoff import UpdateWork
+from apprc.distribution.runtime._update_handoff import (
+    EditableUpdateRetryError,
+    UpdateWork,
+)
 from apprc.distribution.runtime.installation import require_update_record
 from apprc.services.installation import InstallationManager
 from apprc.user_files.installation.coordination import (
@@ -319,7 +322,10 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             "diverged": "fast-forward",
             "sync": "Dependency sync failed",
         }[outcome]
-        with pytest.raises(ValueError, match=expected) as failure:
+        error_type = (
+            EditableUpdateRetryError if outcome == "sync" else ValueError
+        )
+        with pytest.raises(error_type, match=expected) as failure:
             perform()
         if outcome == "sync":
             assert shlex.split(str(failure.value).splitlines()[-1]) == [

@@ -73,7 +73,8 @@ def test_section_renderer_replaces_only_its_owner_and_keeps_shared_context(
                     scope=scope,
                     status=status,
                     revision=revision,
-                )
+                ),
+                write_workspace=str(tmp_path / "workspace"),
             )
     assert len(received) == 1
     context = received[0]
@@ -124,7 +125,7 @@ def test_section_renderer_receives_absent_write_scope(tmp_path: Path) -> None:
             status=gr.Textbox(),
             revision=gr.State(0),
         )
-        editor._render_section(context)
+        editor._render_section(context, write_workspace=None)
     assert received == [context]
     assert received[0].scope is None and received[0].workspace is None
 

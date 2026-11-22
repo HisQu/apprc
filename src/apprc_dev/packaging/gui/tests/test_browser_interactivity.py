@@ -49,7 +49,8 @@ def test_prefilled_fields_and_selectors_are_interactive(
     app.ensure_path("config")
 
     workspace_manager = app.workspaces(environment={})
-    workspace_manager.register_workspace("one", tmp_path / "workspace-one")
+    original_root = tmp_path / "workspace-one"
+    workspace_manager.register_workspace("one", original_root)
     workspace_manager.select_workspace("one")
     workspace_manager.register_workspace("two", tmp_path / "workspace-two")
     manager.setup()
@@ -156,6 +157,22 @@ def test_prefilled_fields_and_selectors_are_interactive(
                 assert manager.resolve().build(Server).port == 8000
                 workspace_manager.select_workspace("two")
                 assert manager.resolve().build(Server).port == 9000
+
+                workspace_manager.select_workspace("one")
+                scope.click()
+                page.get_by_role("option", name="workspace").click()
+                server_port.fill("8001")
+                new_root = tmp_path / "repointed-workspace"
+                new_root.mkdir(mode=0o700)
+                workspace_manager.repoint_workspace("one", new_root)
+                page.get_by_role(
+                    "button", name="Save", exact=True
+                ).first.click()
+                expect(server_port).to_have_value("7860")
+                repointed = manager.inspect(workspace="one")
+                assert repointed.resolved.build(Server).port == 7860
+                original = manager.inspect(workspace=str(original_root))
+                assert original.resolved.build(Server).port == 8001
             finally:
                 browser.close()
     finally:

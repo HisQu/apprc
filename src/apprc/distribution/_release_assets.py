@@ -133,8 +133,17 @@ def download_release_setup(
     target: NativeTarget,
     directory: Path,
     environment: Mapping[str, str],
+    release_tag: str | None = None,
 ) -> tuple[Path, str]:
-    """Download both assets from one release and verify the setup's bytes."""
+    """Verify the setup from the exact tag or the latest stable release.
+
+    :param release_tag: Exact published tag, which may identify a prerelease.
+    :return: Downloaded setup path and its verified SHA-256 digest.
+    """
+    if release_tag is not None and (
+        not release_tag.strip() or release_tag in {".", ".."}
+    ):
+        raise ValueError("--release requires a valid, nonempty release tag.")
     suffix = (
         "windows-x86_64.exe"
         if target == "x86_64-pc-windows-msvc"
@@ -144,12 +153,20 @@ def download_release_setup(
     manifest = directory / "SHA256SUMS"
     headers = {"User-Agent": "AppRC updater"}
     repository = source.repository
+    selection = (
+        f"{repository} at tag {release_tag!r}"
+        if release_tag is not None
+        else repository
+    )
     gh: str | None = None
     try:
         if source.public:
-            release_url = (
-                f"https://api.github.com/repos/{repository}/releases/latest"
+            release_path = (
+                f"tags/{quote(release_tag, safe='')}"
+                if release_tag is not None
+                else "latest"
             )
+            release_url = f"https://api.github.com/repos/{repository}/releases/{release_path}"
             with urlopen(
                 Request(release_url, headers=headers), timeout=60
             ) as response:
@@ -159,7 +176,8 @@ def download_release_setup(
             gh = shutil.which("gh", path=environment.get("PATH"))
             if gh is None:
                 raise ValueError(
-                    "Install GitHub CLI and run `gh auth login` to update this private release."
+                    "Install GitHub CLI and run `gh auth login` to update "
+                    f"from {selection}."
                 )
             result = subprocess.run(
                 [
@@ -170,6 +188,7 @@ def download_release_setup(
                     f"github.com/{repository}",
                     "--json",
                     "tagName,isDraft,isPrerelease",
+                    *(["--", release_tag] if release_tag is not None else []),
                 ],
                 env=dict(environment),
                 capture_output=True,
@@ -185,13 +204,17 @@ def download_release_setup(
         if (
             not isinstance(release, dict)
             or not isinstance(tag := release.get(tag_key), str)
-            or not tag
+            or not tag.strip()
             or tag in {".", ".."}
             or release.get(draft_key) is not False
-            or release.get(preview_key) is not False
+            or not isinstance(prerelease := release.get(preview_key), bool)
+            or (prerelease if release_tag is None else tag != release_tag)
         ):
+            required = (
+                "published stable" if release_tag is None else "published"
+            )
             raise ValueError(
-                "The publisher did not return a published stable release."
+                f"GitHub did not return a {required} release for {selection}."
             )
         if gh is None:
             base = f"https://github.com/{repository}/releases/download/{quote(tag, safe='')}"
@@ -226,22 +249,37 @@ def download_release_setup(
                 check=True,
                 timeout=180,
             )
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        json.JSONDecodeError,
+        UnicodeError,
+    ) as error:
         guidance = (
             " Check `gh auth status` and access to the release."
             if not source.public
             else ""
         )
         raise ValueError(
-            f"Could not download the published setup from {repository}.{guidance}"
+            f"Could not download the setup for {selection}. Verify the release "
+            f"and its setup assets.{guidance}"
         ) from error
 
-    checksums = _read_native_checksums(manifest, app_id=app_id)
-    assert_no_links(setup)
-    with setup.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    try:
+        if not setup.is_file() or not manifest.is_file():
+            raise ValueError(
+                f"The release must provide both {setup.name} and {manifest.name}."
+            )
+        checksums = _read_native_checksums(manifest, app_id=app_id)
+        assert_no_links(setup)
+        with setup.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    except (OSError, ValueError) as error:
+        raise ValueError(
+            f"Could not verify setup assets for {selection}. {error}"
+        ) from error
     if checksums.get(setup.name) != digest:
         raise ValueError(
-            "The downloaded setup does not match its release checksum."
+            f"The downloaded setup for {selection} does not match its release checksum."
         )
     return setup, digest

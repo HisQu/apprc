@@ -61,6 +61,14 @@ def update_command(
         bool,
         typer.Option("--yes", "-y", help="Apply the update without prompting."),
     ] = False,
+    release_tag: Annotated[
+        str | None,
+        typer.Option(
+            "--release",
+            metavar="TAG",
+            help="Select a published release tag for a managed installation.",
+        ),
+    ] = None,
 ) -> None:
     """Update the registered release or editable checkout."""
     from zipfile import ZipFile
@@ -113,6 +121,7 @@ def update_command(
             regular_app_id=regular_app_id,
             maintenance_group=group,
             confirm=confirm,
+            release_tag=release_tag,
         )
     except EditableUpdateRetryError as error:
         # > Rich error panels wrap commands and add border characters.

@@ -19,6 +19,7 @@ def _app(
     *,
     args: Sequence[str],
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
+    maintenance_group_name: str = "app",
 ) -> typer.Typer:
     app = typer.Typer()
     rc.cli.mount_app_cli(
@@ -26,6 +27,7 @@ def _app(
         apprc or rc.AppRC(app_id="installation-cli", paths=rc.Paths()),
         installation_management=True,
         installer_entrypoint=installer_entrypoint,
+        maintenance_group_name=maintenance_group_name,
         args_provider=lambda: args,
     )
     return app
@@ -1133,21 +1135,41 @@ def test_uninstall_path_tree_shares_windows_parents_and_preserves_unc():
     assert str(unc) in output
 
 
-@pytest.mark.parametrize("arguments", [("app", "update"), ("update",)])
+@pytest.mark.parametrize(
+    ("arguments", "group"),
+    [
+        (("app", "update"), "app"),
+        (("update",), "app"),
+        (("manage", "update"), "manage"),
+    ],
+)
+@pytest.mark.parametrize("release_tag", [None, "preview/v2.0rc1"])
 def test_update_command_routes_share_confirmation(
-    arguments: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
+    arguments: tuple[str, ...],
+    group: str,
+    release_tag: str | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from apprc.distribution.runtime import update
 
+    requests: list[tuple[str, str | None]] = []
+
     def recorded_update(
-        *_args: object, confirm: Callable[[str], None], **_kwargs: object
+        *_args: object,
+        confirm: Callable[[str], None],
+        maintenance_group: str,
+        release_tag: str | None = None,
+        **_kwargs: object,
     ) -> int:
+        requests.append((maintenance_group, release_tag))
         confirm("Replace 1.0 with 2.0?")
         return 0
 
     monkeypatch.setattr(update, "update_application", recorded_update)
     args = [*arguments]
-    app = _app(args=args)
+    if release_tag is not None:
+        args.extend(("--release", release_tag))
+    app = _app(args=args, maintenance_group_name=group)
     refused = CliRunner().invoke(app, args)
     assert refused.exit_code != 0
     assert "Rerun with --yes" in Text.from_ansi(refused.output).plain
@@ -1155,6 +1177,7 @@ def test_update_command_routes_share_confirmation(
     accepted = CliRunner().invoke(app, args)
     assert accepted.exit_code == 0, accepted.output
     assert "Replace 1.0 with 2.0?" in accepted.output
+    assert requests == [(group, release_tag)] * 2
 
 
 @pytest.mark.parametrize("arguments", [("app", "update"), ("update",)])

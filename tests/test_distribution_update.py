@@ -14,6 +14,8 @@ from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from typing import cast
+from urllib.error import URLError
+from urllib.request import Request
 
 import pytest
 
@@ -40,17 +42,27 @@ from tests.support_installation import installation_record, managed_installation
 
 
 @pytest.mark.parametrize("valid", [True, False])
+@pytest.mark.parametrize("release_tag", [None, "preview/v2.0rc1"])
 def test_release_download_uses_one_tag_and_checks_manifest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, valid: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    valid: bool,
+    release_tag: str | None,
 ) -> None:
     repository = "author/app"
-    base = f"https://github.com/{repository}/releases/download/v2.0"
+    slug = "preview%2Fv2.0rc1" if release_tag else "v2.0"
+    lookup = f"tags/{slug}" if release_tag else "latest"
+    base = f"https://github.com/{repository}/releases/download/{slug}"
     setup = "app-setup-linux-x86_64"
     artifact = b"candidate executable"
     digest = hashlib.sha256(artifact if valid else b"different").hexdigest()
     responses = {
-        f"https://api.github.com/repos/{repository}/releases/latest": json.dumps(
-            {"tag_name": "v2.0", "draft": False, "prerelease": False}
+        f"https://api.github.com/repos/{repository}/releases/{lookup}": json.dumps(
+            {
+                "tag_name": release_tag or "v2.0",
+                "draft": False,
+                "prerelease": release_tag is not None,
+            }
         ).encode(),
         f"{base}/{setup}": artifact,
         f"{base}/SHA256SUMS": f"{digest}  {setup}\n".encode(),
@@ -68,6 +80,7 @@ def test_release_download_uses_one_tag_and_checks_manifest(
             target="x86_64-unknown-linux-gnu",
             directory=tmp_path,
             environment={},
+            release_tag=release_tag,
         )
 
     if valid:
@@ -81,12 +94,200 @@ def test_release_download_uses_one_tag_and_checks_manifest(
 
 
 @pytest.mark.parametrize(
-    ("version", "changed", "error"),
+    ("release_tag", "metadata"),
     [
-        ("1.0", False, ""),
-        ("1.0", True, "bump the version"),
-        ("0.9", False, "older than installed"),
-        ("2.0", True, ""),
+        ("v2.0rc1", None),
+        ("v2.0rc1", {"tag_name": "v2.0rc1", "draft": True, "prerelease": True}),
+        (
+            "v2.0rc1",
+            {"tag_name": "V2.0rc1", "draft": False, "prerelease": True},
+        ),
+        (
+            "v2.0rc1",
+            {"tag_name": "v2.0rc1", "draft": False, "prerelease": "yes"},
+        ),
+        ("v2.0rc1", {"draft": False, "prerelease": True}),
+        (None, {"tag_name": "v2.0rc1", "draft": False, "prerelease": True}),
+    ],
+)
+def test_public_release_requires_matching_published_metadata_before_assets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_tag: str | None,
+    metadata: dict[str, object] | None,
+) -> None:
+    requests: list[str] = []
+
+    def open_release(request: Request, **_kwargs: object) -> BytesIO:
+        requests.append(request.full_url)
+        if metadata is None:
+            raise URLError("release not found")
+        return BytesIO(json.dumps(metadata).encode())
+
+    monkeypatch.setattr(_release_assets, "urlopen", open_release)
+    repository = "author/app"
+
+    with pytest.raises(ValueError, match=repository) as failure:
+        _release_assets.download_release_setup(
+            GitHubReleaseSource(repository, True),
+            app_id="app",
+            target="x86_64-unknown-linux-gnu",
+            directory=tmp_path,
+            environment={},
+            release_tag=release_tag,
+        )
+
+    lookup = f"tags/{release_tag}" if release_tag is not None else "latest"
+    assert requests == [
+        f"https://api.github.com/repos/{repository}/releases/{lookup}"
+    ]
+    if release_tag is not None:
+        assert release_tag in str(failure.value)
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("release_tag", ["", " \t", ".", ".."])
+def test_release_download_rejects_invalid_explicit_tag_before_lookup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, release_tag: str
+) -> None:
+    monkeypatch.setattr(
+        _release_assets,
+        "urlopen",
+        lambda *_args, **_kwargs: pytest.fail("unexpected release request"),
+    )
+    with pytest.raises(ValueError, match="--release requires"):
+        _release_assets.download_release_setup(
+            GitHubReleaseSource("author/app", True),
+            app_id="app",
+            target="x86_64-unknown-linux-gnu",
+            directory=tmp_path,
+            environment={},
+            release_tag=release_tag,
+        )
+
+
+@pytest.mark.parametrize(
+    ("release_tag", "outcome"),
+    [
+        (None, "published"),
+        ("-v2.0rc1", "published"),
+        ("-v2.0rc1", "draft"),
+        ("-v2.0rc1", "missing"),
+        ("-v2.0rc1", "missing-setup"),
+        ("-v2.0rc1", "missing-manifest"),
+    ],
+)
+def test_private_release_download_uses_exact_tag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_tag: str | None,
+    outcome: str,
+) -> None:
+    repository = "author/private-app"
+    tag = release_tag or "v2.0"
+    environment = {"PATH": "fixture"}
+    setup = tmp_path / "app-setup-windows-x86_64.exe"
+    manifest = tmp_path / "SHA256SUMS"
+    artifact = b"candidate executable"
+    digest = hashlib.sha256(artifact).hexdigest()
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        _release_assets.shutil, "which", lambda *_a, **_kw: "gh"
+    )
+
+    def run(
+        args: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        calls.append(args)
+        assert kwargs["env"] == environment
+        if args[2] == "view":
+            if outcome == "missing":
+                raise subprocess.CalledProcessError(1, args)
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=json.dumps(
+                    {
+                        "tagName": tag,
+                        "isDraft": outcome == "draft",
+                        "isPrerelease": release_tag is not None,
+                    }
+                ).encode(),
+            )
+        if outcome != "missing-setup":
+            setup.write_bytes(artifact)
+        if outcome != "missing-manifest":
+            manifest.write_text(f"{digest}  {setup.name}\n", encoding="ascii")
+        return subprocess.CompletedProcess(args, 0, stdout=b"")
+
+    monkeypatch.setattr(_release_assets.subprocess, "run", run)
+
+    def download() -> tuple[Path, str]:
+        return _release_assets.download_release_setup(
+            GitHubReleaseSource(repository, False),
+            app_id="app",
+            target="x86_64-pc-windows-msvc",
+            directory=tmp_path,
+            environment=environment,
+            release_tag=release_tag,
+        )
+
+    expected_calls = [
+        [
+            "gh",
+            "release",
+            "view",
+            "--repo",
+            f"github.com/{repository}",
+            "--json",
+            "tagName,isDraft,isPrerelease",
+            *(["--", release_tag] if release_tag is not None else []),
+        ]
+    ]
+    if outcome not in {"draft", "missing"}:
+        expected_calls.append(
+            [
+                "gh",
+                "release",
+                "download",
+                "--repo",
+                f"github.com/{repository}",
+                "--pattern",
+                setup.name,
+                "--pattern",
+                manifest.name,
+                "--dir",
+                str(tmp_path),
+                "--",
+                tag,
+            ]
+        )
+    if outcome == "published":
+        assert download() == (setup, digest)
+        assert setup.read_bytes() == artifact
+    else:
+        with pytest.raises(ValueError, match=repository) as failure:
+            download()
+        assert tag in str(failure.value)
+        if outcome == "missing":
+            assert "gh auth status" in str(failure.value)
+        if outcome in {"draft", "missing"}:
+            assert not list(tmp_path.iterdir())
+        else:
+            assert setup.name in str(failure.value)
+            assert manifest.name in str(failure.value)
+    assert calls == expected_calls
+
+
+@pytest.mark.parametrize(
+    ("version", "changed", "release_tag", "error"),
+    [
+        ("1.0", False, None, ""),
+        ("1.0", True, None, "bump the version"),
+        ("0.9", False, None, "older than installed"),
+        ("2.0", True, None, ""),
+        ("0.9rc1", False, "older/v0.9rc1", "older than installed"),
+        ("2.0rc1", True, "preview/v2.0rc1", ""),
     ],
 )
 def test_managed_update_compares_verified_binding_to_active_runtime(
@@ -94,6 +295,7 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
     monkeypatch: pytest.MonkeyPatch,
     version: str,
     changed: bool,
+    release_tag: str | None,
     error: str,
 ) -> None:
     directory, runtime = managed_installation(tmp_path)
@@ -123,11 +325,15 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
     )
     setup = tmp_path / "setup"
     setup.touch()
-    monkeypatch.setattr(
-        update,
-        "download_release_setup",
-        lambda *_args, **_kwargs: (setup, "digest"),
-    )
+    selected_tags: list[str | None] = []
+
+    def download(
+        *_args: object, release_tag: str | None = None, **_kwargs: object
+    ) -> tuple[Path, str]:
+        selected_tags.append(release_tag)
+        return setup, "digest"
+
+    monkeypatch.setattr(update, "download_release_setup", download)
     monkeypatch.setattr(
         update,
         "_inspect_native_products",
@@ -152,6 +358,7 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
             regular_app_id=record.identity.app_id,
             maintenance_group="app",
             confirm=confirmed.append,
+            release_tag=release_tag,
         )
 
     if error:
@@ -159,8 +366,13 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
             perform()
     else:
         assert perform() == 0
-    assert bool(confirmed) == (version == "2.0")
+    assert selected_tags == [release_tag]
+    assert bool(confirmed) is (not error and version != runtime.version)
     assert bool(applied) == bool(confirmed)
+    if confirmed:
+        assert f"from {runtime.version} to {version}" in confirmed[0]
+        if release_tag is not None:
+            assert release_tag in confirmed[0]
     if applied:
         assert "--apprc-update-revision" in applied[0]["command"]
         assert applied[0]["command"][0] == str(setup)
@@ -180,7 +392,7 @@ def _git(cwd: Path, *arguments: str) -> str:
 )
 @pytest.mark.parametrize(
     "outcome",
-    ["success", "dirty", "ignored", "diverged", "sync", "registration"],
+    ["success", "dirty", "ignored", "diverged", "sync", "registration", "tag"],
 )
 def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     tmp_path: Path,
@@ -266,6 +478,8 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
 
     def run(arguments: Sequence[str], **kwargs: object):
         command = list(arguments)
+        if outcome == "tag":
+            pytest.fail(f"editable tag selection launched {command[0]}")
         if command[0] == str(prefix / "bin" / "python"):
             return subprocess.CompletedProcess(command, 0)
         if command[0] in {
@@ -306,7 +520,17 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             regular_app_id=None,
             maintenance_group="app",
             confirm=confirmed.append,
+            release_tag="v2.0" if outcome == "tag" else None,
         )
+
+    if outcome == "tag":
+        with pytest.raises(
+            ValueError, match="--release requires a managed"
+        ) as failure:
+            perform()
+        assert "upstream branch" in str(failure.value)
+        assert not confirmed
+        return
 
     if outcome == "ignored":
         with pytest.raises(subprocess.CalledProcessError):

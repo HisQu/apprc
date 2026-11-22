@@ -79,6 +79,7 @@ def _managed_update(
     confirm: Callable[[str], None],
     *,
     regular_app_id: str,
+    release_tag: str | None,
 ) -> bool:
     from packaging.version import InvalidVersion, Version
 
@@ -113,6 +114,7 @@ def _managed_update(
         target=target,
         directory=stage,
         environment=environment,
+        release_tag=release_tag,
     )
     regular, preview = _inspect_native_products(
         setup, app_id=regular_app_id, target=target
@@ -149,8 +151,9 @@ def _managed_update(
             )
         print(f"Already up to date ({active.version}).")
         return False
+    release = f" (release {release_tag!r})" if release_tag is not None else ""
     confirm(
-        f"Update {record.command_name} from {active.version} to {candidate.version}?"
+        f"Update {record.command_name} from {active.version} to {candidate.version}{release}?"
     )
     if os.name != "nt":
         setup.chmod(0o700)
@@ -389,6 +392,7 @@ def update_application(
     regular_app_id: str | None,
     maintenance_group: str,
     confirm: Callable[[str], None],
+    release_tag: str | None = None,
 ) -> int:
     """Update the ready installation associated with this command."""
     observed = manager.inspect()
@@ -408,6 +412,11 @@ def update_application(
         command_dir = recorded_command_directory(record, manager.directory)
     runtime = record.active_runtime
     editable = runtime if isinstance(runtime, EditableCheckout) else None
+    if editable is not None and release_tag is not None:
+        raise InstallationError(
+            "--release requires a managed installation. Run update without "
+            "--release to follow the checkout's upstream branch."
+        )
     executables = tuple(
         Path(item.path)
         for item in record.owned_outputs
@@ -488,6 +497,7 @@ def update_application(
                 work,
                 confirm,
                 regular_app_id=regular_app_id or binding.identity.app_id,
+                release_tag=release_tag,
             ):
                 return 0
         if os.name == "nt":

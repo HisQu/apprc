@@ -82,6 +82,14 @@ type CliRuntimeStateFactory[OptionsT: CliRuntimeOptionsProtocol, StateT] = (
 _HELP_OPTIONS = frozenset(("--help", "-h"))
 
 
+@dataclass(frozen=True, slots=True)
+class _Invocation:
+    installation_command: bool = False
+    skip_runtime_setup: bool = False
+    help_requested: bool = False
+    doctor: bool = False
+
+
 @dataclass(slots=True)
 class CliRuntimeSession(Generic[StateT]):
     """Prepared AppRC CLI context plus app-owned runtime state.
@@ -283,36 +291,47 @@ class CliRuntimePolicy:
         command_name = ctx.invoked_subcommand
         if command_name is None:
             return False
-        if command_name == config_group_name:
-            return self._config_policy(
-                config_group_name,
-            ).request_skips_runtime(tokens=tokens)
-        if command_name == maintenance_group_name:
-            args = args_after_cli_command(
-                maintenance_group_name,
-                tokens=tokens,
-                cli_value_options=self.cli_value_options,
-            )
-            return (
-                args is not None
-                and not parse_leading_options(
-                    args,
-                    flag_options=self.cli_flag_options,
-                    value_options=self.cli_value_options,
-                ).separator_before_action
-            )
         args = args_after_cli_command(
             command_name,
             tokens=tokens,
             cli_value_options=self.cli_value_options,
         )
-        if args is None:
-            return False
-        declaration = self.runtime_independent_commands.get(command_name)
-        if help_requested_before_separator(
+        return self._command_skips_runtime(
+            command_name,
             args,
-            value_options=self.cli_value_options,
-        ):
+            config_group_name=config_group_name,
+            maintenance_group_name=maintenance_group_name,
+            help_requested=args is not None
+            and help_requested_before_separator(
+                args, value_options=self.cli_value_options
+            ),
+        )
+
+    def _command_skips_runtime(
+        self,
+        command_name: str | None,
+        args: Sequence[str] | None,
+        *,
+        config_group_name: str,
+        maintenance_group_name: str,
+        help_requested: bool = False,
+    ) -> bool:
+        if command_name is None or args is None:
+            return False
+        if command_name == config_group_name:
+            return help_requested or self._config_policy(
+                config_group_name
+            )._actions_skip_runtime(
+                args,
+            )
+        if command_name == maintenance_group_name:
+            return not parse_leading_options(
+                args,
+                flag_options=self.cli_flag_options,
+                value_options=self.cli_value_options,
+            ).separator_before_action
+        declaration = self.runtime_independent_commands.get(command_name)
+        if help_requested:
             return declaration.skip_help if declaration is not None else True
         if declaration is None:
             return False
@@ -482,21 +501,16 @@ class CliRuntime(Generic[OptionsT, StateT]):
         if ctx.resilient_parsing:
             context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
-        if self._installation_command_requested(ctx):
+        invocation = self._classify_invocation(ctx)
+        if invocation.installation_command:
             ctx.meta["apprc.update.maintenance_group"] = (
                 self.maintenance_group_name
             )
-            if help_requested_before_separator(
-                self.current_args(), value_options=self.cli_value_options
-            ):
+            if invocation.help_requested:
                 return CliRuntimeSession(apprc_context=None)
             diagnostic_context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=diagnostic_context)
-        skip_runtime_setup = self._request_skips_runtime(ctx)
-        if skip_runtime_setup and help_requested_before_separator(
-            self.current_args(),
-            value_options=self.cli_value_options,
-        ):
+        if invocation.skip_runtime_setup and invocation.help_requested:
             context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
         try:
@@ -504,7 +518,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 ctx,
                 self.apprc,
                 options,
-                skip_runtime_setup=skip_runtime_setup,
+                skip_runtime_setup=invocation.skip_runtime_setup,
                 workspace_required=self.workspace_required,
                 setup_logging=self.setup_logging,
                 logger=self.logger,
@@ -515,7 +529,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 ),
             )
         except (InstallationError, OSError, ValueError) as error:
-            if not self._doctor_requested(ctx):
+            if not invocation.doctor:
                 raise
             diagnostic_context = self._installation_context(
                 ctx, options, path_error=str(error)
@@ -710,37 +724,109 @@ class CliRuntime(Generic[OptionsT, StateT]):
         app.registered_commands.extend(staging.registered_commands)
         return mounted
 
-    def _request_skips_runtime(self, ctx: typer.Context) -> bool:
-        """Return whether this CLI run can avoid app runtime state."""
-        if ctx.resilient_parsing:
-            return True
-        if ctx.invoked_subcommand == self.maintenance_group_name:
-            return True
-        if (
-            self.apprc.schema.workspaces is not None
-            and ctx.invoked_subcommand == "workspace"
-        ):
-            return True
-        if ctx.invoked_subcommand is not None:
-            nested_args = args_after_cli_command(
-                ctx.invoked_subcommand,
-                tokens=self.current_args(),
-                cli_value_options=self.cli_value_options,
+    def _classify_invocation(self, ctx: typer.Context) -> _Invocation:
+        """Classify runtime needs using one capture of the invocation tokens."""
+        tokens = tuple(self.current_args())
+        value_options = self.cli_value_options
+        if self._is_mounted_installation_command(ctx):
+            return _Invocation(
+                installation_command=True,
+                help_requested=help_requested_before_separator(
+                    tokens, value_options=value_options
+                ),
             )
-            if nested_args is not None and help_requested_before_separator(
-                nested_args,
-                value_options=self.cli_value_options,
-            ):
-                return True
+        command_name = ctx.invoked_subcommand
+        args = (
+            args_after_cli_command(
+                command_name, tokens=tokens, cli_value_options=value_options
+            )
+            if command_name is not None
+            else None
+        )
+        if command_name == self.maintenance_group_name:
+            maintenance_args = args
+        else:
+            # Forwarded tokens may explicitly name the maintenance group even
+            # when the Typer context has no matching subcommand.
+            maintenance_args = (
+                args_after_cli_command(
+                    self.maintenance_group_name,
+                    tokens=tokens,
+                    cli_value_options=value_options,
+                )
+                if args is None
+                or (command_name is not None and command_name.startswith("-"))
+                or self.maintenance_group_name.startswith("-")
+                else None
+            )
+        maintenance_action = None
+        if maintenance_args is not None:
+            parsed = parse_leading_options(
+                maintenance_args,
+                flag_options=self.cli_flag_options,
+                value_options=value_options,
+            )
+            if not parsed.separator_before_action and parsed.action_tokens:
+                maintenance_action = parsed.action_tokens[0]
+        installation_command = maintenance_action in {
+            "install",
+            "repair",
+            "uninstall",
+            "migrate",
+            "update",
+        }
+        skip_runtime_setup = not installation_command and (
+            command_name == self.maintenance_group_name
+            or (
+                command_name == "workspace"
+                and self.apprc.schema.workspaces is not None
+            )
+            or (
+                args is not None
+                and help_requested_before_separator(
+                    args, value_options=value_options
+                )
+            )
+            or self._policy_skips_runtime(ctx, tokens, args)
+        )
+        return _Invocation(
+            installation_command=installation_command,
+            skip_runtime_setup=skip_runtime_setup,
+            help_requested=(installation_command or skip_runtime_setup)
+            and help_requested_before_separator(
+                tokens, value_options=value_options
+            ),
+            doctor=command_name == self.maintenance_group_name
+            and maintenance_action in {"doctor", "paths"},
+        )
+
+    def _policy_skips_runtime(
+        self,
+        ctx: typer.Context,
+        tokens: Sequence[str],
+        args: Sequence[str] | None,
+    ) -> bool:
         policy = self.runtime_policy or CliRuntimePolicy()
-        tokens = self.current_args()
         if isinstance(policy, CliRuntimePolicy):
+            if type(policy) is CliRuntimePolicy:
+                return policy._command_skips_runtime(
+                    ctx.invoked_subcommand,
+                    args,
+                    config_group_name=self.config_group_name,
+                    maintenance_group_name=self.maintenance_group_name,
+                )
             return policy.request_skips_runtime(
                 ctx,
                 tokens=tokens,
                 config_group_name=self.config_group_name,
                 maintenance_group_name=self.maintenance_group_name,
             )
+        if (
+            type(policy) is ConfigRuntimePolicy
+            and ctx.invoked_subcommand == self.config_group_name
+            and args is not None
+        ):
+            return policy._actions_skip_runtime(args)
         return policy.request_skips_runtime(tokens=tokens)
 
     @property
@@ -774,68 +860,22 @@ class CliRuntime(Generic[OptionsT, StateT]):
             return self.args_provider()
         return sys.argv[1:]
 
-    def _installation_command_requested(self, ctx: typer.Context) -> bool:
-        """Select lifecycle recovery and configured launch before path resolution."""
-        if ctx.invoked_subcommand == "update" and isinstance(
+    def _is_mounted_installation_command(self, ctx: typer.Context) -> bool:
+        """Recognize AppRC's own root update and launch callbacks."""
+        name = ctx.invoked_subcommand
+        if name not in ("update", "launch") or not isinstance(
             ctx.command, TyperGroup
         ):
+            return False
+        command = ctx.command.get_command(ctx, name)
+        if command is None or command.callback is None:
+            return False
+        callback = inspect.unwrap(command.callback)
+        if name == "update":
             from apprc.interfaces.cli.installation_command import update_command
 
-            command = ctx.command.get_command(ctx, "update")
-            callback = command.callback if command is not None else None
-            if (
-                callback is not None
-                and inspect.unwrap(callback) is update_command
-            ):
-                return True
-        if ctx.invoked_subcommand == "launch" and isinstance(
-            ctx.command, TyperGroup
-        ):
-            command = ctx.command.get_command(ctx, "launch")
-            callback = command.callback if command is not None else None
-            if (
-                callback is not None
-                and inspect.unwrap(callback) in self._launcher_callbacks
-            ):
-                return True
-        args = args_after_cli_command(
-            self.maintenance_group_name,
-            tokens=self.current_args(),
-            cli_value_options=self.cli_value_options,
-        )
-        if args is None:
-            return False
-        parsed = parse_leading_options(
-            args,
-            flag_options=self.cli_flag_options,
-            value_options=self.cli_value_options,
-        )
-        return (
-            not parsed.separator_before_action
-            and bool(parsed.action_tokens)
-            and parsed.action_tokens[0]
-            in {"install", "repair", "uninstall", "migrate", "update"}
-        )
-
-    def _doctor_requested(self, ctx: typer.Context) -> bool:
-        if ctx.invoked_subcommand != self.maintenance_group_name:
-            return False
-        args = args_after_cli_command(
-            self.maintenance_group_name,
-            tokens=self.current_args(),
-            cli_value_options=self.cli_value_options,
-        )
-        if args is None:
-            return False
-        parsed = parse_leading_options(
-            args,
-            flag_options=self.cli_flag_options,
-            value_options=self.cli_value_options,
-        )
-        return not parsed.separator_before_action and bool(
-            parsed.action_tokens
-            and (parsed.action_tokens[0] in {"doctor", "paths"})
-        )
+            return callback is update_command
+        return callback in self._launcher_callbacks
 
     def _mount_launcher(
         self,

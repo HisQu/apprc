@@ -103,14 +103,33 @@ class ConfigRuntimePolicy:
         :param tokens: Optional command tokens without the program name.
         :return: Whether runtime resolution should be avoided.
         """
-        return config_request_skips_runtime(
+        args = args_after_cli_command(
             self.config_group_name,
             tokens=tokens,
-            root_flag_options=self.root_flag_options,
-            root_value_options=self.root_value_options,
-            runtime_independent_actions=self.runtime_independent_actions,
-            skip_invalid_options=self.skip_invalid_options,
+            cli_value_options=self.root_value_options,
         )
+        return args is not None and (
+            help_requested_before_separator(
+                args, value_options=self.root_value_options
+            )
+            or self._actions_skip_runtime(args)
+        )
+
+    def _actions_skip_runtime(self, args: Sequence[str]) -> bool:
+        """Apply the config action policy after help has been handled."""
+        parsed = parse_leading_options(
+            args,
+            flag_options=self.root_flag_options,
+            value_options=self.root_value_options,
+        )
+        if parsed.separator_before_action:
+            return False
+        action_args = parsed.action_tokens
+        if not action_args:
+            return True
+        if self.skip_invalid_options and action_args[0].startswith("-"):
+            return True
+        return action_args[0] in self.runtime_independent_actions
 
 
 def config_request_skips_runtime(
@@ -139,31 +158,13 @@ def config_request_skips_runtime(
         parse error directly.
     :return: Whether the config command can run without runtime state.
     """
-    args = args_after_cli_command(
-        command_name,
-        tokens=tokens,
-        cli_value_options=root_value_options,
-    )
-    if args is None:
-        return False
-    if help_requested_before_separator(
-        args,
-        value_options=root_value_options,
-    ):
-        return True
-    parsed = parse_leading_options(
-        args,
-        flag_options=root_flag_options,
-        value_options=root_value_options,
-    )
-    if parsed.separator_before_action:
-        return False
-    action_args = parsed.action_tokens
-    if not action_args:
-        return True
-    if skip_invalid_options and action_args[0].startswith("-"):
-        return True
-    return action_args[0] in runtime_independent_actions
+    return ConfigRuntimePolicy(
+        config_group_name=command_name,
+        root_flag_options=root_flag_options,
+        root_value_options=root_value_options,
+        runtime_independent_actions=runtime_independent_actions,
+        skip_invalid_options=skip_invalid_options,
+    ).request_skips_runtime(tokens=tokens)
 
 
 def active_workspace_root_from_state(

@@ -169,11 +169,33 @@ def test_release_download_rejects_invalid_explicit_tag_before_lookup(
         )
 
 
+def test_release_download_reports_unencodable_tag_with_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        _release_assets,
+        "urlopen",
+        lambda *_args, **_kwargs: pytest.fail("unexpected release request"),
+    )
+    tag = "invalid-\udcff"
+    with pytest.raises(ValueError, match="author/app") as failure:
+        _release_assets.download_release_setup(
+            GitHubReleaseSource("author/app", True),
+            app_id="app",
+            target="x86_64-unknown-linux-gnu",
+            directory=tmp_path,
+            environment={},
+            release_tag=tag,
+        )
+    assert repr(tag) in str(failure.value)
+
+
 @pytest.mark.parametrize(
     ("release_tag", "outcome"),
     [
         (None, "published"),
         ("-v2.0rc1", "published"),
+        ("preview/v2.0rc1", "published"),
         ("-v2.0rc1", "draft"),
         ("-v2.0rc1", "missing"),
         ("-v2.0rc1", "forbidden"),
@@ -265,7 +287,7 @@ def test_private_release_download_uses_exact_tag(
             "--hostname",
             "github.com",
             "--include",
-            f"repos/{repository}/releases/tags/{release_tag}",
+            f"repos/{repository}/releases/tags/{tag.replace('/', '%2F')}",
         ]
     ]
     if outcome not in {"draft", "missing", "forbidden"}:

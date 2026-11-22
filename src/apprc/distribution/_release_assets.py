@@ -29,6 +29,9 @@ from apprc.user_files.app_home.locations import assert_no_links
 if TYPE_CHECKING:
     from packaging.version import Version
 
+_RELEASE_HEADERS = {"User-Agent": "AppRC updater"}
+_PRIVATE_RELEASE_GUIDANCE = " Check `gh auth status` and access to the release."
+
 
 def _read_native_checksums(path: Path, *, app_id: str) -> dict[str, str]:
     """Parse a native manifest independently of local target completeness."""
@@ -146,25 +149,22 @@ def _lookup_release_tag(
     tag: str | None,
     gh: str | None,
     environment: Mapping[str, str],
-    headers: Mapping[str, str],
 ) -> str | None:
     """Read and validate release metadata, with None reserved for a missing tag."""
-    suffix = f"tags/{quote(tag, safe='')}" if tag is not None else "latest"
-    endpoint = f"repos/{repository}/releases/{suffix}"
     selection = (
         f"{repository} at tag {tag!r}" if tag is not None else repository
     )
     tag_key, draft_key, prerelease_key = "tag_name", "draft", "prerelease"
-    guidance = (
-        " Check `gh auth status` and access to the release." if gh else ""
-    )
+    guidance = _PRIVATE_RELEASE_GUIDANCE if gh else ""
     try:
+        suffix = f"tags/{quote(tag, safe='')}" if tag is not None else "latest"
+        endpoint = f"repos/{repository}/releases/{suffix}"
         if gh is None:
             try:
                 with urlopen(
                     Request(
                         f"https://api.github.com/{endpoint}",
-                        headers=dict(headers),
+                        headers=_RELEASE_HEADERS,
                     ),
                     timeout=60,
                 ) as response:
@@ -272,7 +272,6 @@ def _resolve_release_version(
     requested: Version,
     gh: str | None,
     environment: Mapping[str, str],
-    headers: Mapping[str, str],
 ) -> tuple[str, Version]:
     """Select a matching tag across the package and Windows interpretations."""
     from packaging.version import Version
@@ -289,11 +288,11 @@ def _resolve_release_version(
     matches: list[tuple[str, Version]] = []
     for version, windows in candidates:
         for tag in _version_tags(version, windows=windows):
-            if (
-                _lookup_release_tag(repository, tag, gh, environment, headers)
-                is not None
-            ):
-                matches.append((tag, version))
+            published_tag = _lookup_release_tag(
+                repository, tag, gh, environment
+            )
+            if published_tag is not None:
+                matches.append((published_tag, version))
                 break
     if len(matches) > 1:
         tags = " and ".join(repr(tag) for tag, _ in matches)
@@ -302,9 +301,7 @@ def _resolve_release_version(
             "Select one with --release TAG."
         )
     if not matches:
-        guidance = (
-            " Check `gh auth status` and access to the release." if gh else ""
-        )
+        guidance = _PRIVATE_RELEASE_GUIDANCE if gh else ""
         raise ValueError(
             f"No published release matches version {requested} in {repository}.{guidance}"
         )
@@ -321,7 +318,7 @@ def download_release_setup(
     release_tag: str | None = None,
     requested_version: Version | None = None,
 ) -> DownloadedReleaseSetup:
-    """Verify the setup from the exact tag or the latest stable release.
+    """Select a published release and verify its setup.
 
     :param release_tag: Exact published tag, which may identify a prerelease.
     :param requested_version: Package or Windows version to resolve.
@@ -338,7 +335,6 @@ def download_release_setup(
     )
     setup = directory / f"{app_id}-setup-{suffix}"
     manifest = directory / "SHA256SUMS"
-    headers = {"User-Agent": "AppRC updater"}
     repository = source.repository
     selection = (
         f"{repository} at tag {release_tag!r}"
@@ -353,19 +349,15 @@ def download_release_setup(
                 "Install GitHub CLI and run `gh auth login` to update "
                 f"from {selection}."
             )
-    guidance = (
-        " Check `gh auth status` and access to the release." if gh else ""
-    )
+    guidance = _PRIVATE_RELEASE_GUIDANCE if gh else ""
     version = None
     if requested_version is not None:
         tag, version = _resolve_release_version(
-            repository, requested_version, gh, environment, headers
+            repository, requested_version, gh, environment
         )
         selection = f"{repository} at tag {tag!r}"
     else:
-        tag = _lookup_release_tag(
-            repository, release_tag, gh, environment, headers
-        )
+        tag = _lookup_release_tag(repository, release_tag, gh, environment)
         if tag is None:
             raise ValueError(
                 f"No published release was found for {selection}.{guidance}"
@@ -376,7 +368,9 @@ def download_release_setup(
             for asset in (setup, manifest):
                 with (
                     urlopen(
-                        Request(f"{base}/{asset.name}", headers=headers),
+                        Request(
+                            f"{base}/{asset.name}", headers=_RELEASE_HEADERS
+                        ),
                         timeout=120,
                     ) as response,
                     asset.open("xb") as output,
@@ -407,7 +401,6 @@ def download_release_setup(
     except (
         OSError,
         subprocess.SubprocessError,
-        json.JSONDecodeError,
         UnicodeError,
     ) as error:
         raise ValueError(

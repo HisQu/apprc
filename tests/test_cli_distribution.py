@@ -456,6 +456,20 @@ def test_unattended_missing_setup_does_not_build_without_yes(
     assert builds == []
 
 
+def test_policy_setup_gets_explicit_regular_argument(tmp_path: Path) -> None:
+    from zipfile import ZipFile
+
+    from apprc.distribution._release_assets import regular_setup_arguments
+
+    setup = tmp_path / "setup"
+    with ZipFile(setup, "w") as archive:
+        archive.writestr("preview-binding.json", "{}")
+    assert regular_setup_arguments(setup) == ()
+    with ZipFile(setup, "a") as archive:
+        archive.writestr("preview-default", b"beta-rc\n")
+    assert regular_setup_arguments(setup) == ("--regular",)
+
+
 def test_dist_test_runs_guided_preflight(
     checkout: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

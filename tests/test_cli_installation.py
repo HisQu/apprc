@@ -1192,6 +1192,17 @@ def test_update_command_routes_share_confirmation(
     assert requests == [(group, release_tag, release_version)] * 2
 
 
+@pytest.mark.parametrize("route", [["update"], ["app", "update"]])
+def test_preview_update_requires_managed_invocation(route: list[str]) -> None:
+    args = [*route, "--preview", "--version", "2.0.0b1"]
+    result = CliRunner().invoke(_app(args=args), args)
+    assert result.exit_code == 1
+    assert (
+        "Run preview update through an installed managed command"
+        in Text.from_ansi(result.output).plain
+    )
+
+
 def test_update_rejects_conflicting_release_selectors() -> None:
     args = ["app", "update", "-v", "2.0.0", "--release", "v2.0.0"]
     result = CliRunner().invoke(_app(args=args), args)

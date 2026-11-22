@@ -80,6 +80,7 @@ class CheckoutAuthoring:
             MissingNativeArtifact,
             StaleNativeArtifact,
         )
+        from apprc.distribution._release_assets import regular_setup_arguments
         from apprc.distribution.runtime._install_progress import (
             installation_color,
         )
@@ -139,6 +140,11 @@ class CheckoutAuthoring:
                     arguments[0],
                     *root_arguments,
                     *arguments[1:],
+                )
+            else:
+                setup_arguments = (
+                    *regular_setup_arguments(setup),
+                    *setup_arguments,
                 )
             return subprocess.run(
                 [str(setup), *setup_arguments],

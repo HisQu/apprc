@@ -351,9 +351,13 @@ and lifecycle hooks.
 | `bootstrap-env-prefix` | Distinct prefix for the preview declaration. |
 | `display-name` | Optional display name. Defaults to the preview app ID. |
 | `install-next-step` | Optional completion text for a persistent preview. |
+| `default-for-beta-rc` | Optional boolean. When enabled, launching a beta or release candidate setup directly selects the preview. |
 
 Use `--preview/-p` to leave the preview installed or `--smoke/-s` to install,
 verify and uninstall a fresh preview. The preview identity is opt-in.
+Pass `--regular` first to select Regular explicitly on setups that support
+the preview default. A managed update keeps the identity selected by its
+saved installation record.
 See [preview usage](How-To-User-Guides.md#install-a-preview-or-run-a-smoke-test)
 and [author guidance for running both identities](Development.md#verify-an-opted-in-preview-identity).
 
@@ -365,6 +369,8 @@ and [author guidance for running both identities](Development.md#verify-an-opted
 | `<app> update` | Root alias enabled by default. Set `AppRC(update_alias=False)` to reserve the root name for the host. |
 | `--version VERSION`, `-v VERSION` | Select a published managed release by package version or by its Windows numeric version. Accepts an optional leading `v`. |
 | `--release TAG` | Select an exact published GitHub release tag, including a prerelease. Applies only to managed installations. The default selection is the latest stable release. |
+| `update --preview` | Update the existing managed preview through either update spelling. The update uses the preview's saved installation and release source. |
+| `app install --preview --version VERSION` | From a managed application, install the selected published release as Preview. Use `--release TAG` for exact selection. An existing preview follows normal setup replacement confirmation. |
 | `--yes`, `-y` | Apply an available update without prompting. |
 | `RELEASE_REPO_OLIS`, `--olis-repo`, `RELEASE_PUBLIC` | Authoring inputs that select the optional release source embedded in new native setups. |
 

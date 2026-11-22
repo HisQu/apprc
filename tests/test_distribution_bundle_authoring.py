@@ -30,8 +30,10 @@ from apprc.user_files.app_home.permissions import (
 )
 
 
+@pytest.mark.parametrize("preview_default", [None, False, True])
 def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
     tmp_path: Path,
+    preview_default: bool | None,
 ) -> None:
     project_path = tmp_path / "project.zip"
     project_entries = {
@@ -55,11 +57,20 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
 
     declaration = tmp_path / "author"
     declaration.mkdir()
-    (declaration / "pyproject.toml").write_text(
+    settings = (
         "[project]\nname = 'archive-fixture'\nversion = '1.2.3'\n"
-        "[project.scripts]\narchive-fixture = 'fixture_app:main'\n",
-        encoding="utf-8",
+        "[project.scripts]\narchive-fixture = 'fixture_app:main'\n"
     )
+    if preview_default is not None:
+        settings += (
+            "archive-preview = 'fixture_app:preview'\n"
+            "[tool.apprc.distribution.preview]\n"
+            "app-id = 'archive-preview'\ncommand-name = 'archive-preview'\n"
+            "apprc-reference = 'fixture_app:PREVIEW'\n"
+            "bootstrap-env-prefix = 'ARCHIVE_PREVIEW'\n"
+            f"default-for-beta-rc = {str(preview_default).lower()}\n"
+        )
+    (declaration / "pyproject.toml").write_text(settings, encoding="utf-8")
     spec = read_distribution_spec(declaration)
     source_setting = GitHubReleaseSource("fixture/project", False)
     sdk_bytes = _sdk_archive(spec, project, ("gui",), source_setting)
@@ -70,6 +81,18 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
             name for name in names if name.endswith(".dist-info/METADATA")
         }
         assert "binding.json" in names
+        assert ("preview-binding.json" in names) is (
+            preview_default is not None
+        )
+        assert ("preview-default" in names) is (preview_default is True)
+        if preview_default is not None:
+            preview_binding = decode_native_binding(
+                sdk.read("preview-binding.json")
+            )
+            assert preview_binding.identity.app_id == "archive-preview"
+            assert set(json.loads(sdk.read("preview-binding.json"))) == set(
+                json.loads(sdk.read("binding.json"))
+            )
         assert "project.zip" in names
         assert "bootstrap-requirements.txt" in names
         assert "apprc/distribution/runtime/_manager.py" in names

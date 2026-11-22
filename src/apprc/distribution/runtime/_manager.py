@@ -12,7 +12,7 @@ import tempfile
 import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import cast
 from uuid import UUID, uuid4
 from apprc.definition.installation import (
@@ -23,7 +23,7 @@ from apprc.definition.installation import (
     OwnedOutput,
     RuntimeSlot,
 )
-from apprc.distribution.models import NativeBinding
+from apprc.distribution.models import NativeBinding, read_native_bindings
 from apprc.distribution.runtime._native_product import (
     check_other_product_paths,
     read_products,
@@ -40,7 +40,7 @@ def _executable() -> Path:
 
 def _read_products(
     *, include_project: bool = False
-) -> tuple[NativeBinding, NativeBinding | None, bytes | None]:
+) -> tuple[NativeBinding, NativeBinding | None, bytes | None, bool]:
     return read_products(
         _executable(),
         globals().get("_APPRC_ARCHIVE_SIZE"),
@@ -54,7 +54,9 @@ def _read_product(
     include_project: bool = False,
     identity: InstallationIdentity | None = None,
 ) -> tuple[NativeBinding, bytes | None]:
-    regular, preview, project = _read_products(include_project=include_project)
+    regular, preview, project, _ = _read_products(
+        include_project=include_project
+    )
     if identity is None or identity == regular.identity:
         return regular, project
     if preview is not None and identity == preview.identity:
@@ -731,12 +733,191 @@ def _forward(
             lease.close()
 
 
+def _preview_update_target(
+    expected_regular: NativeBinding,
+    expected_preview: NativeBinding | None,
+    manager: InstallationManager,
+) -> tuple[InstallationManager, NativeBinding, tuple[UUID, str]]:
+    """Resolve a managed Preview and capture its verified update revision."""
+    from apprc.distribution.runtime.installation import (
+        _command_filename,
+        require_update_record,
+    )
+    from apprc.user_files.app_home.locations import assert_no_links
+    from apprc.user_files.installation.coordination import installation_lock
+
+    if expected_preview is None:
+        raise InstallationError(
+            "This installation does not declare a preview product."
+        )
+    target = InstallationManager(
+        _application(expected_preview).schema, environment=manager.environment
+    )
+    hint = (
+        f"{expected_regular.command_name} {expected_regular.maintenance_group_name}"
+        " install --preview --version VERSION"
+    )
+    if _preview_has_path_overrides(target):
+        raise InstallationError("Preview uses fixed native application paths.")
+    if target.inspect().status in {"missing", "removed-retained"}:
+        raise InstallationError(f"Preview is not installed. Run `{hint}`.")
+    with installation_lock(target.directory):
+        inspection = target.inspect()
+        record = inspection.require_usable()
+        if record is None or record.status == "removed-retained":
+            raise InstallationError(f"Preview is not installed. Run `{hint}`.")
+        if inspection.revision is None:
+            raise InstallationError(
+                "Preview has no recorded installation revision."
+            )
+        expected = record.generation_id, inspection.revision
+        require_update_record(inspection, expected)
+        if not isinstance(record.active_runtime, RuntimeSlot) or (
+            record.identity != expected_preview.identity
+            or record.command_name != expected_preview.command_name
+        ):
+            raise InstallationError(
+                "The saved preview does not match the managed product."
+            )
+        executable = target.directory / _command_filename(record.command_name)
+        assert_no_links(executable)
+        if not _owned_manager_invocation(executable, target, expected_preview):
+            raise InstallationError(
+                "The recorded preview launcher could not be verified."
+            )
+        with zipfile.ZipFile(executable) as archive:
+            regular, preview = read_native_bindings(archive)
+        if (
+            regular.identity != expected_regular.identity
+            or regular.command_name != expected_regular.command_name
+            or preview is None
+            or preview.identity != expected_preview.identity
+            or preview.command_name != expected_preview.command_name
+        ):
+            raise InstallationError(
+                "The recorded preview launcher belongs to a different product."
+            )
+    return target, preview, expected
+
+
+def _install_from_launcher(
+    binding: NativeBinding,
+    manager: InstallationManager,
+    executable: Path,
+    arguments: Sequence[str],
+    regular: NativeBinding,
+    preview: NativeBinding | None,
+    *,
+    preview_command: bool,
+) -> int:
+    """Handle released Preview selection in the native installer delegate."""
+    release_options = {"--release", "--version", "-v"}
+    if not any(
+        token.split("=", 1)[0] in release_options for token in arguments
+    ):
+        return _install(
+            binding,
+            manager,
+            executable,
+            tuple(arguments),
+            regular=regular if preview_command else None,
+            preview=None if preview_command else preview,
+        )
+
+    import argparse
+
+    from apprc.distribution.runtime.update import install_preview_release
+    from apprc.interfaces.cli._installation_output import (
+        InstallationProgressOutput,
+    )
+
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--preview", "-p", action="store_true")
+    parser.add_argument("--smoke", "-s", action="store_true")
+    selectors = parser.add_mutually_exclusive_group(required=True)
+    selectors.add_argument("--version", "-v")
+    selectors.add_argument("--release")
+    parser.add_argument("--yes", "-y", action="store_true")
+    parser.add_argument("--skip-setup", action="store_true")
+    parser.add_argument("--desktop", action="store_true")
+    parser.add_argument("--start-menu", action="store_true")
+    parser.add_argument("--command-directory")
+    options = parser.parse_args(arguments)
+    output = InstallationProgressOutput(None, binding.display_name, "managed")
+    try:
+        if not options.preview or options.smoke:
+            raise InstallationError(
+                "Released setup selection requires --preview without --smoke."
+            )
+        if not _owned_manager_invocation(executable, manager, binding):
+            raise InstallationError(
+                "Run preview install through the installed application command."
+            )
+        if preview is None:
+            raise InstallationError(
+                "This installation does not declare a preview product."
+            )
+        target = InstallationManager(
+            _application(preview).schema, environment=manager.environment
+        )
+        if _preview_has_path_overrides(target) or any(
+            token.split("=", 1)[0]
+            in {"--layout", "--app-root", "--env-file", "--workspace"}
+            for token in sys.argv[1:]
+        ):
+            raise InstallationError(
+                "Preview uses fixed native application paths."
+            )
+        setup_args = [
+            flag
+            for flag, selected in (
+                ("--yes", options.yes),
+                ("--skip-setup", options.skip_setup),
+                ("--desktop", options.desktop),
+                ("--start-menu", options.start_menu),
+            )
+            if selected
+        ]
+        if options.command_directory is not None:
+            setup_args.extend(
+                ("--command-directory", options.command_directory)
+            )
+        return install_preview_release(
+            manager,
+            target,
+            preview,
+            regular=regular,
+            release_tag=options.release,
+            release_version=options.version,
+            arguments=setup_args,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        output.failed(str(error))
+        return 1
+
+
+def _standalone_preview_default(
+    regular: NativeBinding, enabled: bool, arguments: list[str]
+) -> bool:
+    """Choose Preview for ordinary prerelease setup invocations."""
+    if not enabled or any(
+        token.split("=", 1)[0]
+        in {"--apprc-update-generation", "--apprc-update-revision"}
+        for token in arguments
+    ):
+        return False
+    from packaging.version import Version
+
+    prerelease = Version(regular.version).pre
+    return prerelease is not None and prerelease[0] in {"b", "rc"}
+
+
 def main() -> int:
     """Dispatch manager-only handoff before loading product/application code."""
     argv = list(sys.argv[1:])
     if argv and argv[0].startswith("--apprc-"):
         _setup_launch()["dispatched"] = True
-    regular, preview, _ = _read_products()
+    regular, preview, _, preview_default = _read_products()
     if argv and argv[0] == "--apprc-execute-handoff":
         if len(argv) != 2:
             raise ValueError("Native uninstall handoff arguments are invalid.")
@@ -782,6 +963,20 @@ def main() -> int:
         _command_filename(regular.command_name)
     )
     setup_flags = {"-p", "--preview", "-s", "--smoke"}
+    standalone = not preview_command and not regular_command
+    explicit_regular = standalone and argv[:1] == ["--regular"]
+    if (
+        standalone
+        and "--regular" in argv
+        and any(token in setup_flags for token in argv)
+    ):
+        print(
+            "--regular cannot be combined with --preview or --smoke.",
+            file=sys.stderr,
+        )
+        return 2
+    if explicit_regular:
+        argv.pop(0)
     if (
         not preview_command
         and not regular_command
@@ -821,6 +1016,9 @@ def main() -> int:
     if not owned and preview is not None and argv in (["--help"], ["-h"]):
         print("Native setup options:")
         print("  -p, --preview  Install or update the preview.")
+        print("      --regular  Install or update the regular product.")
+        if preview_default:
+            print("  Beta and RC setup defaults to Preview.")
         print("  -s, --smoke    Install, check, and uninstall a fresh preview.")
         print()
     group = binding.maintenance_group_name
@@ -909,14 +1107,26 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    if not owned and not argv:
-        return _install(binding, manager, executable, (), preview=preview)
     if (
         not owned
         and group_args is None
-        and argv
-        and argv[0] not in {"--help", "-h", "--version"}
+        and (not argv or argv[0] not in {"--help", "-h", "--version"})
     ):
+        if (
+            standalone
+            and not explicit_regular
+            and preview is not None
+            and _standalone_preview_default(regular, preview_default, argv)
+        ):
+            return _install(
+                preview,
+                InstallationManager(
+                    _application(preview).schema, environment=environment
+                ),
+                executable,
+                tuple(argv),
+                regular=regular,
+            )
         return _install(
             binding, manager, executable, tuple(argv), preview=preview
         )
@@ -997,13 +1207,14 @@ def main() -> int:
         config_group_name=binding.config_group_name,
         installation_management=True,
         native_binding=binding,
-        installer_entrypoint=lambda values: _install(
+        installer_entrypoint=lambda values: _install_from_launcher(
             binding,
             manager,
             executable,
-            tuple(values),
-            regular=regular if preview_command else None,
-            preview=None if preview_command else preview,
+            values,
+            regular,
+            preview,
+            preview_command=preview_command,
         ),
     )
     from apprc.interfaces.cli.context import _authenticated_native_manager_scope

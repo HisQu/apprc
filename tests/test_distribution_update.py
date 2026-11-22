@@ -818,6 +818,16 @@ def test_expected_update_rejects_a_stale_record(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="installation changed"):
         require_update_record(inspection, (record.generation_id, "0" * 64))
 
+    with pytest.raises(ValueError, match="installation changed"):
+        update.update_application(
+            manager,
+            binding=None,
+            regular_app_id=None,
+            maintenance_group="app",
+            confirm=lambda _: pytest.fail("A stale target must not prompt."),
+            expected_target=(record.generation_id, "0" * 64),
+        )
+
 
 @pytest.mark.parametrize("acknowledge", [False, True])
 def test_handoff_opens_all_waiters_before_applying_update(

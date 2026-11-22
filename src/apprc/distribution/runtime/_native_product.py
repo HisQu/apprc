@@ -8,7 +8,11 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from apprc.definition.installation import InstallationError
-from apprc.distribution.models import NativeBinding, read_native_bindings
+from apprc.distribution.models import (
+    NativeBinding,
+    read_native_bindings,
+    read_preview_default,
+)
 
 
 def read_products(
@@ -17,7 +21,7 @@ def read_products(
     expected_digest: object,
     *,
     include_project: bool = False,
-) -> tuple[NativeBinding, NativeBinding | None, bytes | None]:
+) -> tuple[NativeBinding, NativeBinding | None, bytes | None, bool]:
     """Verify the appended archive and optionally load its project snapshot."""
     if (
         type(expected_size) is not int
@@ -41,6 +45,7 @@ def read_products(
         raise RuntimeError("Native manager archive changed after loading.")
     with zipfile.ZipFile(executable) as archive:
         binding, preview = read_native_bindings(archive)
+        preview_default = read_preview_default(archive)
         project = archive.read("project.zip") if include_project else None
     if (
         project is not None
@@ -49,7 +54,7 @@ def read_products(
         raise RuntimeError(
             "Embedded project snapshot differs from its binding."
         )
-    return binding, preview, project
+    return binding, preview, project, preview_default
 
 
 def check_other_product_paths(

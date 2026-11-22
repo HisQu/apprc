@@ -61,6 +61,7 @@ def mount_maintenance_groups(
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     checkout_installation: bool = False,
     preview_options: bool = False,
+    native_preview_release: bool = False,
     resource_diagnostics: Mapping[
         Literal["appdata", "cache", "state"],
         Callable[[Path], Mapping[str, object]],
@@ -103,6 +104,7 @@ def mount_maintenance_groups(
         installer_entrypoint=installer_entrypoint,
         checkout_installation=checkout_installation,
         preview_options=preview_options,
+        native_preview_release=native_preview_release,
     )
 
     @maintenance.command("paths", rich_help_panel=maintenance_help_panel)

@@ -61,6 +61,12 @@ def update_command(
         bool,
         typer.Option("--yes", "-y", help="Apply the update without prompting."),
     ] = False,
+    preview: Annotated[
+        bool,
+        typer.Option(
+            "--preview", help="Update the managed Preview installation."
+        ),
+    ] = False,
     release_tag: Annotated[
         str | None,
         typer.Option(
@@ -105,9 +111,18 @@ def update_command(
 
     try:
         regular_app_id = None
+        expected_target = None
+        manager = context.manager
+        if preview and release_tag is not None and release_version is not None:
+            raise click.ClickException("Choose either --version or --release.")
+        if preview and binding is None:
+            raise click.ClickException(
+                "Run preview update through an installed managed command."
+            )
         if binding is not None:
             from apprc.distribution.runtime._manager import (
                 _owned_manager_invocation,
+                _preview_update_target,
             )
 
             if executable is None or not _owned_manager_invocation(
@@ -117,21 +132,30 @@ def update_command(
                     "Run update through the installed application command."
                 )
             with ZipFile(executable) as archive:
-                regular, _ = read_native_bindings(archive)
+                regular, preview_binding = read_native_bindings(archive)
             regular_app_id = regular.identity.app_id
+            if preview:
+                manager, binding, expected_target = _preview_update_target(
+                    regular, preview_binding, manager
+                )
         group = (
             binding.maintenance_group_name
             if binding is not None
             else ctx.meta.get("apprc.update.maintenance_group", "app")
         )
         result = update_application(
-            context.manager,
+            manager,
             binding=binding,
             regular_app_id=regular_app_id,
             maintenance_group=group,
             confirm=confirm,
             release_tag=release_tag,
             release_version=release_version,
+            **(
+                {"expected_target": expected_target}
+                if expected_target is not None
+                else {}
+            ),
         )
     except EditableUpdateRetryError as error:
         # > Rich error panels wrap commands and add border characters.
@@ -154,6 +178,7 @@ def mount_installation_group(
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     checkout_installation: bool = False,
     preview_options: bool = False,
+    native_preview_release: bool = False,
 ) -> typer.Typer:
     """Register explicitly enabled installation actions on a maintenance group."""
     child = app
@@ -175,6 +200,12 @@ def mount_installation_group(
             install_help = "Run the configured installer or register the current Editable Source Checkout (eSC) with -e."
         else:
             install_help = "Run the configured installer."
+
+        if native_preview_release:
+            install_help += (
+                "\n\nUse --preview --version VERSION or --preview --release TAG "
+                "to install a published release into Preview."
+            )
 
         @child.command(
             "install",
@@ -228,7 +259,7 @@ def mount_installation_group(
                 False,
                 "--preview",
                 "-p",
-                hidden=not preview_options,
+                hidden=not (preview_options or native_preview_release),
                 help="Install or update the preview and leave it installed.",
             ),
             smoke: bool = typer.Option(
@@ -266,6 +297,17 @@ def mount_installation_group(
                 raise typer.BadParameter(
                     "Invalid editable update generation."
                 ) from error
+            if (
+                editable
+                and native_preview_release
+                and any(
+                    token.split("=", 1)[0] in {"--version", "-v", "--release"}
+                    for token in ctx.args
+                )
+            ):
+                raise typer.BadParameter(
+                    "Release selection requires a managed preview install."
+                )
             if editable and (preview or smoke):
                 raise typer.BadParameter(
                     "--editable cannot be combined with --preview or --smoke."

@@ -29,6 +29,8 @@ from apprc.distribution.models import (
     GitHubReleaseSource,
     DistributionSpec,
     NativeBinding,
+    _PREVIEW_DEFAULT_MEMBER,
+    _PREVIEW_DEFAULT_POLICY,
     encode_native_binding,
 )
 from apprc.distribution.native import (
@@ -252,6 +254,8 @@ def _sdk_archive(
                 bootstrap_env_prefix=preview.bootstrap_env_prefix,
             )
         )
+    if preview is not None and preview.default_for_beta_rc:
+        entries[_PREVIEW_DEFAULT_MEMBER] = _PREVIEW_DEFAULT_POLICY
     entries["project.zip"] = project_bytes
     entries["bootstrap-requirements.txt"] = (
         "\n".join((*requirements, UV_REQUIREMENT)) + "\n"

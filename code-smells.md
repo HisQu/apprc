@@ -8,15 +8,15 @@ Identify defects and cleanup opportunities that make AppRC easier to maintain an
 
 Reviewed `main` at `11927a` (tree `3a0c57`) on Linux with Python 3.14.2. The review covered the SDK, CLI, Textual and Gradio interfaces, workspace and installation operations, packaging, workflows, docs, examples, and relevant tests. The user selected deeper edge cases and asked to consider breaking proposals.
 
-The correctness pass fixed eight findings. The [backlog](BACKLOG.md#2026-11-21) retains the five deferred items.
+The correctness pass fixed eight findings. The follow-up completed CSC-01, CSC-02, and CSC-03, and measured CSC-05 on PersoDB's release snapshot. CSC-05 and CSC-10 remain open. [Backlog](BACKLOG.md#2026-11-21)
 
 | Finding | Disposition |
 | --- | --- |
-| [CSC-01](#csc-01) | Explicitly deferred at P3. |
-| [CSC-02](#csc-02) | Explicitly deferred at P3. |
-| [CSC-03](#csc-03) | Explicitly deferred. |
+| [CSC-01](#csc-01) | Fixed. Managed and editable installation share the final activation steps. |
+| [CSC-02](#csc-02) | Fixed. Runtime preparation uses one invocation classification. |
+| [CSC-03](#csc-03) | Fixed. Registration, resolution, and binding cases live in separate modules. |
 | [CSC-04](#csc-04) | Fixed. Grouped edits use one captured workspace and destination set. |
-| [CSC-05](#csc-05) | Explicitly deferred. |
+| [CSC-05](#csc-05) | Measured. The implementation stays as measured, with larger workloads still open. |
 | [CSC-06](#csc-06) | Fixed. Development documents the active CI profiles. |
 | [CSC-07](#csc-07) | Fixed. A confirmed editable update refreshes registration when Git is current. |
 | [CSC-08](#csc-08) | Fixed. The CLI reports the committed destination and cleanup warnings. |
@@ -38,9 +38,9 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 ### CSC-01 · P3 · Make managed and editable activation easier to trace
 
-**Evidence and impact.** The 2,704-line runtime installer prepares runtime candidates, captures publication before-images, restores resources, publishes commands, commits installation authority, and handles post-commit Windows integration. Managed and editable paths each implement the latter sequence, including publication, checkpoints, commit, and finalization. Following a change to one of those steps requires checking both paths and the shared recovery function. The existing split between preparation and activation is a useful starting point. [Managed activation](src/apprc/distribution/runtime/installation.py#L1270) · [Candidate preparation](src/apprc/distribution/runtime/installation.py#L1559) · [Editable activation](src/apprc/distribution/runtime/installation.py#L2412)
+**Evidence and impact.** Managed and editable installation each repeated the final checkpoints, installation authority commit, Windows registration, and finalization. A change to those steps required tracing both paths and their shared recovery function.
 
-**Correction and verification.** Give the shared publication and activation sequence a focused internal owner. Keep managed and editable preparation explicit because their inputs and recovery rules differ. Preserve lock order, before-images, checkpoint values, command ownership, and activation ordering. Use the existing managed and editable rollback and post-commit tests to establish equivalence. The refactor fits the current public API and record schema. [Rollback tests](tests/test_installation_rollback.py)
+**Correction and verification.** Managed and editable callers share the final checkpoints, activation commit, and post-commit registration and finalization. Each caller prepares its candidate and publishes its command using its existing before-images and output ordering. The installer and rollback tests exercise both paths. [Activation](src/apprc/distribution/runtime/installation.py#L1262) · [Rollback tests](tests/test_installation_rollback.py)
 
 ## Intuitive code traversal
 
@@ -48,17 +48,17 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 ### CSC-02 · P3 · Give CLI command classification one internal entry point
 
-**Evidence and impact.** `CliRuntime.prepare` handles the distribution route directly, then consults separate installation, diagnostic, and runtime-skip predicates. The predicates repeatedly get the current arguments, identify the nested command, and parse leading options. Some routes depend on callback identity, which distinguishes generated commands from a host command with the same name. Adding a route requires tracing several predicates to determine whether it gets installation metadata, diagnostic context, or full application state. [Preparation](src/apprc/interfaces/cli/runtime.py#L450) · [Runtime skip](src/apprc/interfaces/cli/runtime.py#L713) · [Installation and diagnostics](src/apprc/interfaces/cli/runtime.py#L777)
+**Evidence and impact.** Installation, diagnostic, and runtime-skip predicates each inspected the current arguments. Determining which context a command received meant tracing those predicates alongside the callback identity checks that distinguish generated commands from host commands with the same name.
 
-**Correction and verification.** Parse the invocation once where the command shape allows it and use the existing parser to select the preparation path. Keep callback identity checks, the public `CliRuntimePolicy` behavior, custom group names, option separators, and fresh-process help imports covered throughout. This is an internal refactor. Compare runtime and help tests, including host command collisions. [Runtime tests](tests/test_cli_runtime.py) · [Fresh-process distribution help](tests/test_cli_distribution.py#L107)
+**Correction and verification.** Runtime preparation captures the current or forwarded tokens once and classifies them using the existing parsers. Built-in policies reuse the located child arguments when applicable. Runtime and integration tests cover host command identity, custom group names, option separators, and lightweight fresh-process help. [Classification](src/apprc/interfaces/cli/runtime.py#L727) · [Runtime tests](tests/test_cli_runtime.py) · [Fresh-process distribution help](tests/test_cli_distribution.py#L107)
 
 <a id="csc-03"></a>
 
 ### CSC-03 · P3 · Group dependency configuration tests by contract
 
-**Evidence and impact.** The 1,613-line dependency import test module keeps collision and validation cases alongside resolution precedence, workspace requirements, runtime lifecycle, and bundle construction. The later collision tests and earlier resolution cases use different fixture shapes, but a reader has to find them in one file. [Shared fixture setup](tests/public/test_dependency_config_import.py#L23) · [Resolution cases](tests/public/test_dependency_config_import.py#L988) · [Registration rollback cases](tests/public/test_dependency_config_import.py#L1351)
+**Evidence and impact.** The original dependency import module mixed registration and rollback, resolution precedence and workspace requirements, and binding lifecycle. Cases with different fixture shapes were difficult to locate in one file.
 
-**Correction and verification.** Group cases by declaration and registration, resolution, and lifecycle. Keep the fixture for each contract near the cases or reuse the existing test support area when it has multiple genuine users. Preserve the tests that establish different contracts, including failed registration and retry. This changes test placement only. Compare collected cases and run the public API suite after moving them.
+**Correction and verification.** The three modules group cases by contract. Declarations used in multiple modules live in test support. The split preserves the source of all 31 test functions and decorators and all 33 collected cases, including parametrization. All 88 public API tests passed. [Registration](tests/public/test_dependency_config_registration.py) · [Resolution](tests/public/test_dependency_config_resolution.py) · [Binding](tests/public/test_dependency_config_binding.py) · [Shared declarations](tests/support_dependency_config.py)
 
 ## Code efficiency
 
@@ -76,7 +76,7 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 **Evidence and impact.** The source-build path captures the whole Git tar in memory before writing it to the private stage. It later retains each input file's bytes, the ZIP buffer, and the completed ZIP bytes. The full input and archive sizes contribute to peak memory, especially for projects with large prepared assets. Native product assembly also uses the deterministic ZIP helper, so changing its contract for all callers would widen the work. [Project staging](src/apprc/distribution/project.py#L379) · [Snapshot assembly](src/apprc/distribution/project.py#L428) · [ZIP helper](src/apprc/distribution/_archives.py#L10)
 
-**Correction and verification.** Stream Git's archive into the private stage, then evaluate writing snapshot ZIP entries to a file and hashing the result with `apprc.utils.sha256_file`. Retain the snapshot format, ordering, timestamps, file modes, digest checks, output ownership, and failure cleanup. Measure peak memory with a representative larger snapshot and verify byte-for-byte reproducibility before changing the shared ZIP implementation. [Snapshot tests](tests/test_project_snapshot.py)
+**Measurement and disposition.** Three Linux runs built the source snapshot for PersoDB revision `845454` into separate temporary directories. Each took 0.24 seconds of wall time. GNU `time` reported peaks of 54,920, 54,896, and 54,896 KiB RSS for the Python process, including imports. Each ZIP was 1,884,796 bytes with SHA-256 `d7c67a60524f09356e9996d11c1db568b159d5785e8a004a189a13e3dfc804c8`. This release workload did not justify changing the implementation. Revisit with larger prepared assets if memory becomes a build constraint and compare peak RSS and archive bytes. [Snapshot tests](tests/test_project_snapshot.py)
 
 The existing slot-name cache uses immutable results keyed by class and consumes one entry per class for the process lifetime. Fixed app declarations bound that cardinality in typical use. Dynamic class churn would justify measuring retention before replacing the cache. Caching mutable files or installation authority would require invalidation across processes. Repository pytest already runs independent tests in parallel. The installation and recovery steps reviewed here depend on ordered writes, and the scan found no comparable low-effort runtime parallelism opportunity. [Slot-name cache](src/apprc/runtime/config/_state_transfer.py#L32) · [Pytest options](pyproject.toml#L179)
 

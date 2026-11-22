@@ -73,69 +73,48 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-21](#2026-11-21)
-   1. [P3 / E1 \[Code smell\] - *Simplify installer activation*](#p3--e1-code-smell---simplify-installer-activation)
-   2. [P3 / E1 \[Code smell\] - *Unify internal CLI command classification*](#p3--e1-code-smell---unify-internal-cli-command-classification)
-   3. [P3 / E2 \[Code smell\] - *Group dependency configuration tests by contract*](#p3--e2-code-smell---group-dependency-configuration-tests-by-contract)
-   4. [P3 / E1 \[Code smell\] - *Bound source snapshot memory*](#p3--e1-code-smell---bound-source-snapshot-memory)
-   5. [P3 / E3 \[Question\] - *Decide when to retire shared_default*](#p3--e3-question---decide-when-to-retire-shared_default)
-3. [2026-11-18](#2026-11-18)
+2. [2026-11-22](#2026-11-22)
+   1. [P3 / E1 \[Question\] - *Clarify runtime policy for mounted help*](#p3--e1-question---clarify-runtime-policy-for-mounted-help)
+3. [2026-11-21](#2026-11-21)
+   1. [P3 / E1 \[Code smell\] - *Bound source snapshot memory*](#p3--e1-code-smell---bound-source-snapshot-memory)
+   2. [P3 / E3 \[Question\] - *Decide when to retire shared_default*](#p3--e3-question---decide-when-to-retire-shared_default)
+4. [2026-11-18](#2026-11-18)
    1. [P3 / E3 \[Bug risk\] - *Verify managed desktop shortcuts on Windows*](#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows)
    2. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
-4. [2026-11-16](#2026-11-16)
+5. [2026-11-16](#2026-11-16)
    1. [P1 / E1 \[Bug risk\] - *Uninstall cleanup can race with new resource leases*](#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
    2. [P2 / E2 \[Bug risk\] - *Literal secret interpolation needs an explicit contract*](#p2--e2-bug-risk---literal-secret-interpolation-needs-an-explicit-contract)
-5. [2026-11-13](#2026-11-13)
+6. [2026-11-13](#2026-11-13)
    1. [P2 / E2 \[Bug risk\] - *Metadata-only version commands resolve appdata ownership*](#p2--e2-bug-risk---metadata-only-version-commands-resolve-appdata-ownership)
-6. [2026-11-09](#2026-11-09)
+7. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
 
 <br>
 
-# 2026-11-21
+# 2026-11-22
 
-## P3 / E1 [Code smell] - *Simplify installer activation*
-
-- **Area:** `src/apprc/distribution/runtime/installation.py`
-- **Observed while:** Following managed setup and editable registration.
-- **Why not fixed now:** The CSC correctness pass deferred the larger refactor.
-- **Evidence:** Managed and editable paths repeat part of the activation orchestration. [CSC-01](code-smells.md#csc-01)
-- **Context:** The installer combines preparation, publication, recovery, and setup output.
-- **Suggested next step:** Consolidate the shared activation sequence while keeping both preparation paths and the existing recovery checkpoints explicit.
-
-<br>
-
-## P3 / E1 [Code smell] - *Unify internal CLI command classification*
+## P3 / E1 [Question] - *Clarify runtime policy for mounted help*
 
 - **Area:** `src/apprc/interfaces/cli/runtime.py`
-- **Observed while:** Following CLI help, installation commands, diagnostic commands, and host runtime setup.
-- **Why not fixed now:** Several command identities and option-separator cases need behavior-preserving coverage.
-- **Evidence:** Runtime preparation repeats nested action parsing across multiple predicates and handles generated command identity in separate branches. [CSC-02](code-smells.md#csc-02)
-- **Context:** An added route can affect which context a command receives and whether help imports runtime code.
-- **Suggested next step:** Consolidate internal classification with the existing argument parser and verify aliases, host collisions, and fresh-process help.
+- **Observed while:** Comparing standalone policy evaluation with mounted runtime preparation for CSC-02.
+- **Why not fixed now:** The refactor preserves the current help and initialization behavior.
+- **Evidence:** A standalone `CliRuntimePolicy.request_skips_runtime()` can return false for help when a command declares `skip_help=False`. Mounted `CliRuntime` recognizes nested help before consulting that policy. [CLI policy tests](tests/test_cli_runtime.py)
+- **Context:** A host developer can read the declaration as controlling both entry points.
+- **Suggested next step:** Confirm the supported meaning of `skip_help` for each entry point and document it. Keep mounted help lightweight.
 
 <br>
 
-## P3 / E2 [Code smell] - *Group dependency configuration tests by contract*
-
-- **Area:** `tests/public/test_dependency_config_import.py`
-- **Observed while:** Following the tested registration, resolution, and bundle contracts.
-- **Why not fixed now:** This is an independent test organization change.
-- **Evidence:** A 1,613-line module mixes registration rollback, resolution precedence, lifecycle behavior, and bundles. [CSC-03](code-smells.md#csc-03)
-- **Context:** The cases cover distinct contracts and can be easier to locate.
-- **Suggested next step:** Move cases into focused test modules, preserve assertions, and compare collection before and after.
-
-<br>
+# 2026-11-21
 
 ## P3 / E1 [Code smell] - *Bound source snapshot memory*
 
 - **Area:** `src/apprc/distribution/project.py` and `src/apprc/distribution/_archives.py`
 - **Observed while:** Tracing committed source export and snapshot validation.
-- **Why not fixed now:** Archive byte reproducibility and actual memory savings need verification.
-- **Evidence:** The snapshot path buffers the Git tar, input file bytes, and compressed ZIP in memory. [CSC-05](code-smells.md#csc-05)
+- **Why not fixed now:** The measured PersoDB release snapshot finished in 0.24 seconds at about 54 MiB peak RSS, with the same archive bytes in three runs.
+- **Evidence:** The snapshot path buffers the Git tar, input file bytes, and compressed ZIP in memory. The benchmark measured the existing path on a real release snapshot. [CSC-05](code-smells.md#csc-05)
 - **Context:** Larger prepared assets increase peak memory during a local build.
-- **Suggested next step:** Measure a representative large snapshot and stream the project archive through the existing private stage while preserving its exact bytes and checks.
+- **Suggested next step:** Measure a workload with large prepared assets when memory becomes a build constraint. Compare peak RSS and archive bytes before adopting streaming.
 
 <br>
 

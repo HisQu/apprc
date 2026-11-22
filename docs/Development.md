@@ -113,6 +113,9 @@ synchronization, validation, and resource initialization. Its caller owns the
 operation, durable support-publication intent, registration, and activation.
 Managed installation and repair share command publication, registration, final
 checkpoints, and activation; their candidate preparation remains explicit.
+Managed and editable installation share the final checkpoints, installation
+record commit, and post-commit registration and finalization. Each route owns
+its candidate preparation, command publication, and recorded before-images.
 Use `plan_resume()` for an exact pending operation and `plan_repair()` only for
 a new managed repair. A candidate rebuilt during the current invocation is not
 rebuilt again after a probe failure; previously prepared candidates can still be
@@ -206,6 +209,11 @@ Textual editors or Prompt Toolkit. Load those implementations when the user
 actually launches an editor or enters an interactive prompt. Use the existing
 lazy facade mechanism and matching typing stubs; inspect every parent package's
 `__init__.py`, because an eager ancestor defeats a lazy public facade.
+
+AppRC runtime preparation classifies each invocation from a single capture of
+its current or forwarded argument tokens. Use the existing token parser and
+check the mounted callback identity for generated root commands that can share
+a name with a host command.
 
 Keep installation wizard prompts, completion text, verification commands,
 and next steps aligned with the current mounted CLI whenever commands,

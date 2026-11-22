@@ -108,6 +108,17 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Workspace archive, restore, and unregister recheck the selected registry
+  entry after acquiring locks. Registration and restore report private companion
+  problems with repair guidance after the workspace is committed.
+- Gradio workspace edits use the selection displayed by the current browser
+  session, including when another session changes the saved default.
+- Config mutation tracking recognizes inherited slotted fields on instances
+  with a dictionary, and config copies preserve manually declared private slots.
+- Editable update recovery prints copyable retry commands on separate lines.
+- The workspace reconnect prompt explains when it creates the ordinary settings
+  file. Source snapshots accept a staging directory with literal glob characters.
+
 ### 🔒 Security
 
 <br>

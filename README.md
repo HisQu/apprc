@@ -329,6 +329,7 @@ with gr.Blocks() as page:
 
 The application owns the page, server, and launch behavior. For registry-backed
 workspaces, pass `workspace_manager=MyRC.workspaces()` to `ConfigEditor`.
+Each browser session edits the workspace shown in its settings view.
 The [Gradio guide](docs/How-To-User-Guides.md#add-a-gradio-settings-page)
 covers the complete integration and initialization behavior.
 
@@ -660,8 +661,10 @@ including the 0.32 API and on-disk configuration changes. AppRC does not
 automatically move or convert old user files; preserve them and configure
 the new paths deliberately.
 
-CI runs on Ubuntu for core Python 3.12, 3.13, and 3.14 and GUI/browser Python
-3.12. Native platform follow-ups are tracked in the
+Ordinary CI runs core checks on Ubuntu with Python 3.12. Extended release CI
+adds core checks on Python 3.13 and 3.14 and GUI/browser checks on Python 3.14.
+See the [CI profiles](docs/Development.md#environment). Native platform
+follow-ups are tracked in the
 [platform status](BACKLOG.md#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 and [shortcut validation](BACKLOG.md#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows)
 entries.

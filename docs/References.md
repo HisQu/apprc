@@ -363,6 +363,7 @@ and [author guidance for running both identities](Development.md#verify-an-opted
 | --- | --- |
 | `<app> app update` | Update the ready installation selected by the installed command. Applications with a custom maintenance group use that group in place of `app`. |
 | `<app> update` | Root alias enabled by default. Set `AppRC(update_alias=False)` to reserve the root name for the host. |
+| `--release TAG` | Select an exact published GitHub release tag, including a prerelease. Applies only to managed installations. The default selection is the latest stable release. |
 | `--yes`, `-y` | Apply an available update without prompting. |
 | `RELEASE_REPO_OLIS`, `--olis-repo`, `RELEASE_PUBLIC` | Authoring inputs that select the optional release source embedded in new native setups. |
 
@@ -370,7 +371,8 @@ Managed updates compare the active package version and source snapshot with
 the verified candidate. The same version and source is current. Changed
 source at the same version requires the publisher to bump the version.
 Older candidates leave the active installation in place. Preview uses the
-same release source and updates the preview identity.
+same release source and updates the preview identity. A missing or draft tag
+ends the update without selecting a different release.
 
 ### One-line install script reference
 

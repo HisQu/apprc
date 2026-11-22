@@ -506,8 +506,10 @@ The shorter `yourapp update` alias is enabled by default. A host with its own
 root `update` command can set `AppRC(update_alias=False)` and keep the nested
 `yourapp app update` command.
 
-Managed updates use the publisher's configured release source. You can also
-run a newer verified setup. The [update guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#update-an-application)
+Managed updates use the latest stable release from the publisher's configured
+source by default. Use `yourapp app update --release TAG` to choose a published
+release by its exact GitHub tag, including a prerelease. The
+[update guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#update-an-application)
 explains release selection, version checks, and the Git/uv workflow for
 editable checkouts. Update support depends on the version the application ships.
 

@@ -118,12 +118,19 @@ import importlib.abc
 import sys
 from pathlib import Path
 
-class NoAuthoringDependencies(importlib.abc.MetaPathFinder):
+class NoRuntimeDependencies(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname == "packaging" or fullname.startswith("packaging."):
-            raise ModuleNotFoundError("authoring-only dependency is unavailable")
+        for unavailable in (
+            "authoring_fixture",
+            "apprc.distribution.runtime.update",
+            "packaging",
+            "prompt_toolkit",
+            "textual",
+        ):
+            if fullname == unavailable or fullname.startswith(f"{unavailable}."):
+                raise ModuleNotFoundError(f"{fullname} is unavailable during help")
 
-sys.meta_path.insert(0, NoAuthoringDependencies())
+sys.meta_path.insert(0, NoRuntimeDependencies())
 sys.path.insert(0, sys.argv[1])
 sys.prefix = str(Path(sys.argv[1]) / "checkout" / ".venv")
 sys.argv = ["dist-fixture", *sys.argv[2:]]
@@ -192,6 +199,10 @@ assert "prompt_toolkit" not in sys.modules
         assert "--smoke" in output
     else:
         assert "--yes" in output
+        assert any(
+            "--release" in line and "TAG" in line
+            for line in output.splitlines()
+        )
         assert "Update the registered release or editable checkout." in output
 
 

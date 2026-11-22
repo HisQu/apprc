@@ -100,6 +100,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Managed application updates accept `--release TAG` to select an exact
+  published GitHub release, including a prerelease.
+
 ### 🛠️ Changed
 
 ### 🗑️ Deprecated

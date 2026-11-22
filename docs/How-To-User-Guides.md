@@ -1425,8 +1425,18 @@ confirmation. Add `--yes` for an unattended run. On Windows the command may
 hand work to a helper while the original launcher closes. Read the helper or
 setup output for the final result.
 
-A release installation uses the publisher's configured GitHub release
-source. The command verifies the downloaded setup before running it and keeps
+A release installation uses the latest stable release from the publisher's
+configured GitHub repository by default. To choose a specific published
+release, pass its exact tag. For example, if the publisher has released
+`v2.0.0rc1`, run
+
+```shell
+demo app update --release v2.0.0rc1
+```
+
+This also works with `demo update` when the alias is enabled. You can select a
+published prerelease, and AppRC rejects releases older than the installed
+version. The command verifies the downloaded setup before running it and keeps
 the current resource placement, command location, and regular or preview
 identity. Private releases require GitHub CLI authenticated with access to
 the publisher's repository. For setups without an update source, follow the
@@ -1441,9 +1451,10 @@ On Windows these hashes include the version metadata stamped onto the
 published command. **Reinstall** indicates an exact command match and proceeds
 through the normal installation steps.
 
-An editable installation uses its recorded checkout and environment. It
-requires a clean Git checkout on a branch with an upstream and advances the
-branch only by fast-forward. It then runs `uv sync --locked` and refreshes the
+For an editable installation, run the update command without `--release` to
+use its recorded checkout and environment. The checkout must be clean and on
+a branch with an upstream. The update advances the branch only by
+fast-forward, then runs `uv sync --locked` and refreshes the
 existing registration, even when Git is already current. Sync uses the
 project's default dependency selection and may remove packages outside that
 selection. If sync or registration fails, the command reports any Git change

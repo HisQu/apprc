@@ -135,6 +135,15 @@ def update_command(
                 regular, preview_binding = read_native_bindings(archive)
             regular_app_id = regular.identity.app_id
             if preview:
+                options = context.runtime_options
+                if (
+                    options.layout is not None
+                    or options.env_files
+                    or options.workspace is not None
+                ):
+                    raise click.ClickException(
+                        "Preview uses fixed native application paths."
+                    )
                 manager, binding, expected_target = _preview_update_target(
                     regular, preview_binding, manager
                 )

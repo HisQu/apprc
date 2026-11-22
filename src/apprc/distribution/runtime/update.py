@@ -179,7 +179,9 @@ def install_preview_release(
     arguments: Sequence[str],
 ) -> int:
     """Apply an explicit released Preview setup through its manual install path."""
+    from apprc.distribution.runtime._install_progress import installation_color
     from apprc.distribution.runtime.acquisition import _assert_private_staging
+    from apprc.interfaces._terminal_console import color_environment
 
     environment = runtime_environment(invoking_manager.environment)
     parent = Path(tempfile.gettempdir()).resolve(strict=True)
@@ -220,7 +222,7 @@ def install_preview_release(
             setup.chmod(0o700)
         return subprocess.run(
             [str(setup), "--preview", *arguments],
-            env=environment,
+            env=color_environment(environment, installation_color.get()),
             check=False,
         ).returncode
 

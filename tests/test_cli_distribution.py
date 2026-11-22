@@ -199,6 +199,7 @@ assert "prompt_toolkit" not in sys.modules
         assert "--smoke" in output
     else:
         assert "--yes" in output
+        assert "--preview" in output
         assert any(
             "--release" in line and "TAG" in line
             for line in output.splitlines()

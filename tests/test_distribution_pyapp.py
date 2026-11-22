@@ -1544,6 +1544,20 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     preview_data = Path(_record(preview_dir)["placement"]["appdata_dir"])
     preview_sentinel = preview_data / "preview-data.txt"
     preview_sentinel.write_text("preview data")
+    preview_before_override = preview_authority.read_bytes()
+    override = invoke(
+        regular_command,
+        "--app-root",
+        str(root),
+        "update",
+        "--preview",
+        "--version",
+        "2.0.0rc1",
+        "--yes",
+    )
+    assert override.returncode != 0
+    assert "Preview uses fixed native application paths." in override.stderr
+    assert preview_authority.read_bytes() == preview_before_override
     updated = invoke(
         regular_command,
         "update",

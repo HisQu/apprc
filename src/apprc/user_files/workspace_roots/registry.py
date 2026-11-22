@@ -38,7 +38,6 @@ __all__ = [
     "WorkspaceRegistry",
     "load_workspace_registry_or_empty",
     "ordered_workspace_names",
-    "prune_missing_archived_workspaces",
     "record_archived_workspace",
     "register_workspace",
     "register_restored_workspace",
@@ -474,27 +473,6 @@ def remove_archived_workspace(
     current = load_workspace_registry_or_empty(path)
     archived_workspaces = dict(current.archived_workspaces)
     archived_workspaces.pop(name, None)
-    updated = replace(
-        current,
-        archived_workspaces=archived_workspaces,
-    )
-    write_workspace_registry(updated)
-    return updated
-
-
-def prune_missing_archived_workspaces(
-    *,
-    path: Path,
-) -> WorkspaceRegistry:
-    """Drop archive records whose last known file no longer exists."""
-    current = load_workspace_registry_or_empty(path)
-    archived_workspaces = {
-        name: record
-        for name, record in current.archived_workspaces.items()
-        if record.archive.is_file()
-    }
-    if archived_workspaces == current.archived_workspaces:
-        return current
     updated = replace(
         current,
         archived_workspaces=archived_workspaces,

@@ -6,7 +6,7 @@ from __future__ import annotations
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
 from functools import cache
-from types import ModuleType
+from types import MemberDescriptorType, ModuleType
 from typing import Any, Generic, TypeVar, cast
 
 ConfigT = TypeVar("ConfigT")
@@ -31,35 +31,35 @@ class DeepCopyResult(Generic[ConfigT]):
 
 @cache
 def slot_names(obj_type: type) -> frozenset[str]:
-    """Collect slot names from ``obj_type`` and all bases in MRO order.
+    """Collect actual slot names from ``obj_type`` and all bases.
 
     :param obj_type: Class to inspect for ``__slots__``.
     :return: Slot names declared across the class hierarchy.
     """
-    names: set[str] = set()
-    for cls in obj_type.__mro__:
-        slots = cls.__dict__.get("__slots__", ())
-        if isinstance(slots, str):
-            names.add(slots)
-            continue
-        for name in slots:
-            names.add(name)
-    return frozenset(names)
+    # > Private slots already have their mangled names on the descriptors.
+    return frozenset(
+        name
+        for cls in obj_type.__mro__
+        for name, descriptor in cls.__dict__.items()
+        if isinstance(descriptor, MemberDescriptorType)
+        and descriptor.__objclass__ is cls
+        and descriptor.__name__ == name
+    )
 
 
 def has_instance_attr(instance: Any, key: str) -> bool:
     """Return whether ``key`` is already assigned on ``instance``.
 
-    Regular instances are checked through ``__dict__``. Slotted instances are
-    checked by slot membership and then by probing the actual assigned value.
+    An instance can have a dictionary and inherit slots. Check both, and
+    distinguish an assigned slot from a declared but empty slot.
 
     :param instance: Runtime object to inspect.
     :param key: Attribute name to locate.
     :return: ``True`` when the attribute already has instance state.
     """
     d = getattr(instance, "__dict__", None)
-    if isinstance(d, dict):
-        return key in d
+    if isinstance(d, dict) and key in d:
+        return True
     if key in slot_names(type(instance)):
         try:
             object.__getattribute__(instance, key)
@@ -83,7 +83,7 @@ def assigned_state_items(instance: Any) -> tuple[tuple[str, Any], ...]:
             items.append((key, value))
             seen.add(key)
     for slot_name in slot_names(type(instance)):
-        if slot_name in {"__dict__", "__weakref__"} or slot_name in seen:
+        if slot_name in seen:
             continue
         try:
             value = object.__getattribute__(instance, slot_name)

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import glob
 import re
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 from types import MappingProxyType
 from typing import Generic, Protocol, Self, TypeVar
 
+from apprc.definition._uv_workspace import (
+    match_workspace_pattern,
+    workspace_patterns,
+)
 from apprc.definition.env_config.schema import ConfigOwner
 from apprc.definition.paths import Layout
 from apprc.definition.provenance import ConfigOriginState
@@ -46,49 +49,19 @@ def resolve_editable_environment(project: Path) -> Path:
             if candidate == selected:
                 continue
             break
-        workspace = uv["workspace"]
-        if not isinstance(workspace, dict):
-            raise ValueError("tool.uv.workspace must be a table.")
-        members = workspace.get("members", [])
-        excludes = workspace.get("exclude", [])
-        if (
-            not isinstance(members, list)
-            or not all(isinstance(item, str) for item in members)
-            or not isinstance(excludes, list)
-            or not all(isinstance(item, str) for item in excludes)
-        ):
-            raise ValueError(
-                "uv workspace members and excludes must be strings."
-            )
-        patterns = (*members, *excludes)
-        for pattern in patterns:
-            path = PurePosixPath(pattern)
-            if (
-                not pattern
-                or path.is_absolute()
-                or ".." in path.parts
-                or "\\" in pattern
-                or PureWindowsPath(pattern).drive
-            ):
-                raise ValueError(f"Unsafe uv workspace pattern: {pattern}.")
+        members, excludes = workspace_patterns(uv["workspace"])
         member_matches = {
-            (candidate / match).resolve(strict=False)
+            match.resolve(strict=False)
             for pattern in members
-            for match in glob.glob(
-                pattern,
-                root_dir=candidate,
-                recursive=True,
-                include_hidden=True,
+            for match in match_workspace_pattern(
+                candidate, pattern, include_hidden=True
             )
         }
         excluded_matches = {
-            (candidate / match).resolve(strict=False)
+            match.resolve(strict=False)
             for pattern in excludes
-            for match in glob.glob(
-                pattern,
-                root_dir=candidate,
-                recursive=True,
-                include_hidden=True,
+            for match in match_workspace_pattern(
+                candidate, pattern, include_hidden=True
             )
         }
         workspace_root = candidate.resolve()

@@ -120,7 +120,7 @@ class ConfigOwner:
 
     def env_key(self, field_name: str) -> str:
         """Return the full env key for ``field_name``."""
-        return f"{self.env_prefix}{self.field(field_name).env_var}"
+        return field_env_key(self, self.field(field_name))
 
     def config_path(self, field_name: str) -> tuple[str, ...]:
         """Return the structured runtime config path for ``field_name``."""
@@ -175,6 +175,11 @@ class ConfigOwner:
         )
         object.__setattr__(self, "_settings_class_cache", settings_cls)
         return settings_cls
+
+
+def field_env_key(owner: ConfigOwner, spec: ConfigField) -> str:
+    """Return the full env key for an already resolved owner field."""
+    return f"{owner.env_prefix}{spec.env_var}"
 
 
 def owner_for(config_cls: type[Any]) -> ConfigOwner:

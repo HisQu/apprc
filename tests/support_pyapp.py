@@ -100,7 +100,10 @@ def start_installation_driver(
         import signal
         from zipfile import ZipFile
 
-        from apprc.distribution.runtime import _manager, installation
+        from apprc.distribution.runtime import (
+            _command_publication,
+            _manager,
+        )
         from apprc.services.installation import InstallationManager
 
         os.setsid()
@@ -143,7 +146,7 @@ def start_installation_driver(
 
                 patch.setattr(manager, "begin_operation", begin)
             elif boundary == "publication":
-                original_publish = installation._publish_stable_command
+                original_publish = _command_publication._publish_stable_command
 
                 def publish(
                     destination: Path,
@@ -157,7 +160,9 @@ def start_installation_driver(
                     pause()
                     return result
 
-                patch.setattr(installation, "_publish_stable_command", publish)
+                patch.setattr(
+                    _command_publication, "_publish_stable_command", publish
+                )
             patch.setattr(_manager, "_manager_uv", lambda: uv)
             patch.setattr(
                 _manager,

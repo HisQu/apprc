@@ -115,7 +115,9 @@ Managed installation and repair share command publication, registration, final
 checkpoints, and activation; their candidate preparation remains explicit.
 Managed and editable installation share the final checkpoints, installation
 record commit, and post-commit registration and finalization. Each route owns
-its candidate preparation, command publication, and recorded before-images.
+its candidate preparation and selects its command destinations.
+`distribution/runtime/_command_publication.py` owns publication, recorded
+before-images, resume, and command rollback for both routes.
 Use `plan_resume()` for an exact pending operation and `plan_repair()` only for
 a new managed repair. A candidate rebuilt during the current invocation is not
 rebuilt again after a probe failure; previously prepared candidates can still be

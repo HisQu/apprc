@@ -19,7 +19,7 @@ from apprc.definition.installation import (
     RuntimeSelection,
     RuntimeSlot,
 )
-from apprc.distribution.runtime import installation
+from apprc.distribution.runtime import _command_publication, installation
 from apprc.distribution.runtime._os_integration import publish_global_command
 from apprc.distribution.runtime._leases import try_retire_runtime_slot
 
@@ -109,7 +109,9 @@ def test_stable_command_rejection_preserves_unknown_file(
     source.write_bytes(b"new stable manager")
 
     with pytest.raises(InstallationError, match="unowned stable command"):
-        installation._publish_stable_command(destination, source, previous=())
+        _command_publication._publish_stable_command(
+            destination, source, previous=()
+        )
 
     assert destination.read_bytes() == b"user-owned command"
     assert tuple(destination.parent.iterdir()) == (destination,)

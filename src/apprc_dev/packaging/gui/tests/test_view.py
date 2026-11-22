@@ -51,8 +51,10 @@ def test_section_renderer_replaces_only_its_owner_and_keeps_shared_context(
     editor = ConfigEditor(
         manager, workspace_manager, section_renderers={"access": render_access}
     )
-    editor._create_workspace("review", str(tmp_path / "workspace"), 0)
-    inspection = manager.inspect(workspace=editor.selected_workspace)
+    _, _, workspace = editor._create_workspace(
+        "review", str(tmp_path / "workspace"), 0, None
+    )
+    inspection = manager.inspect(workspace=workspace)
     with gr.Blocks() as blocks:
         scope = gr.Dropdown(choices=["workspace"], value="workspace")
         status = gr.Textbox()
@@ -67,11 +69,12 @@ def test_section_renderer_replaces_only_its_owner_and_keeps_shared_context(
                         for item in inspection.fields
                         if item.owner.key == owner.key
                     ),
-                    workspace=editor.selected_workspace,
+                    workspace=workspace,
                     scope=scope,
                     status=status,
                     revision=revision,
-                )
+                ),
+                write_workspace=str(tmp_path / "workspace"),
             )
     assert len(received) == 1
     context = received[0]
@@ -122,7 +125,7 @@ def test_section_renderer_receives_absent_write_scope(tmp_path: Path) -> None:
             status=gr.Textbox(),
             revision=gr.State(0),
         )
-        editor._render_section(context)
+        editor._render_section(context, write_workspace=None)
     assert received == [context]
     assert received[0].scope is None and received[0].workspace is None
 
@@ -150,8 +153,8 @@ def test_editor_configures_workspace_and_saves_secret(tmp_path: Path) -> None:
         editor.render()
     assert not manager.inspect().ready
 
-    _, revision = editor._create_workspace(
-        "default", str(tmp_path / "workspace"), 0
+    _, revision, workspace = editor._create_workspace(
+        "default", str(tmp_path / "workspace"), 0, None
     )
     assert manager.inspect().ready
     _, revision = editor._save(
@@ -161,6 +164,7 @@ def test_editor_configures_workspace_and_saves_secret(tmp_path: Path) -> None:
         "private-value",
         "workspace",
         revision,
+        workspace=workspace,
     )
     assert manager.resolve().build(Client).token == "private-value"
     assert "private-value" not in manager.writable_path("workspace").read_text()
@@ -186,7 +190,9 @@ def test_registry_editor_requires_workspace_manager(tmp_path: Path) -> None:
             match="Registry-backed workspace UI requires a WorkspaceManager",
         ),
     ):
-        editor._render_workspace(gr.Textbox(), gr.State(0))
+        editor._render_workspace(
+            gr.Textbox(), gr.State(0), gr.State(None), None
+        )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
@@ -215,7 +221,9 @@ def test_save_secret_reports_repair_without_echoing_value(
     workspace_root.mkdir()
     workspace_root.chmod(0o755)
 
-    _, revision = editor._create_workspace("default", str(workspace_root), 0)
+    _, revision, _ = editor._create_workspace(
+        "default", str(workspace_root), 0, None
+    )
 
     entered_value = "must-never-appear-in-the-status"
     message, revision = editor._save(

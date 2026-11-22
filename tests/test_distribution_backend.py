@@ -35,6 +35,11 @@ from apprc.definition.installation import (
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime.backend import runtime_environment
 from apprc.distribution.runtime import _os_integration
+from apprc.distribution.runtime._command_publication import (
+    _persist_publication_image,
+    _restore_pending_publication,
+    check_owned_stable_command,
+)
 from apprc.distribution.runtime._install_progress import (
     InstallProgress,
     installation_progress,
@@ -49,8 +54,6 @@ from apprc.distribution.runtime._os_integration import (
     windows_registration_intent,
 )
 from apprc.distribution.runtime.installation import (
-    _persist_publication_image,
-    _restore_pending_publication,
     _snapshot_metadata,
     offer_configuration_setup,
 )
@@ -818,8 +821,6 @@ def test_command_ownership_accepts_prior_or_pending_image(
     """Pending publication can be current even when the prior digest comes first."""
     if link and sys.platform == "win32":
         pytest.skip("POSIX global command link semantics")
-    from apprc.distribution.runtime.installation import _check_owned_command
-
     destination = tmp_path / "command"
     if link:
         destination.symlink_to(tmp_path / "target")
@@ -834,9 +835,9 @@ def test_command_ownership_accepts_prior_or_pending_image(
     assert _os_integration._authorized_existing(destination, previous)
     if link:
         with pytest.raises(InstallationError, match="unsafe stable command"):
-            _check_owned_command(destination, previous)
+            check_owned_stable_command(destination, previous)
     else:
-        _check_owned_command(destination, previous)
+        check_owned_stable_command(destination, previous)
     foreign = (OwnedOutput("command", str(destination), "b" * 64),)
     with pytest.raises(InstallationError, match="outside AppRC ownership"):
         _os_integration._authorized_existing(destination, foreign)

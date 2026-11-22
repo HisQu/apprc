@@ -9,7 +9,7 @@ from typing import Any, Mapping
 # == 3rd Party ===============================
 
 # == Internal ================================
-from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.env_config.schema import ConfigOwner, field_env_key
 from apprc.definition.env_config.conversion import (
     OwnerMappingLoader,
     load_owner_from_sources,
@@ -45,16 +45,6 @@ def load_owner_from_env(
     )
 
 
-def provided_owner_field_names(
-    owner: ConfigOwner,
-    values: Mapping[str, str],
-) -> set[str]:
-    """Return owner-local field names present in an env-like mapping."""
-    return {
-        spec.name for spec in owner.fields if owner.env_key(spec.name) in values
-    }
-
-
 def owner_env_mapping(
     owner: ConfigOwner,
     values: object,
@@ -74,6 +64,6 @@ def owner_env_mapping(
         value = getattr(values, spec.name)
         if value is None and not include_empty:
             continue
-        key = owner.env_key(spec.name) if prefixed else spec.env_var
+        key = field_env_key(owner, spec) if prefixed else spec.env_var
         env[key] = _stringify(value)
     return env

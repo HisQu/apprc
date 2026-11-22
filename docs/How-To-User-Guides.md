@@ -541,7 +541,11 @@ Selection changes the workspace settings overlay and root, not the captured
 `AppPaths`. `WorkspaceManager` owns registration, selection, rename, repoint,
 move, remove, archive, and restore. Unregistering never deletes workspace
 payloads. The [workspace reference](References.md#workspace-selection) defines
-selector precedence and direct paths.
+selector precedence and direct paths. Repointing to an existing directory
+creates the ordinary workspace settings file if it is missing. Registration
+and restore can complete with a private companion warning. To enable private
+workspace overrides, review the reported path and use
+[secret permission repair](#save-and-repair-secret-settings).
 
 To move a registered workspace, run `demo workspace move NAME DESTINATION`
 using your application's command in place of `demo`. The command prints the
@@ -952,7 +956,12 @@ page.launch(server_name="127.0.0.1", share=False)
 ```
 
 Config-only applications can pass just `manager`. Registry-backed workspace
-controls without a manager fail clearly rather than silently disappearing.
+controls require a workspace manager. An explicit browser selection updates the
+saved application default and keeps that selection for the current session.
+Sessions without an explicit selection follow the configured or saved selection
+when they render. Built-in workspace controls edit the directory inspected for
+that view. If a name is repointed while a view is open, refresh the page before
+editing the new directory.
 The application owns the start callback and builds its runtime only after
 `manager.inspect().ready`.
 
@@ -1438,9 +1447,10 @@ branch only by fast-forward. It then runs `uv sync --locked` and refreshes the
 existing registration, even when Git is already current. Sync uses the
 project's default dependency selection and may remove packages outside that
 selection. If sync or registration fails, the command reports any Git change
-and gives recovery steps. Run the update again to finish a ready installation.
-If AppRC reports an incomplete installation, retry registration with the
-printed command. Use [inspection and repair](#inspect-or-repair-installation)
+and gives recovery steps. In the reported checkout directory, copy the command
+on its own line to retry the indicated step. Run the update again to finish a
+ready installation. If AppRC reports an incomplete installation, use the direct
+registration command. Use [inspection and repair](#inspect-or-repair-installation)
 when the saved runtime has stopped working.
 
 ## Keep or switch the saved layout

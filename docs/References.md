@@ -815,8 +815,13 @@ when Workspaces is declared. Workspace methods are explicitly named:
 `initialize_workspace(root)` initializes the explicit root's `apprc.workspace.env`
 without writing config or registry files; it creates no secret companion.
 Archive/restore validates traversal and secret exclusions and stages restore
-before registration. New registered roots may not overlap AppRC-managed roots.
-Direct-path mode does not offer registry mutations.
+before registration. Repointing initializes the ordinary workspace dotenv if
+missing. Registration and restore report private companion setup problems as
+warnings after committing the live workspace. The companion remains subject
+to private-file checks and can be repaired explicitly. Archive, restore, move,
+and unregister reject a changed captured registry entry after acquiring their
+locks. New registered roots may not overlap AppRC-managed roots. Direct-path
+mode does not offer registry mutations.
 
 ## Maintenance
 

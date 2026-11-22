@@ -8,18 +8,13 @@ from dataclasses import dataclass
 from typing import Mapping
 
 # == Internal ================================
-from apprc.runtime.config._runtime_validation import (
-    validate_owner_field_value,
-)
-from apprc.runtime.config._loading import (
-    load_owner_from_env,
-    provided_owner_field_names,
-)
+from apprc.runtime.config._runtime_validation import validate_resolved_field
+from apprc.runtime.config._loading import load_owner_from_env
 from apprc.runtime.provenance import (
     ConfigOriginState,
     PythonProvenanceOrigin,
 )
-from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.env_config.schema import ConfigOwner, field_env_key
 from apprc.definition.resolution import ConfigSource
 
 ENV_BINDING_PROTECTED_ORIGINS: frozenset[PythonProvenanceOrigin] = frozenset(
@@ -91,20 +86,24 @@ def env_values_for_binding(
     env_values = os.environ if values is None else values
     if override_python_values:
         return env_values, []
-    skipped_fields = sorted(
-        provided_owner_field_names(owner, env_values)
-        & protected_field_names(origins)
-    )
-    skipped = frozenset(skipped_fields)
-    skipped_keys = {
-        owner.env_key(field_name)
-        for field_name in skipped_fields
-        if all(
-            sibling.name in skipped
-            for sibling in owner.fields
-            if owner.env_key(sibling.name) == owner.env_key(field_name)
-        )
-    }
+    protected = protected_field_names(origins)
+    if not protected:
+        return env_values, []
+    skipped_fields: list[str] = []
+    protected_keys: set[str] = set()
+    unprotected_keys: set[str] = set()
+    for spec in owner.fields:
+        key = field_env_key(owner, spec)
+        if key not in env_values:
+            continue
+        if spec.name in protected:
+            skipped_fields.append(spec.name)
+            protected_keys.add(key)
+        else:
+            unprotected_keys.add(key)
+    # > An unprotected sibling can still bind a key shared with a protected field.
+    skipped_keys = protected_keys - unprotected_keys
+    skipped_fields.sort()
     if not skipped_keys:
         return env_values, skipped_fields
     return (
@@ -139,15 +138,14 @@ def bind_owner_from_env(
         values=source.values if source is not None else None,
     )
     loaded = load_owner_from_env(owner, binding_env)
-    provided_fields = provided_owner_field_names(owner, binding_env)
     skipped_fields = frozenset(skipped_python_fields)
     bound_fields: list[EnvBoundField] = []
     for spec in owner.fields:
-        if spec.name not in provided_fields or spec.name in skipped_fields:
+        env_key = field_env_key(owner, spec)
+        if env_key not in binding_env or spec.name in skipped_fields:
             continue
-        env_key = owner.env_key(spec.name)
         loaded_value = getattr(loaded, spec.name)
-        validate_owner_field_value(owner, spec.name, loaded_value)
+        validate_resolved_field(owner, spec, loaded_value)
         bound_fields.append(
             EnvBoundField(
                 name=spec.name,

@@ -12,6 +12,7 @@ from apprc.definition.installation import (
     RuntimeSelection,
     RuntimeSlot,
 )
+from apprc.definition.resolution import resolve_editable_environment
 
 
 def test_project_snapshot_requires_lowercase_digests_and_full_commit() -> None:
@@ -77,3 +78,26 @@ def test_editable_checkout_requires_canonical_absolute_paths(
 def test_editable_checkout_rejects_parent_traversal(tmp_path: Path) -> None:
     with pytest.raises(InstallationError, match="normalized"):
         EditableCheckout(tmp_path / ".." / "outside", tmp_path / ".venv")
+
+
+def test_editable_discovery_resolves_hidden_nested_members_and_exclusions(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace [root]"
+    hidden_member = workspace / "apps" / "nested" / ".hidden"
+    excluded = workspace / "apps" / "nested" / "excluded"
+    for project in (hidden_member, excluded):
+        project.mkdir(parents=True)
+        (project / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (workspace / "pyproject.toml").write_text(
+        "[tool.uv.workspace]\nmembers = ['apps/**/*']\n"
+        "exclude = ['apps/**/excluded', 'apps/**/missing']\n",
+        encoding="utf-8",
+    )
+
+    assert resolve_editable_environment(hidden_member) == (
+        workspace.resolve() / ".venv"
+    )
+    assert (
+        resolve_editable_environment(excluded) == excluded.resolve() / ".venv"
+    )

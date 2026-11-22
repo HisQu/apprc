@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import apprc.runtime.config._state_transfer as state_transfer
-from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.env_config.schema import ConfigOwner, field_env_key
 from apprc.definition.env_config.sentinels import ENV_FIELD_MISSING
 from apprc.definition.resolution import ConfigSource, ImportedConfig
 from apprc.runtime.config._binding import (
@@ -138,14 +138,16 @@ class Config(ConfigBase):
                 "Imported config owner state is reserved for "
                 "ResolvedConfig.build()."
             )
-        owner_field_names = frozenset(spec.name for spec in owner.fields)
+        owner_env_keys = {
+            spec.name: field_env_key(owner, spec) for spec in owner.fields
+        }
         object.__setattr__(
             self,
             "_apprc_provenance_origins",
             {
                 field_name: (
-                    replace(origin, env_key=owner.env_key(field_name))
-                    if field_name in owner_field_names
+                    replace(origin, env_key=owner_env_keys[field_name])
+                    if field_name in owner_env_keys
                     else origin
                 )
                 for field_name, origin in self._apprc_provenance_origins.items()
@@ -288,7 +290,7 @@ class Config(ConfigBase):
             if spec.name in protected:
                 continue
             if spec.has_default():
-                env_key = owner.env_key(spec.name)
+                env_key = field_env_key(owner, spec)
                 if env_key not in resolved_defaults:
                     resolved_defaults[env_key] = spec.resolve_default()
                 value = state_transfer.deepcopy_state_value(
@@ -410,10 +412,10 @@ class Config(ConfigBase):
         owner = self._config_owner()
         if self._apprc_owner_override is not None:
             for spec in owner.fields:
-                if (
-                    not spec.has_default()
-                    and self._field_origin(spec.name).origin
-                    != "python_constructor_argument"
+                origin = self._apprc_provenance_origins.get(spec.name)
+                if not spec.has_default() and (
+                    origin is None
+                    or origin.origin != "python_constructor_argument"
                 ):
                     object.__setattr__(self, spec.name, ENV_FIELD_MISSING)
         object.__setattr__(

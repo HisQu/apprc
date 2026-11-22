@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -35,15 +34,13 @@ from apprc.definition.installation import (
     OperationContext,
     OperationStep,
     OwnedOutput,
-    PublicationImage,
-    PublicationOutput,
     RuntimeSlot,
 )
 from apprc.definition.paths import ResourceKind
+from apprc.distribution.runtime import _command_publication
 from apprc.distribution.runtime._install_progress import report, warn
 from apprc.distribution.runtime._os_integration import (
     command_is_owned,
-    publish_global_command,
     validate_command_directory,
     validate_global_command,
 )
@@ -76,11 +73,7 @@ from apprc.user_files.app_home.writes import (
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.planning import resource_roots
-from apprc.user_files.installation.operations import (
-    _matches_candidate,
-    record_owned_outputs,
-    record_publication,
-)
+from apprc.user_files.installation.operations import _matches_candidate
 
 if TYPE_CHECKING:
     from apprc.definition.resolution import CliRuntimeOptionsProtocol
@@ -159,435 +152,6 @@ def _command_directory(
         path_entries=_path_entries(environment),
     )
     return selected
-
-
-def _check_owned_command(
-    destination: Path,
-    previous: tuple[OwnedOutput, ...],
-) -> str | None:
-    assert_no_links(destination.parent)
-    try:
-        metadata = destination.lstat()
-    except FileNotFoundError:
-        return None
-    if not stat.S_ISREG(metadata.st_mode):
-        raise InstallationError(
-            f"Refusing to replace unsafe stable command: {destination}."
-        )
-    digest = ut.sha256_file(destination)
-    if not command_is_owned(destination, previous, digest):
-        raise InstallationError(
-            f"Refusing to replace unowned stable command: {destination}."
-        )
-    return digest
-
-
-def _publish_stable_command(
-    destination: Path,
-    source: Path,
-    *,
-    previous: tuple[OwnedOutput, ...],
-) -> OwnedOutput:
-    _check_owned_command(destination, previous)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.",
-        suffix=".apprc-tmp",
-        dir=destination.parent,
-    )
-    temporary = Path(temporary_name)
-    try:
-        with (
-            source.open("rb") as source_stream,
-            os.fdopen(descriptor, "wb") as target,
-        ):
-            shutil.copyfileobj(source_stream, target)
-            target.flush()
-            os.fsync(target.fileno())
-        if os.name != "nt":
-            temporary.chmod(0o700)
-        digest = ut.sha256_file(temporary)
-        os.replace(temporary, destination)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return OwnedOutput("command", str(destination), digest)
-
-
-def _publication_bytes(
-    operation_id: UUID,
-    index: int,
-    content: bytes,
-    *,
-    mode: int | None = None,
-) -> PublicationImage:
-    return PublicationImage(
-        digest=hashlib.sha256(content).hexdigest(),
-        content=f".publication-{operation_id}-{index}",
-        mode=mode,
-    )
-
-
-def _publication_image(
-    operation_id: UUID,
-    index: int,
-    path: Path,
-    *,
-    content: bytes | None = None,
-    link_target: str | None = None,
-) -> PublicationImage | None:
-    if content is not None:
-        return _publication_bytes(operation_id, index, content)
-    if link_target is not None:
-        return PublicationImage(
-            digest=hashlib.sha256(os.fsencode(link_target)).hexdigest(),
-            link_target=link_target,
-        )
-    try:
-        metadata = path.lstat()
-    except FileNotFoundError:
-        return None
-    if stat.S_ISLNK(metadata.st_mode):
-        target = os.readlink(path)
-        return PublicationImage(
-            digest=hashlib.sha256(os.fsencode(target)).hexdigest(),
-            link_target=target,
-        )
-    if not stat.S_ISREG(metadata.st_mode):
-        raise InstallationError(
-            f"Cannot transactionally replace unsafe output: {path}."
-        )
-    return _publication_bytes(
-        operation_id,
-        index,
-        path.read_bytes(),
-        mode=stat.S_IMODE(metadata.st_mode),
-    )
-
-
-def _publication_content(directory: Path, image: PublicationImage) -> bytes:
-    if image.content is None:
-        raise InstallationError(
-            "Publication image does not contain file bytes."
-        )
-    path = directory / image.content
-    assert_no_links(path)
-    if not path.is_file():
-        raise InstallationError("Retained publication image is unavailable.")
-    content = path.read_bytes()
-    if hashlib.sha256(content).hexdigest() != image.digest:
-        raise InstallationError("Retained publication image was modified.")
-    return content
-
-
-def _persist_publication_image(
-    directory: Path,
-    image: PublicationImage | None,
-    content: bytes | None,
-) -> None:
-    if image is None or image.content is None:
-        return
-    if content is None or hashlib.sha256(content).hexdigest() != image.digest:
-        raise InstallationError(
-            "Publication recovery bytes do not match their authority."
-        )
-    path = directory / image.content
-    assert_no_links(path)
-    if path.exists():
-        if not path.is_file():
-            raise InstallationError(
-                "Retained publication path is not a regular file."
-            )
-        existing = path.read_bytes()
-        if existing == content:
-            return
-        if not content.startswith(existing):
-            raise InstallationError(
-                "Retained publication image contains unknown bytes."
-            )
-        with path.open("ab") as stream:
-            stream.write(content[len(existing) :])
-            stream.flush()
-            os.fsync(stream.fileno())
-        return
-    with path.open("xb") as stream:
-        stream.write(content)
-        stream.flush()
-        os.fsync(stream.fileno())
-
-
-def _record_command_publication(
-    manager: InstallationManager,
-    operation_id: UUID,
-    revision: str,
-    outputs: tuple[tuple[Path, bytes | None, str | None], ...],
-    *,
-    user_path_command: Path | None = None,
-) -> tuple[PublicationOutput, ...]:
-    directory = manager.directory
-    publication: list[PublicationOutput] = []
-    retained: list[
-        tuple[
-            PublicationImage | None,
-            bytes | None,
-            PublicationImage,
-            bytes | None,
-        ]
-    ] = []
-    for index, (path, intended_bytes, link_target) in enumerate(outputs):
-        previous = _publication_image(operation_id, index * 2, path)
-        previous_bytes = (
-            path.read_bytes()
-            if previous is not None and previous.content is not None
-            else None
-        )
-        intended = _publication_image(
-            operation_id,
-            index * 2 + 1,
-            path,
-            content=intended_bytes,
-            link_target=link_target,
-        )
-        if intended is None:
-            raise InstallationError(
-                "Command publication requires an intended image."
-            )
-        for image in (previous, intended):
-            if image is not None and image.content is not None:
-                retained_path = directory / image.content
-                assert_no_links(retained_path)
-                if retained_path.exists():
-                    raise InstallationError(
-                        "Unowned publication recovery path already exists."
-                    )
-        publication.append(
-            PublicationOutput(
-                path,
-                previous,
-                intended,
-                update_user_path=path == user_path_command,
-            )
-        )
-        retained.append((previous, previous_bytes, intended, intended_bytes))
-    recorded = tuple(publication)
-    result = record_publication(
-        directory,
-        operation_id=operation_id,
-        expected_revision=revision,
-        publication=recorded,
-    )
-    for previous, previous_bytes, intended, intended_bytes in retained:
-        _persist_publication_image(directory, previous, previous_bytes)
-        _persist_publication_image(directory, intended, intended_bytes)
-    if result.revision is None:
-        raise InstallationError("Publication intent has no authority revision.")
-    return recorded
-
-
-def _publication_authorized_outputs(
-    publication: tuple[PublicationOutput, ...],
-) -> tuple[OwnedOutput, ...]:
-    return tuple(
-        OwnedOutput("command", str(item.path), item.intended.digest)
-        for item in publication
-    )
-
-
-def _existing_publication(
-    manager: InstallationManager,
-) -> tuple[PublicationOutput, ...]:
-    record = manager.inspect().record
-    operation = record.operation if record is not None else None
-    return operation.publication if operation is not None else ()
-
-
-def _publication_source(directory: Path, item: PublicationOutput) -> Path:
-    if item.intended.content is None:
-        raise InstallationError(
-            "Command publication requires retained file bytes."
-        )
-    path = directory / item.intended.content
-    assert_no_links(path)
-    if not path.is_file() or ut.sha256_file(path) != item.intended.digest:
-        raise InstallationError(
-            "Retained command publication bytes are unavailable or modified."
-        )
-    return path
-
-
-def _ensure_command_publication(
-    manager: InstallationManager,
-    operation_id: UUID,
-    revision: str,
-    outputs: tuple[tuple[Path, bytes | None, str | None], ...],
-    *,
-    user_path_command: Path | None = None,
-) -> tuple[tuple[PublicationOutput, ...], str]:
-    existing = _existing_publication(manager)
-    if existing:
-        if tuple(item.path for item in existing) != tuple(
-            item[0] for item in outputs
-        ):
-            raise InstallationError(
-                "Pending publication addresses different command outputs."
-            )
-        current = manager.inspect()
-        if current.revision is None:
-            raise InstallationError(
-                "Pending publication has no authority revision."
-            )
-        for item, (_path, intended_bytes, _link_target) in zip(
-            existing, outputs
-        ):
-            for image, candidate in (
-                (item.previous, None),
-                (item.intended, intended_bytes),
-            ):
-                if image is None or image.content is None:
-                    continue
-                image_path = manager.directory / image.content
-                assert_no_links(image_path)
-                if image_path.exists() and image_path.is_file():
-                    if ut.sha256_file(image_path) == image.digest:
-                        continue
-                if candidate is None:
-                    try:
-                        if (
-                            ut.sha256_file(item.path) == image.digest
-                            and item.path.is_file()
-                        ):
-                            candidate = item.path.read_bytes()
-                    except OSError:
-                        candidate = None
-                _persist_publication_image(manager.directory, image, candidate)
-
-        return existing, current.revision
-    publication = _record_command_publication(
-        manager,
-        operation_id,
-        revision,
-        outputs,
-        user_path_command=user_path_command,
-    )
-    current = manager.inspect()
-    if current.revision is None:
-        raise InstallationError(
-            "Recorded publication has no authority revision."
-        )
-    return publication, current.revision
-
-
-def _cleanup_publication_images(
-    manager: InstallationManager,
-    inspection: InstallationInspection,
-) -> InstallationInspection:
-    record = inspection.record
-    if record is None or inspection.revision is None:
-        return inspection
-    retained = tuple(
-        output
-        for output in record.owned_outputs
-        if output.kind == "support" and output.path.startswith(".publication-")
-    )
-    if not retained:
-        return inspection
-    keep: list[OwnedOutput] = []
-    for output in retained:
-        path = manager.directory / output.path
-        assert_no_links(path)
-        if not path.exists():
-            continue
-        if (
-            not path.is_file()
-            or output.digest is None
-            or ut.sha256_file(path) != output.digest
-        ):
-            keep.append(output)
-            continue
-        path.unlink()
-    remaining = tuple(
-        output for output in record.owned_outputs if output not in retained
-    ) + tuple(keep)
-    return record_owned_outputs(
-        manager.directory,
-        app_id=record.identity.app_id,
-        expected_revision=inspection.revision,
-        generation_id=record.generation_id,
-        owned_outputs=remaining,
-    )
-
-
-def _restore_pending_publication(
-    manager: InstallationManager,
-    path: Path,
-    published: OwnedOutput | None = None,
-) -> bool:
-    """Restore recorded command intent, including publishers that raised early.
-
-    :param manager: Locked installation owning the pending publication.
-    :param path: Exact destination recorded before publication.
-    :param published: Optional expected ownership of an already returned output.
-    :return: Whether the destination now matches its recorded previous image.
-    """
-    record = manager.inspect().record
-    operation = record.operation if record is not None else None
-    if operation is None:
-        return False
-    intent = next(
-        (item for item in operation.publication if item.path == path),
-        None,
-    )
-    if intent is None or (
-        published is not None and intent.intended.digest != published.digest
-    ):
-        return False
-    assert_no_links(path.parent)
-    if path.is_symlink():
-        actual = hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
-    elif path.is_file():
-        actual = ut.sha256_file(path)
-    else:
-        return not path.exists() and intent.previous is None
-    previous = intent.previous
-    if previous is not None and actual == previous.digest:
-        if previous.link_target is not None:
-            return (
-                path.is_symlink() and os.readlink(path) == previous.link_target
-            )
-        if not path.is_symlink() and (
-            previous.mode is None
-            or stat.S_IMODE(path.stat().st_mode) == previous.mode
-        ):
-            return True
-    if actual != intent.intended.digest:
-        return False
-    if path.is_symlink() != (intent.intended.link_target is not None):
-        return False
-    if intent.previous is None:
-        path.unlink()
-        return True
-    if intent.previous.link_target is not None:
-        temporary = path.with_name(
-            f".{path.name}.{operation.operation_id}.apprc-tmp"
-        )
-        assert_no_links(temporary)
-        temporary.unlink(missing_ok=True)
-        temporary.symlink_to(intent.previous.link_target)
-    else:
-        content = _publication_content(manager.directory, intent.previous)
-        descriptor, name = tempfile.mkstemp(
-            prefix=f".{path.name}.", suffix=".apprc-tmp", dir=path.parent
-        )
-        temporary = Path(name)
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if intent.previous.mode is not None:
-            os.chmod(temporary, intent.previous.mode)
-    try:
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return True
 
 
 def _runtime_steps(
@@ -971,7 +535,9 @@ def _finish_installation(
 ) -> InstallationInspection:
     """Keep activation successful when postcommit housekeeping needs a retry."""
     try:
-        inspection = _cleanup_publication_images(manager, inspection)
+        inspection = _command_publication.cleanup_publication_images(
+            manager, inspection
+        )
         return (
             _retire_recorded_runtimes(manager)
             if inspection.record
@@ -1050,11 +616,7 @@ def _failed_operation(
                 "Installation authority changed; rollback was not authorized."
             )
         operation = record.operation
-        for item in reversed(operation.publication):
-            if not _restore_pending_publication(manager, item.path):
-                raise InstallationError(
-                    f"Command changed outside this installation attempt: {item.path}."
-                )
+        _command_publication.restore_commands(manager, operation.publication)
         _rollback_resources(manager, plan, latest, resources)
         runtime = plan.target.runtime
         if isinstance(runtime, RuntimeSlot):
@@ -1071,35 +633,13 @@ def _failed_operation(
         previous_operation = (
             prior.record.operation if prior.record is not None else None
         )
-        prior_images = {
-            image.content
-            for item in (
-                previous_operation.publication
-                if previous_operation is not None
-                else ()
-            )
-            for image in (item.previous, item.intended)
-            if image is not None and image.content is not None
-        }
-        for item in operation.publication:
-            for image in (item.previous, item.intended):
-                if (
-                    image is None
-                    or image.content is None
-                    or image.content in prior_images
-                ):
-                    continue
-                path = manager.directory / image.content
-                assert_no_links(path)
-                if path.exists():
-                    if (
-                        not path.is_file()
-                        or ut.sha256_file(path) != image.digest
-                    ):
-                        raise InstallationError(
-                            f"Publication recovery image changed: {path}."
-                        )
-                    path.unlink()
+        _command_publication.discard_rollback_images(
+            manager.directory,
+            operation.publication,
+            previous_operation.publication
+            if previous_operation is not None
+            else (),
+        )
         manager.rollback_installation(
             operation_id=plan.operation_id,
             expected_revision=latest.revision,
@@ -1373,9 +913,10 @@ def _install_managed_candidate(
                 raise InstallationError(
                     "Managed repair requires an active or pending runtime."
                 )
-        pending = _existing_publication(manager)
-        _check_owned_command(
-            stable, (*prior_outputs, *_publication_authorized_outputs(pending))
+        pending = _command_publication.pending_publication(manager)
+        _command_publication.check_owned_stable_command(
+            stable,
+            (*prior_outputs, *_command_publication.authorized_outputs(pending)),
         )
         observed, revision = _prepare_candidate(
             manager,
@@ -1407,35 +948,15 @@ def _install_managed_candidate(
                 for path, target in commands
             ),
         )
-        publication, revision = _ensure_command_publication(
+        outputs, revision = _command_publication.publish_commands(
             manager,
             plan.operation_id,
             revision,
             publication_specs,
+            prior_outputs=prior_outputs,
+            stable=stable,
             user_path_command=user_path_command,
         )
-        authority = (
-            *prior_outputs,
-            *_publication_authorized_outputs(publication),
-        )
-        outputs = [
-            _publish_stable_command(
-                stable,
-                _publication_source(directory, publication[0]),
-                previous=authority,
-            )
-        ]
-        report("result", "Native executable", "PUBLISHED", stable)
-        for item in publication[1:]:
-            source = (
-                Path(item.intended.link_target)
-                if item.intended.link_target is not None
-                else _publication_source(directory, item)
-            )
-            outputs.append(
-                publish_global_command(item.path, source, previous=authority)
-            )
-            report("result", "Global command", "PUBLISHED", item.path)
         paths = {item.path for item in outputs}
         outputs.extend(item for item in prior_outputs if item.path not in paths)
         revision = _checkpoint_activation(manager, plan.operation_id, revision)
@@ -1509,7 +1030,7 @@ def _repair_managed_application(
             plan = manager.plan_repair(
                 record.identity, runtime, record.placement
             )
-        pending_publication = _existing_publication(manager)
+        pending_publication = _command_publication.pending_publication(manager)
         result = _install_managed_candidate(
             manager,
             plan,
@@ -1987,11 +1508,11 @@ def install_application(
                 )
         stable = directory / _command_filename(command_name)
         prior_outputs = previous.owned_outputs if previous is not None else ()
-        pending_publication = _existing_publication(manager)
-        publication_authority = _publication_authorized_outputs(
+        pending_publication = _command_publication.pending_publication(manager)
+        publication_authority = _command_publication.authorized_outputs(
             pending_publication
         )
-        installed_digest = _check_owned_command(
+        installed_digest = _command_publication.check_owned_stable_command(
             stable, (*prior_outputs, *publication_authority)
         )
         from apprc.distribution.runtime import _windows_command_path
@@ -2313,8 +1834,8 @@ def register_editable_application(
             )
         global_command = selected_directory / _command_filename(command_name)
         prior_outputs = previous.owned_outputs if previous is not None else ()
-        pending_publication = _existing_publication(manager)
-        publication_authority = _publication_authorized_outputs(
+        pending_publication = _command_publication.pending_publication(manager)
+        publication_authority = _command_publication.authorized_outputs(
             pending_publication
         )
         validate_global_command(
@@ -2426,27 +1947,14 @@ def register_editable_application(
                     ),
                 )
             )
-            pending_publication, revision = _ensure_command_publication(
-                manager, operation_id, revision, publication_specs
+            published, revision = _command_publication.publish_commands(
+                manager,
+                operation_id,
+                revision,
+                publication_specs,
+                prior_outputs=prior_outputs,
             )
-            publication_authority = _publication_authorized_outputs(
-                pending_publication
-            )
-            if pending_publication[0].intended.link_target is not None:
-                output = publish_global_command(
-                    global_command,
-                    Path(pending_publication[0].intended.link_target),
-                    previous=(*prior_outputs, *publication_authority),
-                )
-            else:
-                output = publish_global_command(
-                    global_command,
-                    _publication_source(
-                        manager.directory, pending_publication[0]
-                    ),
-                    previous=(*prior_outputs, *publication_authority),
-                )
-            report("result", "Global command", "PUBLISHED", output.path)
+            (output,) = published
             outputs = [
                 *(item for item in prior_outputs if item.path != output.path),
                 output,

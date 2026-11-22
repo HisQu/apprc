@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -25,7 +26,10 @@ from apprc.distribution.models import (
     NativeBinding,
 )
 from apprc.distribution.runtime import update
-from apprc.distribution.runtime._update_handoff import UpdateWork
+from apprc.distribution.runtime._update_handoff import (
+    EditableUpdateRetryError,
+    UpdateWork,
+)
 from apprc.distribution.runtime.installation import require_update_record
 from apprc.services.installation import InstallationManager
 from apprc.user_files.installation.coordination import (
@@ -199,7 +203,7 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     (upstream / ".gitignore").write_text(".venv/\n")
     _git(upstream, "add", ".")
     _git(upstream, "commit", "-qm", "base")
-    checkout = tmp_path / "checkout"
+    checkout = tmp_path / "checkout's project"
     _git(tmp_path, "clone", "-q", str(upstream), str(checkout))
     start = _git(checkout, "rev-parse", "HEAD")
     metadata.write_text(metadata.read_text().replace("1.0", "2.0"))
@@ -228,7 +232,7 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
 
     prefix = checkout / ".venv"
     prefix.mkdir()
-    command_dir = tmp_path / "commands"
+    command_dir = tmp_path / "global command's bin"
     command_dir.mkdir()
     base = installation_record()
     record = replace(
@@ -318,8 +322,18 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             "diverged": "fast-forward",
             "sync": "Dependency sync failed",
         }[outcome]
-        with pytest.raises(ValueError, match=expected):
+        error_type = (
+            EditableUpdateRetryError if outcome == "sync" else ValueError
+        )
+        with pytest.raises(error_type, match=expected) as failure:
             perform()
+        if outcome == "sync":
+            assert shlex.split(str(failure.value).splitlines()[-1]) == [
+                f"UV_PROJECT_ENVIRONMENT={prefix}",
+                sys.executable,
+                "sync",
+                "--locked",
+            ]
     else:
         assert perform() == int(outcome == "registration")
 
@@ -339,7 +353,9 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
         if count == 2:
             assert str(command_dir) in calls[1][0]
         if outcome == "registration":
-            assert "retry" in capsys.readouterr().err
+            recovery = capsys.readouterr().err.splitlines()
+            assert any("retry registration" in line for line in recovery[:-1])
+            assert shlex.split(recovery[-1]) == calls[1][0][:-4]
             fail_registration = False
             calls.clear()
             confirmed.clear()

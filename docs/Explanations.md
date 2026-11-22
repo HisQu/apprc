@@ -635,7 +635,8 @@ state. Setup and save actions call managers explicitly.
 
 ## Gradio editor
 
-`apprc_gui.ConfigEditor(manager, *, workspaces=None)` embeds settings controls
+`apprc_gui.ConfigEditor(manager, workspace_manager=None, *, section_renderers=None)`
+embeds settings controls
 in an application-owned Gradio `Blocks`. `manager` is a `ConfigManager`.
 Registry-backed workspace controls require the separate `WorkspaceManager`;
 they fail clearly if it was not supplied. The editor does not build the

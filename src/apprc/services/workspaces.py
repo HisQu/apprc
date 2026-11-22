@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
@@ -38,13 +39,18 @@ from apprc.user_files.workspace_roots.archive import (
     archive_workspace_directory,
     extract_workspace_archive,
 )
-from apprc.user_files.workspace_roots.model import WorkspaceRegistry
+from apprc.user_files.workspace_roots.model import (
+    WorkspaceRecord,
+    WorkspaceRegistry,
+)
 from apprc.user_files.workspace_roots.move import (
     WorkspaceMoveError,
     WorkspaceMoveResult,
     move_workspace,
 )
 from apprc.user_files.workspace_roots.paths import resolve_workspace_root_path
+
+LOG = logging.getLogger(__name__)
 
 
 class WorkspaceManager:
@@ -155,12 +161,33 @@ class WorkspaceManager:
                 path=registry_path,
                 workspace_dotenv_filename=self.spec.workspace_dotenv_filename,
             )
-            ensure_secret_file(
-                self._files.workspace_secret_dotenv_path(
-                    current.workspaces[name].root
-                )
+            self._ensure_optional_workspace_secret(
+                current.workspaces[name].root
             )
             return current
+
+    def _ensure_optional_workspace_secret(self, root: Path) -> None:
+        """Report private companion issues after a workspace has committed.
+
+        :param root: Registered workspace with an ordinary settings file.
+        """
+        path = self._files.workspace_secret_dotenv_path(root)
+        try:
+            status = ensure_secret_file(path)
+        except OSError as error:
+            issue = str(error)
+        else:
+            if status.available:
+                return
+            issue = status.issue or "Private settings file unavailable."
+        LOG.warning(
+            "Workspace is registered at %s. Could not prepare the private "
+            "settings file %s (%s). Use the secret permissions repair action "
+            "for this workspace before saving secrets.",
+            root,
+            path,
+            issue,
+        )
 
     def select_workspace(self, name: str) -> WorkspaceRegistry | Path:
         """Select a registered name, or return an explicit direct-only path.
@@ -237,12 +264,13 @@ class WorkspaceManager:
         current = workspace_registry.load_workspace_registry_or_empty(
             registry_path
         )
-        root = current.selected(name).root
+        record = current.selected(name)
         with self._write_lock(
             registry_path.parent,
-            root,
+            record.root,
             private_directories=(registry_path.parent,),
         ):
+            self._require_current_workspace(record, action="unregister")
             ensure_owned_path(self.spec, self.app_paths, "config")
             return workspace_registry.unregister_workspace(
                 name=name, path=registry_path
@@ -277,20 +305,34 @@ class WorkspaceManager:
         assert_no_links(source)
         self._reject_managed_overlap(source)
         with self._write_lock(registry_path.parent, source, destination):
-            current = workspace_registry.load_workspace_registry_or_empty(
-                registry_path
+            self._require_current_workspace(
+                record, action="move", error_type=WorkspaceMoveError
             )
-            if current.workspaces.get(name) != record:
-                raise WorkspaceMoveError(
-                    f"Workspace {name!r} changed while waiting to move it. "
-                    "Review its registered root and retry."
-                )
             # > The paths can change during lock acquisition even when the record matches.
             assert_no_links(source)
             assert_no_links(destination)
             ensure_owned_path(self.spec, self.app_paths, "config")
             return move_workspace(
                 name=name, destination=destination, path=registry_path
+            )
+
+    def _require_current_workspace(
+        self,
+        record: WorkspaceRecord,
+        *,
+        action: str,
+        error_type: type[ValueError] = ValueError,
+    ) -> None:
+        """Check that the locked workspace still matches the captured record.
+
+        :param record: Live workspace record read before acquiring locks.
+        :param action: Current operation for the retry message.
+        :param error_type: Error expected by the calling operation.
+        """
+        if self.registry().workspaces.get(record.name) != record:
+            raise error_type(
+                f"Workspace {record.name!r} changed while waiting to "
+                f"{action} it. Review its registered root and retry."
             )
 
     def archive_workspace(
@@ -322,6 +364,7 @@ class WorkspaceManager:
                 "Workspace archive destination and root must not overlap."
             )
         with self._write_lock(registry_path.parent, root, archive.parent):
+            self._require_current_workspace(record, action="archive")
             ensure_owned_path(self.spec, self.app_paths, "config")
             result = archive_workspace_directory(
                 source_root=root,
@@ -354,14 +397,12 @@ class WorkspaceManager:
         current = workspace_registry.load_workspace_registry_or_empty(
             registry_path
         )
-        archive_record = current.archived_workspaces.get(name)
-        archive_path = (
-            archive
-            if archive is not None
-            else (
-                archive_record.archive if archive_record is not None else None
-            )
-        )
+        archive_row_name = archived_name or name
+        archive_row = current.archived_workspaces.get(archive_row_name)
+        source_row = current.archived_workspaces.get(name)
+        archive_path = archive
+        if archive_path is None and source_row is not None:
+            archive_path = source_row.archive
         if archive_path is None:
             raise ValueError(f"No archive is available for workspace {name!r}.")
         assert_no_links(archive_path)
@@ -384,7 +425,7 @@ class WorkspaceManager:
                 name=name,
                 root=root,
                 path=registry_path,
-                archived_name=archived_name or name,
+                archived_name=archive_row_name,
                 workspace_dotenv_filename=self.spec.workspace_dotenv_filename,
             )
 
@@ -393,6 +434,14 @@ class WorkspaceManager:
             resolved,
             private_directories=(registry_path.parent,),
         ):
+            locked_archives = self.registry().archived_workspaces
+            if locked_archives.get(archive_row_name) != archive_row or (
+                archive is None and locked_archives.get(name) != source_row
+            ):
+                raise ValueError(
+                    "Workspace archive record changed while waiting to "
+                    "restore it. Review the archive and retry."
+                )
             ensure_owned_path(self.spec, self.app_paths, "config")
             result = extract_workspace_archive(
                 archive_path=archive_path,
@@ -401,7 +450,7 @@ class WorkspaceManager:
                 progress=progress,
                 after_install=register,
             )
-            ensure_secret_file(self._files.workspace_secret_dotenv_path(result))
+            self._ensure_optional_workspace_secret(result)
             return result
 
     def _reject_managed_overlap(self, root: Path) -> None:

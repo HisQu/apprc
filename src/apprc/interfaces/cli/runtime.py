@@ -291,39 +291,17 @@ class CliRuntimePolicy:
         command_name = ctx.invoked_subcommand
         if command_name is None:
             return False
+        if command_name == config_group_name:
+            return self._config_policy(
+                config_group_name,
+            ).request_skips_runtime(tokens=tokens)
         args = args_after_cli_command(
             command_name,
             tokens=tokens,
             cli_value_options=self.cli_value_options,
         )
-        return self._command_skips_runtime(
-            command_name,
-            args,
-            config_group_name=config_group_name,
-            maintenance_group_name=maintenance_group_name,
-            help_requested=args is not None
-            and help_requested_before_separator(
-                args, value_options=self.cli_value_options
-            ),
-        )
-
-    def _command_skips_runtime(
-        self,
-        command_name: str | None,
-        args: Sequence[str] | None,
-        *,
-        config_group_name: str,
-        maintenance_group_name: str,
-        help_requested: bool = False,
-    ) -> bool:
-        if command_name is None or args is None:
+        if args is None:
             return False
-        if command_name == config_group_name:
-            return help_requested or self._config_policy(
-                config_group_name
-            )._actions_skip_runtime(
-                args,
-            )
         if command_name == maintenance_group_name:
             return not parse_leading_options(
                 args,
@@ -331,8 +309,18 @@ class CliRuntimePolicy:
                 value_options=self.cli_value_options,
             ).separator_before_action
         declaration = self.runtime_independent_commands.get(command_name)
-        if help_requested:
-            return declaration.skip_help if declaration is not None else True
+        if help_requested_before_separator(
+            args, value_options=self.cli_value_options
+        ):
+            return declaration is None or declaration.skip_help
+        return self._declared_actions_skip_runtime(args, declaration)
+
+    def _declared_actions_skip_runtime(
+        self,
+        args: Sequence[str],
+        declaration: RuntimeIndependentCommand | None,
+    ) -> bool:
+        """Match child action tokens after help has been handled."""
         if declaration is None:
             return False
         parsed = parse_leading_options(
@@ -743,22 +731,24 @@ class CliRuntime(Generic[OptionsT, StateT]):
             if command_name is not None
             else None
         )
-        if command_name == self.maintenance_group_name:
+        maintenance_group = self.maintenance_group_name
+        is_maintenance = command_name == maintenance_group
+        if is_maintenance:
             maintenance_args = args
-        else:
-            # Forwarded tokens may explicitly name the maintenance group even
-            # when the Typer context has no matching subcommand.
-            maintenance_args = (
-                args_after_cli_command(
-                    self.maintenance_group_name,
-                    tokens=tokens,
-                    cli_value_options=value_options,
-                )
-                if args is None
-                or (command_name is not None and command_name.startswith("-"))
-                or self.maintenance_group_name.startswith("-")
-                else None
+        elif (
+            args is None
+            or maintenance_group.startswith("-")
+            or (command_name is not None and command_name.startswith("-"))
+        ):
+            # > Forwarded tokens can name a different command than Typer.
+            # > The parser also accepts command names that look like options.
+            maintenance_args = args_after_cli_command(
+                maintenance_group,
+                tokens=tokens,
+                cli_value_options=value_options,
             )
+        else:
+            maintenance_args = None
         maintenance_action = None
         if maintenance_args is not None:
             parsed = parse_leading_options(
@@ -776,7 +766,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             "update",
         }
         skip_runtime_setup = not installation_command and (
-            command_name == self.maintenance_group_name
+            is_maintenance
             or (
                 command_name == "workspace"
                 and self.apprc.schema.workspaces is not None
@@ -796,8 +786,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             and help_requested_before_separator(
                 tokens, value_options=value_options
             ),
-            doctor=command_name == self.maintenance_group_name
-            and maintenance_action in {"doctor", "paths"},
+            doctor=is_maintenance and maintenance_action in {"doctor", "paths"},
         )
 
     def _policy_skips_runtime(
@@ -806,15 +795,21 @@ class CliRuntime(Generic[OptionsT, StateT]):
         tokens: Sequence[str],
         args: Sequence[str] | None,
     ) -> bool:
-        policy = self.runtime_policy or CliRuntimePolicy()
+        configured_policy = self.runtime_policy
+        policy = configured_policy or CliRuntimePolicy()
+        command_name = ctx.invoked_subcommand
+        if type(policy) is CliRuntimePolicy and (
+            configured_policy is None or policy is configured_policy
+        ):
+            if command_name is None or args is None:
+                return False
+            if command_name == self.config_group_name:
+                config_policy = policy._config_policy(self.config_group_name)
+                return config_policy._actions_skip_runtime(args)
+            return policy._declared_actions_skip_runtime(
+                args, policy.runtime_independent_commands.get(command_name)
+            )
         if isinstance(policy, CliRuntimePolicy):
-            if type(policy) is CliRuntimePolicy:
-                return policy._command_skips_runtime(
-                    ctx.invoked_subcommand,
-                    args,
-                    config_group_name=self.config_group_name,
-                    maintenance_group_name=self.maintenance_group_name,
-                )
             return policy.request_skips_runtime(
                 ctx,
                 tokens=tokens,
@@ -823,7 +818,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             )
         if (
             type(policy) is ConfigRuntimePolicy
-            and ctx.invoked_subcommand == self.config_group_name
+            and command_name == self.config_group_name
             and args is not None
         ):
             return policy._actions_skip_runtime(args)

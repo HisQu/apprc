@@ -50,7 +50,7 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 **Evidence and impact.** Installation, diagnostic, and runtime-skip predicates each inspected the current arguments. Determining which context a command received meant tracing those predicates alongside the callback identity checks that distinguish generated commands from host commands with the same name.
 
-**Correction and verification.** Runtime preparation captures the current or forwarded tokens once and classifies them using the existing parsers. Built-in policies reuse the located child arguments when applicable. Runtime and integration tests cover host command identity, custom group names, option separators, and lightweight fresh-process help. [Classification](src/apprc/interfaces/cli/runtime.py#L727) · [Runtime tests](tests/test_cli_runtime.py) · [Fresh-process distribution help](tests/test_cli_distribution.py#L107)
+**Correction and verification.** Runtime preparation captures the current or forwarded tokens once and classifies them using the existing parsers. Built-in policies reuse the located child arguments when applicable. Runtime and integration tests cover host command identity, custom group names, option separators, and lightweight fresh-process help. [Classification](src/apprc/interfaces/cli/runtime.py#L715) · [Runtime tests](tests/test_cli_runtime.py) · [Fresh-process distribution help](tests/test_cli_distribution.py#L107)
 
 <a id="csc-03"></a>
 

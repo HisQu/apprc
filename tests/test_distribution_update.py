@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -199,7 +200,7 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     (upstream / ".gitignore").write_text(".venv/\n")
     _git(upstream, "add", ".")
     _git(upstream, "commit", "-qm", "base")
-    checkout = tmp_path / "checkout"
+    checkout = tmp_path / "checkout's project"
     _git(tmp_path, "clone", "-q", str(upstream), str(checkout))
     start = _git(checkout, "rev-parse", "HEAD")
     metadata.write_text(metadata.read_text().replace("1.0", "2.0"))
@@ -228,7 +229,7 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
 
     prefix = checkout / ".venv"
     prefix.mkdir()
-    command_dir = tmp_path / "commands"
+    command_dir = tmp_path / "global command's bin"
     command_dir.mkdir()
     base = installation_record()
     record = replace(
@@ -318,8 +319,15 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             "diverged": "fast-forward",
             "sync": "Dependency sync failed",
         }[outcome]
-        with pytest.raises(ValueError, match=expected):
+        with pytest.raises(ValueError, match=expected) as failure:
             perform()
+        if outcome == "sync":
+            assert shlex.split(str(failure.value).splitlines()[-1]) == [
+                f"UV_PROJECT_ENVIRONMENT={prefix}",
+                sys.executable,
+                "sync",
+                "--locked",
+            ]
     else:
         assert perform() == int(outcome == "registration")
 
@@ -339,7 +347,9 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
         if count == 2:
             assert str(command_dir) in calls[1][0]
         if outcome == "registration":
-            assert "retry" in capsys.readouterr().err
+            recovery = capsys.readouterr().err.splitlines()
+            assert any("retry registration" in line for line in recovery[:-1])
+            assert shlex.split(recovery[-1]) == calls[1][0][:-4]
             fail_registration = False
             calls.clear()
             confirmed.clear()

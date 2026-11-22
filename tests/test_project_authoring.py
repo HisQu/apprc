@@ -155,9 +155,16 @@ def test_builder_exports_virtual_root_and_nested_member_with_shared_lock(
         revision="HEAD",
         destination=tmp_path / "project.zip",
     )
+    bracketed = build_project_snapshot(
+        spec,
+        revision="HEAD",
+        destination=tmp_path / "staging [workspace]" / "project.zip",
+    )
 
     assert prepared.source.project_path == "apps/fixture"
     assert prepared.source.commit
+    assert bracketed.source == prepared.source
+    assert bracketed.archive.read_bytes() == prepared.archive.read_bytes()
     with ZipFile(prepared.archive) as archive:
         files = set(archive.namelist())
         assert "pyproject.toml" in files
@@ -444,10 +451,18 @@ def test_builder_rejects_local_source_that_escapes_exported_workspace(
     assert not destination.exists()
 
 
-@pytest.mark.parametrize("mutation", ["metadata", "lock"])
+@pytest.mark.parametrize(
+    ("relative", "message"),
+    [
+        ("apps/fixture/pyproject.toml", "modified committed project/workspace"),
+        ("uv.lock", "modified a committed uv.lock"),
+        ("libs/fixture-lib/uv.lock", "modified a committed uv.lock"),
+    ],
+)
 def test_prepare_cannot_change_committed_project_configuration_or_lock(
     tmp_path: Path,
-    mutation: str,
+    relative: str,
+    message: str,
 ) -> None:
     repository = tmp_path / "workspace"
     repository.mkdir()
@@ -456,15 +471,11 @@ def test_prepare_cannot_change_committed_project_configuration_or_lock(
     destination = tmp_path / "project.zip"
 
     def prepare(tree: Path) -> None:
-        if mutation == "metadata":
-            target = tree / "apps/fixture/pyproject.toml"
-        else:
-            target = tree / "uv.lock"
-        target.write_text(
-            target.read_text(encoding="utf-8") + "# changed\n", encoding="utf-8"
-        )
+        target = tree / relative
+        original = target.read_text(encoding="utf-8") if target.exists() else ""
+        target.write_text(original + "# changed\n", encoding="utf-8")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         build_project_snapshot(
             spec,
             revision="HEAD",

@@ -11,7 +11,11 @@ import typed_settings as ts
 from typed_settings.dict_utils import set_path
 from typed_settings.types import LoadedSettings, LoaderMeta
 
-from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.definition.env_config.schema import (
+    ConfigField,
+    ConfigOwner,
+    field_env_key,
+)
 from apprc.definition.env_config.sentinels import CONFIG_MISSING
 
 
@@ -33,7 +37,9 @@ class OwnerMappingLoader:
         :param source_name: Human-readable source name for diagnostics.
         :param base_dir: Base directory passed to typed-settings metadata.
         """
-        self.owner = owner
+        self._env_keys = {
+            spec.name: field_env_key(owner, spec) for spec in owner.fields
+        }
         self.values = values
         self.source_name = source_name
         self.base_dir = base_dir
@@ -42,7 +48,7 @@ class OwnerMappingLoader:
         """Return values for options known to this owner."""
         loaded: dict[str, Any] = {}
         for option in options:
-            env_key = self.owner.env_key(option.name)
+            env_key = self._env_keys[option.name]
             if env_key in self.values:
                 set_path(loaded, option.path, self.values[env_key])
         return LoadedSettings(
@@ -78,7 +84,7 @@ def load_owner_from_sources(
                     default_factory=CONFIG_MISSING,
                 )
                 for spec in owner.fields
-                if owner.env_key(spec.name) in supplied_keys
+                if field_env_key(owner, spec) in supplied_keys
             ),
         )
         settings_class = source_owner.settings_class()

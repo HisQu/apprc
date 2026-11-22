@@ -122,8 +122,8 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
                 title="Reconnect workspace",
                 message=(
                     "Enter the existing directory for this workspace. AppRC "
-                    "will update only the registry entry; it will not create, "
-                    "move, or delete files."
+                    "will update the registry and create the workspace "
+                    "settings file if it is missing."
                 ),
                 placeholder="Existing workspace directory",
                 value=str(record.root),
@@ -145,8 +145,8 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
                     label_value_text("Registered path", path_text(record.root)),
                     label_value_text("Existing directory", path_text(root)),
                     "",
-                    "This changes only the workspace registry entry.",
-                    "It does not create, move, or delete files.",
+                    "This updates the workspace registry entry and creates "
+                    "the workspace settings file if it is missing.",
                     "External --workspace arguments and environment values "
                     "that use the current name are not changed.",
                 ),

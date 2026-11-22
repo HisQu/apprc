@@ -3,10 +3,17 @@ from __future__ import annotations
 import io
 import os
 import tarfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
+import apprc as rc
+from apprc.services import workspaces as workspace_service
+from apprc.services.workspaces import WorkspaceManager
+from apprc.user_files.env_files.secrets import SecretFileStatus
 from apprc.user_files.workspace_roots.archive import (
     ARCHIVE_SUFFIX,
     WorkspaceArchiveProgress,
@@ -22,6 +29,21 @@ from apprc.user_files.workspace_roots.archive import (
 from apprc.user_files.workspace_roots.archive import (
     extract_workspace_archive as extract_archive,
 )
+from apprc.user_files.workspace_roots.registry import (
+    record_archived_workspace,
+    repoint_workspace,
+)
+
+
+@pytest.fixture
+def workspace_manager(tmp_path: Path) -> WorkspaceManager:
+    app = rc.AppRC(
+        app_id="workspace-archive",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path / "app"),
+        workspaces=rc.Workspaces(),
+    )
+    return app.workspaces(environment={})
 
 
 def test_workspace_archive_helpers_name_paths(tmp_path: Path) -> None:
@@ -306,3 +328,139 @@ def test_workspace_archive_excludes_workspace_secret_companion(
         encoding="utf-8"
     ) == "VALUE=visible\n"
     assert not (restored / "apprc.workspace.secret.env").exists()
+
+
+@pytest.mark.parametrize("operation", ["archive", "unregister"])
+def test_workspace_operation_rejects_repoint_while_waiting_for_lock(
+    operation: Literal["archive", "unregister"],
+    workspace_manager: WorkspaceManager,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    replacement = tmp_path / "replacement"
+    archive_path = tmp_path / f"source{ARCHIVE_SUFFIX}"
+    workspace_manager.register_workspace("alpha", source)
+    replacement.mkdir()
+    registry_path = workspace_manager.registry_path()
+    real_write_lock = workspace_manager._write_lock
+
+    @contextmanager
+    def repoint_before_lock(
+        *roots: Path, private_directories: tuple[Path, ...] = ()
+    ) -> Iterator[None]:
+        repoint_workspace(name="alpha", root=replacement, path=registry_path)
+        with real_write_lock(*roots, private_directories=private_directories):
+            yield
+
+    monkeypatch.setattr(workspace_manager, "_write_lock", repoint_before_lock)
+
+    with pytest.raises(ValueError, match="changed while waiting"):
+        if operation == "archive":
+            workspace_manager.archive_workspace("alpha", archive_path)
+        else:
+            workspace_manager.remove_workspace("alpha")
+
+    assert workspace_manager.registry().selected("alpha").root == replacement
+    assert not workspace_manager.registry().archived_workspaces
+    assert not archive_path.exists()
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_restore_rejects_archive_row_replaced_while_waiting_for_lock(
+    explicit: bool,
+    workspace_manager: WorkspaceManager,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    archive = tmp_path / f"source{ARCHIVE_SUFFIX}"
+    refreshed_archive = tmp_path / f"refreshed{ARCHIVE_SUFFIX}"
+    destination = tmp_path / "restored"
+    destination.mkdir()
+    (destination / "payload.txt").write_text("keep", encoding="utf-8")
+    workspace_manager.register_workspace("alpha", source)
+    workspace_manager.archive_workspace("alpha", archive)
+    workspace_manager.remove_workspace("alpha")
+    registry_path = workspace_manager.registry_path()
+    real_write_lock = workspace_manager._write_lock
+
+    @contextmanager
+    def refresh_archive_before_lock(
+        *roots: Path, private_directories: tuple[Path, ...] = ()
+    ) -> Iterator[None]:
+        record_archived_workspace(
+            name="alpha",
+            archive=refreshed_archive,
+            source_root=source,
+            path=registry_path,
+        )
+        with real_write_lock(*roots, private_directories=private_directories):
+            yield
+
+    monkeypatch.setattr(
+        workspace_manager, "_write_lock", refresh_archive_before_lock
+    )
+
+    with pytest.raises(ValueError, match="changed while waiting"):
+        workspace_manager.restore_workspace(
+            "renamed" if explicit else "alpha",
+            destination,
+            archive=archive if explicit else None,
+            archived_name="alpha" if explicit else None,
+            replace_existing=True,
+        )
+
+    registry = workspace_manager.registry()
+    assert registry.archived_workspaces["alpha"].archive == refreshed_archive
+    assert not registry.workspaces
+    assert (destination / "payload.txt").read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.parametrize("operation", ["register", "restore"])
+@pytest.mark.parametrize("raises_error", [False, True])
+def test_workspace_commit_survives_optional_private_companion_failure(
+    operation: Literal["register", "restore"],
+    raises_error: bool,
+    workspace_manager: WorkspaceManager,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    root = tmp_path / "target"
+    archive = tmp_path / f"source{ARCHIVE_SUFFIX}"
+    if operation == "restore":
+        source = tmp_path / "source"
+        workspace_manager.register_workspace("alpha", source)
+        (source / "payload.txt").write_text("archived", encoding="utf-8")
+        workspace_manager.archive_workspace("alpha", archive)
+        workspace_manager.remove_workspace("alpha")
+        root.mkdir()
+        (root / "payload.txt").write_text("previous", encoding="utf-8")
+
+    def unavailable(path: Path) -> SecretFileStatus:
+        if raises_error:
+            raise PermissionError("Permission denied")
+        return SecretFileStatus(
+            path, False, "Directory is not private", "parent_not_private"
+        )
+
+    monkeypatch.setattr(workspace_service, "ensure_secret_file", unavailable)
+
+    if operation == "restore":
+        assert (
+            workspace_manager.restore_workspace(
+                "alpha", root, replace_existing=True
+            )
+            == root
+        )
+        assert (root / "payload.txt").read_text(encoding="utf-8") == "archived"
+    else:
+        registry = workspace_manager.register_workspace("alpha", root)
+        assert registry.selected("alpha").root == root
+
+    assert workspace_manager.registry().selected("alpha").root == root
+    assert (root / workspace_manager.spec.workspace_dotenv_filename).is_file()
+    assert not workspace_manager.registry().archived_workspaces
+    assert "secret permissions repair" in caplog.text
+    assert str(root) in caplog.text

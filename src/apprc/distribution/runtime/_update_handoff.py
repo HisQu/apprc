@@ -157,8 +157,10 @@ def run_update(
                 )
             except (OSError, subprocess.CalledProcessError) as error:
                 raise ValueError(
-                    f"Dependency sync failed. From {cwd}, retry {work['sync_retry']}. "
-                    "Run the update again to finish synchronization and refresh registration."
+                    "Dependency sync failed. "
+                    "Run the update again to finish synchronization and refresh registration.\n"
+                    f"To retry only dependency synchronization, run this from {cwd}:\n"
+                    f"{work['sync_retry']}"
                 ) from error
             print("Dependencies synchronized.", flush=True)
 
@@ -183,8 +185,8 @@ def run_update(
 def _registration_failure(work: UpdateWork, cwd: Path) -> str:
     return (
         "Registration failed. Run the update again to retry registration. "
-        f"If the installation is incomplete, retry registration directly from {cwd}: "
-        f"{work['registration_retry']}."
+        f"If the installation is incomplete, retry registration directly from {cwd}:\n"
+        f"{work['registration_retry']}"
     )
 
 

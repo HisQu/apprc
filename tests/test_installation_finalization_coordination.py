@@ -9,9 +9,9 @@ import os
 import shutil
 from contextlib import ExitStack, contextmanager
 from multiprocessing.connection import _ConnectionBase
+from multiprocessing.process import BaseProcess
 from pathlib import Path
 from typing import Callable, Iterator
-from multiprocessing.process import BaseProcess
 
 import pytest
 
@@ -33,11 +33,10 @@ from apprc.user_files.installation.coordination import (
 )
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.inventory import tree_revision
-from tests.support_installation import owned_child_process
-from tests.support_installation import installation_record
+from tests.support_installation import installation_record, owned_child_process
 
 pytestmark = pytest.mark.skipif(
-    os.name == "nt", reason="POSIX fork coordination barriers"
+    os.name == "nt", reason="POSIX installation finalization fixtures"
 )
 
 
@@ -79,7 +78,6 @@ def _run_repository_leaf(
 
 
 def _stale_resource_writer(
-    directory: Path,
     root: Path,
     authority: InstallationWriteAuthority,
     channel: _ConnectionBase,
@@ -112,7 +110,8 @@ def _stale_resource_writer(
 def _child(
     target: Callable[..., None], args: tuple[object, ...]
 ) -> Iterator[tuple[BaseProcess, _ConnectionBase]]:
-    context = multiprocessing.get_context("fork")
+    # > Child targets open their own handles and cannot inherit a held lock.
+    context = multiprocessing.get_context("spawn")
     parent_channel, child_channel = context.Pipe()
     process = context.Process(target=target, args=(*args, child_channel))
     process.start()
@@ -198,7 +197,7 @@ def test_waiting_stale_writer_cannot_recreate_retired_resource_parents(
     authority = InstallationWriteAuthority(
         "coordination-fixture", inspection.snapshot
     )
-    with _child(_stale_resource_writer, (directory, root, authority)) as (
+    with _child(_stale_resource_writer, (root, authority)) as (
         process,
         channel,
     ):

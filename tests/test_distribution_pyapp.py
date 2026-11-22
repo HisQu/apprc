@@ -156,25 +156,10 @@ def test_native_authoring_fails_closed_on_stale_source_and_binding(
     assert checksums.read_bytes() == original_checksums
 
 
-@pytest.mark.parametrize(
-    "linked_temp_parent", [False, True], ids=["physical-temp", "linked-temp"]
-)
-def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
-    tmp_path: Path,
+def test_native_artifacts_match_manifest_and_binding(
     native_product: NativeProduct,
-    request: pytest.FixtureRequest,
-    linked_temp_parent: bool,
 ) -> None:
-    project_root, uv, setup_a, checksums_a, spec, project = native_product
-    command_name = spec.metadata.command_name
-    assert command_name is not None
-    setup_b = (
-        project_root.parent
-        / "fixture-b"
-        / "dist"
-        / f"{spec.metadata.identity.app_id}-setup-linux-x86_64"
-    )
-    assert setup_b.is_file()
+    project_root, _, setup_a, checksums_a, spec, project = native_product
     checksums_b = project_root.parent / "fixture-b" / "dist" / "SHA256SUMS"
     expected_outputs = {
         f"{spec.metadata.identity.app_id}-setup-linux-x86_64",
@@ -201,17 +186,19 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         assert binding.source == project.source
         assert binding.selection.extras == ("native-feature",)
 
+
+def test_native_managed_command_and_doctor_use_installed_runtime(
+    tmp_path: Path, native_product: NativeProduct
+) -> None:
+    project_root, _, setup_a, _, spec, project = native_product
+    command_name = spec.metadata.command_name
+    assert command_name is not None
     environment, command_directory = _host(tmp_path / "host")
-    physical_temp = tmp_path / "physical-temp"
-    physical_temp.mkdir()
-    if linked_temp_parent:
-        temporary_parent = tmp_path / "linked-temp"
-        temporary_parent.symlink_to(physical_temp, target_is_directory=True)
-    else:
-        temporary_parent = physical_temp
-    environment["TMPDIR"] = str(temporary_parent)
-    installer = _install(setup_a, command_directory)
-    run(installer, environment=environment, cwd=tmp_path)
+    run(
+        _install(setup_a, command_directory),
+        environment=environment,
+        cwd=tmp_path,
+    )
     directory = installation_directory(
         spec.metadata.identity.app_id, environment=environment
     )
@@ -234,13 +221,8 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert initialize_event["operation_id"]
     assert initialize_event["generation_id"] == first["generation_id"]
     assert initialize_event["directory"] == str(directory)
-    assert checksums_a.read_text(encoding="utf-8")
     placement = first.get("placement")
     assert isinstance(placement, dict)
-    config_directory = Path(placement["config_dir"])
-    resource_sentinel = config_directory / "user-sentinel.txt"
-    resource_sentinel.write_text("retain me", encoding="utf-8")
-
     manager = directory / command_name
     outside = tmp_path / "outside-checkout"
     outside.mkdir()
@@ -326,6 +308,54 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert "controlled application diagnostic failure" in failed_doctor.stdout
     assert json.loads(failed_doctor.stdout)["status"] != "ok"
 
+
+@pytest.mark.parametrize(
+    "linked_temp_parent", [False, True], ids=["physical-temp", "linked-temp"]
+)
+def test_native_managed_repair_update_and_cleanup_lifecycle(
+    tmp_path: Path,
+    native_product: NativeProduct,
+    linked_temp_parent: bool,
+) -> None:
+    project_root, _, setup_a, _, spec, _ = native_product
+    command_name = spec.metadata.command_name
+    assert command_name is not None
+    setup_b = (
+        project_root.parent
+        / "fixture-b"
+        / "dist"
+        / f"{spec.metadata.identity.app_id}-setup-linux-x86_64"
+    )
+    assert setup_b.is_file()
+    environment, command_directory = _host(tmp_path / "host")
+    physical_temp = tmp_path / "physical-temp"
+    physical_temp.mkdir()
+    if linked_temp_parent:
+        temporary_parent = tmp_path / "linked-temp"
+        temporary_parent.symlink_to(physical_temp, target_is_directory=True)
+    else:
+        temporary_parent = physical_temp
+    environment["TMPDIR"] = str(temporary_parent)
+    installer = _install(setup_a, command_directory)
+    run(installer, environment=environment, cwd=tmp_path)
+    directory = installation_directory(
+        spec.metadata.identity.app_id, environment=environment
+    )
+    first = _record(directory)
+    runtime_a = directory / "runtimes" / _active_slot(first)
+    config_directory = Path(first["placement"]["config_dir"])
+    resource_sentinel = config_directory / "user-sentinel.txt"
+    resource_sentinel.write_text("retain me", encoding="utf-8")
+
+    manager = directory / command_name
+    outside = tmp_path / "outside-checkout"
+    outside.mkdir()
+    conflicting = {
+        **environment,
+        "VIRTUAL_ENV": str(tmp_path / "unrelated-venv"),
+        "PYTHONPATH": str(tmp_path / "unrelated-pythonpath"),
+        "FIXTURE_SENTINEL": "captured-environment",
+    }
     before_tampering = (directory / "installation.json").read_bytes()
     tampered_setup = tmp_path / "tampered-setup"
     shutil.copy2(setup_a, tampered_setup)
@@ -606,34 +636,58 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert not unrelated_file.exists()
     assert not resource_sentinel.exists()
 
-    # > Config-only retention removes support and all other resources.
-    new_host, new_commands = _host(tmp_path / "program-only")
-    run(_install(setup_a, new_commands), environment=new_host, cwd=tmp_path)
-    new_directory = installation_directory(
-        spec.metadata.identity.app_id, environment=new_host
+
+def test_native_uninstall_keep_config_retires_program_and_support(
+    tmp_path: Path, native_product: NativeProduct
+) -> None:
+    _, _, setup_a, _, spec, _ = native_product
+    command_name = spec.metadata.command_name
+    assert command_name is not None
+    environment, commands = _host(tmp_path / "program-only")
+    run(_install(setup_a, commands), environment=environment, cwd=tmp_path)
+    directory = installation_directory(
+        spec.metadata.identity.app_id, environment=environment
     )
-    unknown_command = new_commands / "unrelated-command"
+    placement = _record(directory)["placement"]
+    config_file = Path(placement["config_dir"]) / "user-settings.txt"
+    config_file.write_text("keep config", encoding="utf-8")
+    appdata = Path(placement["appdata_dir"])
+    unknown_command = commands / "unrelated-command"
     unknown_command.write_text("preserve unrelated command", encoding="utf-8")
-    unknown_installation_file = new_directory / "unrelated-file"
+    unknown_installation_file = directory / "unrelated-file"
     unknown_installation_file.write_text(
         "preserve unrelated file", encoding="utf-8"
     )
     program_only = run(
         [str(setup_a), "app", "uninstall", "--keep-config", "--yes"],
-        environment=new_host,
+        environment=environment,
         cwd=tmp_path,
         check=False,
     )
     assert program_only.returncode == 0, (
         program_only.stdout + program_only.stderr
     )
-    assert not (new_commands / command_name).exists()
-    assert not new_directory.exists()
+    assert not (commands / command_name).exists()
+    assert not directory.exists()
+    assert config_file.read_text(encoding="utf-8") == "keep config"
+    assert not appdata.exists()
     assert (
         unknown_command.read_text(encoding="utf-8")
         == "preserve unrelated command"
     )
     assert not unknown_installation_file.exists()
+
+
+def test_native_editable_registration_and_uninstall_preserve_checkout(
+    tmp_path: Path,
+    native_product: NativeProduct,
+    request: pytest.FixtureRequest,
+) -> None:
+    project_root, uv, _, _, spec, _ = native_product
+    command_name = spec.metadata.command_name
+    assert command_name is not None
+    outside = tmp_path / "outside-checkout"
+    outside.mkdir()
 
     # * Editable registration uses the developer's existing environment.
     # * Preserve its package baseline and restore the source after the test.

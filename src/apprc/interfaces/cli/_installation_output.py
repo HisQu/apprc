@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import typer
 
-from apprc.definition.installation import EditableCheckout
+from apprc.definition.installation import EditableCheckout, RuntimeSlot
 from apprc.distribution.runtime._install_progress import (
     InstallProgress,
     installation_color,
@@ -18,13 +18,138 @@ if TYPE_CHECKING:
     from rich.console import Console
     from rich.tree import Tree
     from apprc.definition.installation import (
+        InstallationDiagnostic,
         InstallationInspection,
+        InstallationRecord,
         MigrationPlan,
     )
 
     from apprc.distribution.runtime._uninstall_controller import (
         UninstallPreparation,
     )
+
+
+def installation_inspection_payload(
+    inspection: InstallationInspection,
+    *,
+    additional_diagnostics: Sequence[InstallationDiagnostic] = (),
+) -> dict[str, object]:
+    """Project saved installation inspection into the mounted CLI JSON shape."""
+    return {
+        "status": inspection.status,
+        "app_id": inspection.app_id,
+        "directory": str(inspection.directory),
+        "revision": inspection.revision,
+        "record": _record_payload(inspection.record),
+        "diagnostics": [
+            _diagnostic_payload(item)
+            for item in (*inspection.diagnostics, *additional_diagnostics)
+        ],
+    }
+
+
+def _record_payload(
+    record: InstallationRecord | None,
+) -> dict[str, object] | None:
+    if record is None:
+        return None
+    placement = record.placement
+    return {
+        "generation_id": str(record.generation_id),
+        "identity": record.identity.app_id,
+        "command_name": record.command_name,
+        "status": record.status,
+        "layout": placement.layout.mode,
+        "root": str(placement.layout.root) if placement.layout.root else None,
+        "capabilities": sorted(placement.capabilities),
+        "active_runtime": (
+            None
+            if record.active_runtime is None
+            else {
+                "kind": (
+                    "editable"
+                    if isinstance(record.active_runtime, EditableCheckout)
+                    else "managed"
+                ),
+                "distribution": record.identity.distribution,
+                "version": (
+                    record.active_runtime.version
+                    if isinstance(record.active_runtime, RuntimeSlot)
+                    else None
+                ),
+                "slot_id": (
+                    str(record.active_runtime.slot_id)
+                    if isinstance(record.active_runtime, RuntimeSlot)
+                    else None
+                ),
+            }
+        ),
+        "retiring_runtime_ids": [
+            str(slot_id) for slot_id in record.retiring_runtime_ids
+        ],
+        "operation": record.operation.kind if record.operation else None,
+    }
+
+
+def migration_payload(plan: MigrationPlan) -> dict[str, object]:
+    """Describe the files and prerequisites for a placement migration."""
+    return {
+        "directory": str(plan.directory),
+        "source_root": str(plan.inventory.source_root),
+        "destination_root": str(plan.inventory.destination_root),
+        "entries": [str(item.path) for item in plan.inventory.entries],
+        "unknown": [str(path) for path in plan.inventory.unknown],
+        "quiescent_required": True,
+    }
+
+
+def uninstall_preparation_payload(
+    preparation: UninstallPreparation,
+) -> dict[str, object]:
+    """Describe the saved uninstall preview without starting the handoff."""
+    record = preparation.inspection.record
+    retained: list[dict[str, str]] = []
+    if record is not None:
+        if preparation.plan is not None:
+            retained.extend(
+                {"path": str(entry.path), "reason": "--keep-config"}
+                for entry in preparation.plan.inventory.retained
+                if entry.resource == "config"
+            )
+        if isinstance(record.active_runtime, EditableCheckout) and not any(
+            entry.kind == "repository" for entry in preparation.entries
+        ):
+            retained.extend(
+                {"path": str(path), "reason": "editable installation"}
+                for path in (
+                    record.active_runtime.project,
+                    record.active_runtime.environment,
+                )
+            )
+    return {
+        "preserved": retained,
+        "inspection": installation_inspection_payload(preparation.inspection),
+        "can_execute": preparation.can_execute,
+        "entries": [
+            {
+                "path": str(entry.path),
+                "kind": entry.kind,
+                "resource": entry.resource,
+            }
+            for entry in preparation.entries
+        ],
+        "diagnostics": [
+            _diagnostic_payload(item) for item in preparation.diagnostics
+        ],
+    }
+
+
+def _diagnostic_payload(item: InstallationDiagnostic) -> dict[str, str]:
+    return {
+        "code": item.code,
+        "message": item.message,
+        "recovery": item.recovery,
+    }
 
 
 def installation_console(

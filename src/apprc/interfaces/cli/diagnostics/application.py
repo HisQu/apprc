@@ -16,6 +16,7 @@ import typer
 # == Internal ================================
 from apprc.definition.installation import (
     EditableCheckout,
+    InstallationDiagnostic,
     InstallationIdentity,
     RuntimeSlot,
 )
@@ -24,9 +25,7 @@ from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli.context import (
     CliRuntimeContext,
     cli_runtime_context_from,
-)
-from apprc.interfaces.cli.installation_command import (
-    installation_context,
+    installation_command_context_from,
 )
 from apprc.public.app_rc import AppRC
 from apprc.user_files.app_home.locations import assert_no_links
@@ -241,12 +240,14 @@ def build_application_doctor_payload(
         return _build_runtime_diagnostics(
             ctx, apprc, host_diagnostics, resource_diagnostics
         )
-    from apprc.interfaces.cli.installation_command import _inspection_payload
+    from apprc.interfaces.cli._installation_output import (
+        installation_inspection_payload,
+    )
 
-    diagnostic = installation_context(ctx)
+    diagnostic = installation_command_context_from(ctx)
     runtime = cli_runtime_context_from(ctx)
     checks: list[DiagnosticCheck] = []
-    installation_diagnostics: list[dict[str, str]] = []
+    additional_diagnostics: list[InstallationDiagnostic] = []
     inspection = diagnostic.inspection if diagnostic is not None else None
     if inspection is None and runtime is not None:
         inspection = apprc.installation(
@@ -256,15 +257,6 @@ def build_application_doctor_payload(
         raise RuntimeError(
             "AppRC doctor has no installation inspection context."
         )
-    installation = _inspection_payload(inspection)
-    installation_diagnostics = [
-        {
-            "code": item.code,
-            "message": item.message,
-            "recovery": item.recovery,
-        }
-        for item in inspection.diagnostics
-    ]
     unusable = inspection.status in {"invalid", "provisional", "incomplete"}
     path_diagnostics = (
         runtime.paths.installation.diagnostics if runtime is not None else ()
@@ -301,14 +293,13 @@ def build_application_doctor_payload(
                 diagnostic.path_error,
             )
         )
-        installation_diagnostics.append(
-            {
-                "code": "path-resolution",
-                "message": diagnostic.path_error,
-                "recovery": "Inspect saved placement and run explicit migration if needed.",
-            }
+        additional_diagnostics.append(
+            InstallationDiagnostic(
+                "path-resolution",
+                diagnostic.path_error,
+                "Inspect saved placement and run explicit migration if needed.",
+            )
         )
-        installation["diagnostics"] = installation_diagnostics
 
     paths_detail: dict[str, object] | None = None
     operations_by_kind: dict[str, list[str]] = {}
@@ -333,20 +324,14 @@ def build_application_doctor_payload(
     )
     if runtime is not None and diagnostic is None:
         reported = {
-            (item["code"], item["message"]) for item in installation_diagnostics
+            (item.code, item.message) for item in inspection.diagnostics
         }
         for item in runtime.paths.installation.diagnostics:
             key = (item.code, item.message)
             if key in reported:
                 continue
             reported.add(key)
-            installation_diagnostics.append(
-                {
-                    "code": item.code,
-                    "message": item.message,
-                    "recovery": item.recovery,
-                }
-            )
+            additional_diagnostics.append(item)
             checks.append(
                 DiagnosticCheck(
                     "installation",
@@ -354,8 +339,10 @@ def build_application_doctor_payload(
                     f"{item.message} Recovery: {item.recovery}",
                 )
             )
-        installation["diagnostics"] = installation_diagnostics
 
+    installation = installation_inspection_payload(
+        inspection, additional_diagnostics=additional_diagnostics
+    )
     details: dict[str, object] | None = None
     if verbose:
         host: Mapping[str, object] = {}

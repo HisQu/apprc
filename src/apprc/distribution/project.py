@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import apprc.utils as ut
 
-import glob
 import hashlib
 import os
 import shutil
@@ -15,6 +14,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from apprc.definition._uv_workspace import (
+    match_workspace_pattern,
+    workspace_patterns,
+)
 from apprc.definition.installation import InstallationError, ProjectSnapshot
 from apprc.distribution._archives import _deterministic_zip
 from apprc.distribution.metadata import _validate_project_declaration
@@ -25,6 +28,25 @@ from apprc.distribution.runtime.acquisition import (
 )
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import set_windows_private_acl
+
+_GENERATED_ENVIRONMENT_DIRS = frozenset(
+    {
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".cache",
+        ".bun",
+        ".vite",
+        ".turbo",
+        ".tox",
+    }
+)
+_BUILD_OUTPUT_DIRS = frozenset({"build", "dist", "target"})
+_NON_PROJECT_DIRS = _GENERATED_ENVIRONMENT_DIRS | _BUILD_OUTPUT_DIRS
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,42 +102,14 @@ def _validate_workspace(tree: Path) -> None:
         uv = tool.get("uv", {}) if isinstance(tool, dict) else {}
         if not isinstance(uv, dict):
             raise ValueError("tool.uv must be a table.")
-        workspace = uv.get("workspace", {})
-        if not isinstance(workspace, dict):
-            raise ValueError("tool.uv.workspace must be a table.")
-        members = workspace.get("members", [])
-        excludes = workspace.get("exclude", [])
-        if not isinstance(members, list) or not all(
-            isinstance(item, str) for item in members
-        ):
-            raise ValueError(
-                "Workspace members must be relative path patterns."
-            )
-        if not isinstance(excludes, list) or not all(
-            isinstance(item, str) for item in excludes
-        ):
-            raise ValueError(
-                "Workspace excludes must be relative path patterns."
-            )
+        members, excludes = workspace_patterns(uv.get("workspace", {}))
         matches_by_pattern: dict[str, set[Path]] = {}
-        for pattern in (*members, *excludes):
-            pattern_path = PurePosixPath(pattern)
-            if (
-                not pattern
-                or pattern_path.is_absolute()
-                or ".." in pattern_path.parts
-                or "\\" in pattern
-                or PureWindowsPath(pattern).drive
-            ):
-                raise ValueError(
-                    f"Workspace pattern is not a safe relative path: {pattern}."
-                )
-            matches = {
-                Path(match)
-                for match in glob.glob(
-                    str(pyproject.parent / pattern), recursive=True
-                )
-            }
+        for pattern in dict.fromkeys((*members, *excludes)):
+            matches = match_workspace_pattern(
+                pyproject.parent,
+                PurePosixPath(pattern).as_posix(),
+                include_hidden=False,
+            )
             for match in matches:
                 assert_no_links(match)
                 if not match.resolve().is_relative_to(tree_root):
@@ -177,20 +171,6 @@ def _remove_generated(
     baseline_files: dict[PurePosixPath, str],
 ) -> None:
     """Remove generated environments and caches without deleting source assets."""
-    always_remove = {
-        "node_modules",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".cache",
-        ".bun",
-        ".vite",
-        ".turbo",
-        ".tox",
-    }
     for current, directories, _ in os.walk(
         tree, topdown=True, followlinks=False
     ):
@@ -198,11 +178,13 @@ def _remove_generated(
         for name in tuple(directories):
             path = parent / name
             relative = PurePosixPath(path.relative_to(tree).as_posix())
-            if name in always_remove or name.endswith(".egg-info"):
+            if name in _GENERATED_ENVIRONMENT_DIRS or name.endswith(
+                ".egg-info"
+            ):
                 shutil.rmtree(path)
                 directories.remove(name)
                 continue
-            if name not in {"build", "dist", "target"}:
+            if name not in _BUILD_OUTPUT_DIRS:
                 if path.is_symlink():
                     raise ValueError(
                         f"Project snapshot contains a directory link: {relative}."
@@ -260,74 +242,39 @@ def _nearest_lockfile(tree: Path, selected: Path) -> Path:
     )
 
 
-def _project_configuration(tree: Path) -> dict[PurePosixPath, bytes]:
-    ignored = {
-        "node_modules",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".cache",
-        ".bun",
-        ".vite",
-        ".turbo",
-        ".tox",
-        "target",
-        "build",
-        "dist",
-    }
-    result: dict[PurePosixPath, bytes] = {}
-    for path in sorted(tree.rglob("pyproject.toml")):
-        relative = path.relative_to(tree)
-        if any(
-            part in ignored or part.endswith(".egg-info")
-            for part in relative.parts
-        ):
-            continue
-        if path.is_file():
-            result[PurePosixPath(relative.as_posix())] = path.read_bytes()
-    return result
+def _project_metadata(
+    tree: Path,
+) -> tuple[dict[PurePosixPath, bytes], dict[PurePosixPath, bytes]]:
+    """Capture project configuration and lockfiles outside generated trees.
 
-
-def _project_lockfiles(tree: Path) -> dict[PurePosixPath, bytes]:
-    ignored = {
-        "node_modules",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".cache",
-        ".bun",
-        ".vite",
-        ".turbo",
-        ".tox",
-        "target",
-        "build",
-        "dist",
-    }
-    return {
-        PurePosixPath(path.relative_to(tree).as_posix()): path.read_bytes()
-        for path in sorted(tree.rglob("uv.lock"))
-        if path.is_file()
-        and not any(
-            part in ignored or part.endswith(".egg-info")
-            for part in path.relative_to(tree).parts
-        )
-    }
+    :param tree: Private project export.
+    :return: Project configuration and lockfile inventories.
+    """
+    configuration: dict[PurePosixPath, bytes] = {}
+    lockfiles: dict[PurePosixPath, bytes] = {}
+    inventories = {"pyproject.toml": configuration, "uv.lock": lockfiles}
+    for parent, directories, filenames in tree.walk():
+        directories[:] = [
+            name
+            for name in directories
+            if name not in _NON_PROJECT_DIRS and not name.endswith(".egg-info")
+        ]
+        for name in filenames:
+            inventory = inventories.get(os.path.normcase(name))
+            if inventory is None:
+                continue
+            path = parent / name
+            if path.is_file():
+                relative = PurePosixPath(path.relative_to(tree).as_posix())
+                inventory[relative] = path.read_bytes()
+    return configuration, lockfiles
 
 
 def _baseline_output_files(tree: Path) -> dict[PurePosixPath, str]:
     result: dict[PurePosixPath, str] = {}
     for current, _, filenames in os.walk(tree, topdown=True, followlinks=False):
         parent = Path(current)
-        if not any(
-            part in {"build", "dist", "target"}
-            for part in parent.relative_to(tree).parts
-        ):
+        if not _BUILD_OUTPUT_DIRS.intersection(parent.relative_to(tree).parts):
             continue
         for name in filenames:
             path = parent / name
@@ -407,8 +354,7 @@ def build_project_snapshot(
         lock_path = _nearest_lockfile(tree, selected)
         committed_lock_digest = ut.sha256_file(lock_path)
         _validate_workspace(tree)
-        original_configuration = _project_configuration(tree)
-        original_lockfiles = _project_lockfiles(tree)
+        original_configuration, original_lockfiles = _project_metadata(tree)
         baseline_directories = {
             PurePosixPath(path.relative_to(tree).as_posix())
             for path in tree.rglob("*")
@@ -418,11 +364,12 @@ def build_project_snapshot(
         if prepare is not None:
             prepare(tree)
         _remove_generated(tree, baseline_directories, baseline_files)
-        if _project_configuration(tree) != original_configuration:
+        configuration, lockfiles = _project_metadata(tree)
+        if configuration != original_configuration:
             raise ValueError(
                 "Preparation modified committed project/workspace configuration."
             )
-        if _project_lockfiles(tree) != original_lockfiles:
+        if lockfiles != original_lockfiles:
             raise ValueError("Preparation modified a committed uv.lock.")
         _validate_workspace(tree)
         entries: list[tuple[str, bytes]] = []

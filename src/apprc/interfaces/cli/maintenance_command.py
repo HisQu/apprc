@@ -731,7 +731,7 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
                 ),
             ],
         ) -> None:
-            """Change a workspace's registered path."""
+            """Change the registered root and create its settings file if missing."""
             _workspace_manager(ctx, apprc).repoint_workspace(
                 name=name, root=root
             )
@@ -772,7 +772,10 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
             ],
         ) -> None:
             """Unregister a workspace without deleting its files."""
-            _workspace_manager(ctx, apprc).remove_workspace(name=name)
+            try:
+                _workspace_manager(ctx, apprc).remove_workspace(name=name)
+            except (OSError, ValueError) as exc:
+                raise typer.BadParameter(str(exc)) from exc
 
         @child.command("archive")
         def archive_workspace(
@@ -786,9 +789,12 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
             ],
         ) -> None:
             """Archive a registered workspace."""
-            _workspace_manager(ctx, apprc).archive_workspace(
-                name=name, destination=destination
-            )
+            try:
+                _workspace_manager(ctx, apprc).archive_workspace(
+                    name=name, destination=destination
+                )
+            except (OSError, ValueError) as exc:
+                raise typer.BadParameter(str(exc)) from exc
 
         @child.command("restore")
         def restore_workspace(
@@ -809,11 +815,14 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
             ] = None,
         ) -> None:
             """Restore a named workspace archive."""
-            _workspace_manager(ctx, apprc).restore_workspace(
-                name=name,
-                destination=destination,
-                archive=archive_path,
-            )
+            try:
+                _workspace_manager(ctx, apprc).restore_workspace(
+                    name=name,
+                    destination=destination,
+                    archive=archive_path,
+                )
+            except (OSError, ValueError) as exc:
+                raise typer.BadParameter(str(exc)) from exc
     else:
 
         @child.command("info")

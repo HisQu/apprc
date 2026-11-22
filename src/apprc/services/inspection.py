@@ -8,7 +8,11 @@ from typed_settings.exceptions import InvalidSettingsError
 
 from apprc.definition.env_config._validation import validate_python_field_value
 from apprc.definition.env_config.conversion import parse_env_field_value
-from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.definition.env_config.schema import (
+    ConfigField,
+    ConfigOwner,
+    field_env_key,
+)
 from apprc.definition.provenance import ConfigOriginState
 from apprc.runtime.resolution import ResolvedConfig
 
@@ -73,7 +77,7 @@ def inspect_resolved(resolved: ResolvedConfig) -> ConfigInspection:
     issues = list(resolved.issues)
     for owner in resolved.schema.owners:
         for spec in owner.fields:
-            key = owner.env_key(spec.name)
+            key = field_env_key(owner, spec)
             origin = resolved.source.origins.get(
                 key, ConfigOriginState("python_config_default", env_key=key)
             )

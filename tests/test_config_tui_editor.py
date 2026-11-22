@@ -16,10 +16,7 @@ from apprc.interfaces.tui._primitives import (
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.interfaces.tui.modals.screens import ArchiveOptionsResult
 from apprc.user_files.app_home.application import AppFiles
-from apprc.user_files.env_files import (
-    ensure_workspace_dotenv_file,
-    read_env_file,
-)
+from apprc.user_files.env_files import read_env_file
 from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 from tests.support_config import (
     build_config_only_example_app,
@@ -231,9 +228,6 @@ async def test_workspace_action_context_tracks_sequential_operations(
     screen = editor.editor_screen
     reconnected_root = tmp_path / "reconnected"
     reconnected_root.mkdir()
-    ensure_workspace_dotenv_file(
-        reconnected_root, filename=kit.schema.workspace_dotenv_filename
-    )
     moved_root = tmp_path / "moved"
     archive_path = tmp_path / "renamed.apprc.tar.xz"
     restored_root = tmp_path / "restored"
@@ -280,6 +274,9 @@ async def test_workspace_action_context_tracks_sequential_operations(
             str(reconnected_root)
             in static_text(screen.query_one("#scope-title", Static)).plain
         )
+        assert (
+            reconnected_root / kit.schema.workspace_dotenv_filename
+        ).is_file()
         await click_action(pilot, "#workspace-move")
         assert (
             str(moved_root)

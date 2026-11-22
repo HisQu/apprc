@@ -15,7 +15,7 @@ import apprc as rc
 def test_prefilled_fields_and_selectors_are_interactive(
     tmp_path: Path,
 ) -> None:
-    """Allow browser edits to prefilled controls and keep read-only fields disabled."""
+    """Keep browser edits tied to the workspace shown in each session."""
     app = rc.AppRC(
         app_id="gui-browser-check",
         paths=rc.Paths(config=True),
@@ -103,32 +103,58 @@ def test_prefilled_fields_and_selectors_are_interactive(
                 selected_workspace = page.get_by_label("Selected workspace")
                 expect(selected_workspace).to_be_enabled()
                 expect(selected_workspace).to_have_value("one")
-                selected_workspace.click()
-                page.get_by_role("option", name="two").click()
-                page.get_by_role(
+                other_page = browser.new_page()
+                other_page.goto(local_url, wait_until="domcontentloaded")
+                other_workspace = other_page.get_by_label("Selected workspace")
+                expect(other_workspace).to_have_value("one")
+                other_workspace.click()
+                other_page.get_by_role("option", name="two").click()
+                other_page.get_by_role(
                     "button", name="Use selected workspace"
                 ).click()
-                status = page.get_by_label("Configuration status")
-                expect(status).to_have_value("Selected workspace two.")
+                other_status = other_page.get_by_label("Configuration status")
+                expect(other_status).to_have_value("Selected workspace two.")
+                assert workspace_manager.registry().selected_workspace == "two"
 
-                scope = page.get_by_label("Save changes in")
-                scope.click()
-                page.get_by_role("option", name="workspace").click()
-                server_port = page.get_by_label(
-                    "Server port (restart required)"
-                )
-                server_port.fill("9000")
+                expect(selected_workspace).to_have_value("one")
+                server_port.fill("8000")
 
                 read_only = page.get_by_label("Server state")
                 expect(read_only).to_be_disabled()
-
                 page.get_by_role(
                     "button", name="Save", exact=True
                 ).first.click()
+                status = page.get_by_label("Configuration status")
                 expect(status).to_have_value(
                     "Saved GUI_BROWSER_PORT in the workspace layer. Restart "
                     "the application to reload configuration."
                 )
+                assert manager.resolve().build(Server).port == 7860
+
+                workspace_manager.select_workspace("one")
+                page.reload(wait_until="domcontentloaded")
+                expect(selected_workspace).to_have_value("one")
+                expect(server_port).to_have_value("8000")
+
+                expect(other_workspace).to_have_value("two")
+                other_scope = other_page.get_by_label("Save changes in")
+                other_scope.click()
+                other_page.get_by_role("option", name="workspace").click()
+                other_port = other_page.get_by_label(
+                    "Server port (restart required)"
+                )
+                expect(other_port).to_have_value("7860")
+                other_port.fill("9000")
+                other_page.get_by_role(
+                    "button", name="Save", exact=True
+                ).first.click()
+                expect(other_status).to_have_value(
+                    "Saved GUI_BROWSER_PORT in the workspace layer. Restart "
+                    "the application to reload configuration."
+                )
+                expect(other_workspace).to_have_value("two")
+                assert manager.resolve().build(Server).port == 8000
+                workspace_manager.select_workspace("two")
                 assert manager.resolve().build(Server).port == 9000
             finally:
                 browser.close()

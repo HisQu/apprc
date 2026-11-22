@@ -6,7 +6,11 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 # == Internal ================================
-from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.env_config.schema import (
+    ConfigField,
+    ConfigOwner,
+    field_env_key,
+)
 from apprc.definition.env_config._validation import (
     validate_python_field_value,
 )
@@ -25,12 +29,13 @@ def validate_python_constructor_fields(
     :param owner: Config owner declaring env-backed fields.
     :param field_origins: Current owner-backed provenance map.
     """
+    specs = {spec.name: spec for spec in owner.fields}
     for field_name, state in field_origins.items():
         if state.origin != "python_constructor_argument":
             continue
-        validate_owner_field_value(
+        validate_resolved_field(
             owner,
-            field_name,
+            specs[field_name],
             getattr(instance, field_name),
         )
 
@@ -43,7 +48,7 @@ def validate_required_fields(instance: Any, owner: ConfigOwner) -> None:
     :raises RuntimeError: If any required env value is missing.
     """
     missing_keys = [
-        owner.env_key(spec.name)
+        field_env_key(owner, spec)
         for spec in owner.fields
         if getattr(instance, spec.name) is ENV_FIELD_MISSING
     ]
@@ -65,9 +70,7 @@ def validate_all_owner_values(instance: Any, owner: ConfigOwner) -> None:
     """
     for spec in owner.fields:
         value = getattr(instance, spec.name)
-        if value is ENV_FIELD_MISSING:
-            continue
-        validate_owner_field_value(owner, spec.name, value)
+        validate_resolved_field(owner, spec, value)
 
 
 def validate_owner_field_value(
@@ -83,13 +86,19 @@ def validate_owner_field_value(
     :raises TypeError: If ``value`` is not the declared Python type.
     :raises ValueError: If ``value`` is outside declared choices.
     """
-    spec = owner.field(field_name)
+    validate_resolved_field(owner, owner.field(field_name), value)
+
+
+def validate_resolved_field(
+    owner: ConfigOwner, spec: ConfigField, value: Any
+) -> None:
+    """Validate a value using its resolved field and the owner's env key."""
     if value is ENV_FIELD_MISSING:
         return
     try:
         validate_python_field_value(spec, value)
     except TypeError as exc:
-        env_key = owner.env_key(field_name)
+        env_key = field_env_key(owner, spec)
         raise TypeError(
             f"{env_key} must be {spec.python_type.__name__}; got "
             f"{type(value).__name__}."
@@ -97,9 +106,9 @@ def validate_owner_field_value(
     except ValueError as exc:
         if spec.choices and value not in spec.choices:
             choices = ", ".join(spec.choices)
-            env_key = owner.env_key(field_name)
+            env_key = field_env_key(owner, spec)
             raise ValueError(
-                f"{env_key}={value!r} is invalid; {field_name} must be one "
+                f"{env_key}={value!r} is invalid; {spec.name} must be one "
                 f"of: {choices}."
             ) from exc
         raise

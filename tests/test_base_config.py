@@ -222,6 +222,55 @@ def test_base_config_copy_preserves_resolved_state_without_constructor() -> (
     assert deep.nested is not config.nested
 
 
+def test_base_config_tracks_inherited_slot_assignment_with_instance_dict(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    @dataclass
+    class MixedConfig(_DefaultRuntimeConfig):
+        extra: str = "extra"
+
+    config = MixedConfig(name="initial")
+
+    assert not caplog.records
+    assert config.provenance_of("name").origin == "python_constructor_argument"
+
+    config.name = "changed"
+
+    assert config.provenance_of("name").origin == "python_runtime_assignment"
+    assert "MixedConfig.name" in caplog.text
+
+    shallow = copy(config)
+    assert (shallow.name, shallow.extra) == ("changed", "extra")
+    assert shallow.provenance_of("name").origin == "python_runtime_assignment"
+
+
+def test_base_config_copies_manually_declared_private_slot() -> None:
+    class PrivateSlotConfig(_DefaultRuntimeConfig):
+        __slots__ = "__items"
+
+        __items: list[str]
+
+        def set_items(self, items: list[str]) -> None:
+            self.__items = items
+
+        @property
+        def items(self) -> list[str]:
+            return self.__items
+
+    config = PrivateSlotConfig(name="original")
+    config.set_items(["kept"])
+
+    shallow = copy(config)
+    deep = deepcopy(config)
+    scoped = config.scoped(name="scoped")
+
+    assert shallow.items is config.items
+    assert deep.items == scoped.items == config.items
+    assert deep.items is not config.items and scoped.items is not config.items
+    assert config.name == "original"
+    assert scoped.name == "scoped"
+
+
 def test_base_config_provenance_reports_public_python_origins() -> None:
     config = _DefaultRuntimeConfig(name="manual")
 

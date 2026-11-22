@@ -21,11 +21,9 @@ from typer.core import TyperCommand
 from apprc.definition.installation import (
     EditableCheckout,
     InstallationInspection,
-    InstallationRecord,
     InstallationPlacement,
     MigrationPlan,
     OperationContext,
-    RuntimeSlot,
 )
 from apprc.interfaces.cli._editable_checkout import (
     _distribution_name,
@@ -38,9 +36,6 @@ from apprc.interfaces.cli.context import (
 
 if TYPE_CHECKING:
     from apprc.distribution.models import DistributionSpec
-    from apprc.distribution.runtime._uninstall_controller import (
-        UninstallPreparation,
-    )
 
 
 def _installation_error_message(error: BaseException) -> str:
@@ -413,6 +408,8 @@ def mount_installation_group(
         """Preview or explicitly execute recognized AppRC placement migration."""
         from apprc.interfaces._terminal_console import cli_line, human_report
         from apprc.interfaces.cli._installation_output import (
+            installation_inspection_payload,
+            migration_payload,
             print_installation_result,
             print_migration_preview,
         )
@@ -458,7 +455,7 @@ def mount_installation_group(
             if human:
                 print_migration_preview(ctx, plan)
             else:
-                _emit(_migration_payload(plan), json_output)
+                _emit(migration_payload(plan), json_output)
             if dry_run:
                 return
             if not assume_yes and not sys.stdin.isatty():
@@ -488,7 +485,7 @@ def mount_installation_group(
         if human:
             print_installation_result(ctx, result, operation="Migration")
         else:
-            _emit(_inspection_payload(result), json_output)
+            _emit(installation_inspection_payload(result), json_output)
 
     @child.command("repair")
     def repair(ctx: typer.Context) -> None:
@@ -523,6 +520,7 @@ def mount_installation_group(
         from apprc.interfaces._terminal_console import human_report
         from apprc.interfaces.cli._installation_output import (
             InstallationProgressOutput,
+            installation_inspection_payload,
             print_installation_result,
         )
 
@@ -549,7 +547,7 @@ def mount_installation_group(
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(_installation_error_message(exc)) from exc
         if output is None:
-            _emit(_inspection_payload(result), False)
+            _emit(installation_inspection_payload(result), False)
         elif result.status == "ready":
             output.complete()
         else:
@@ -671,9 +669,12 @@ def mount_installation_group(
                 raise typer.BadParameter(
                     "Installation changed before the guided uninstall preview."
                 )
-            payload = _preparation_payload(preparation)
             if json_output:
-                _emit(payload, True)
+                from apprc.interfaces.cli._installation_output import (
+                    uninstall_preparation_payload,
+                )
+
+                _emit(uninstall_preparation_payload(preparation), True)
             else:
                 from apprc.interfaces.cli._installation_output import (
                     installation_console,
@@ -1117,125 +1118,6 @@ def _inspection(ctx: typer.Context) -> InstallationCommandContext:
     if context is None:
         raise RuntimeError("Installation command context is not initialized.")
     return context
-
-
-def _inspection_payload(
-    inspection: InstallationInspection,
-) -> dict[str, object]:
-    return {
-        "status": inspection.status,
-        "app_id": inspection.app_id,
-        "directory": str(inspection.directory),
-        "revision": inspection.revision,
-        "record": _record_payload(inspection.record),
-        "diagnostics": [
-            {
-                "code": item.code,
-                "message": item.message,
-                "recovery": item.recovery,
-            }
-            for item in inspection.diagnostics
-        ],
-    }
-
-
-def _record_payload(
-    record: InstallationRecord | None,
-) -> dict[str, object] | None:
-    if record is None:
-        return None
-    placement = record.placement
-    return {
-        "generation_id": str(record.generation_id),
-        "identity": record.identity.app_id,
-        "command_name": record.command_name,
-        "status": record.status,
-        "layout": placement.layout.mode,
-        "root": str(placement.layout.root) if placement.layout.root else None,
-        "capabilities": sorted(placement.capabilities),
-        "active_runtime": (
-            None
-            if record.active_runtime is None
-            else {
-                "kind": (
-                    "editable"
-                    if isinstance(record.active_runtime, EditableCheckout)
-                    else "managed"
-                ),
-                "distribution": record.identity.distribution,
-                "version": (
-                    record.active_runtime.version
-                    if isinstance(record.active_runtime, RuntimeSlot)
-                    else None
-                ),
-                "slot_id": (
-                    str(record.active_runtime.slot_id)
-                    if isinstance(record.active_runtime, RuntimeSlot)
-                    else None
-                ),
-            }
-        ),
-        "retiring_runtime_ids": [
-            str(slot_id) for slot_id in record.retiring_runtime_ids
-        ],
-        "operation": record.operation.kind if record.operation else None,
-    }
-
-
-def _migration_payload(plan: MigrationPlan) -> dict[str, object]:
-    return {
-        "directory": str(plan.directory),
-        "source_root": str(plan.inventory.source_root),
-        "destination_root": str(plan.inventory.destination_root),
-        "entries": [str(item.path) for item in plan.inventory.entries],
-        "unknown": [str(path) for path in plan.inventory.unknown],
-        "quiescent_required": True,
-    }
-
-
-def _preparation_payload(
-    preparation: UninstallPreparation,
-) -> dict[str, object]:
-    record = preparation.inspection.record
-    retained: list[dict[str, str]] = []
-    if record is not None:
-        if preparation.plan is not None:
-            retained.extend(
-                {"path": str(entry.path), "reason": "--keep-config"}
-                for entry in preparation.plan.inventory.retained
-                if entry.resource == "config"
-            )
-        if isinstance(record.active_runtime, EditableCheckout) and not any(
-            entry.kind == "repository" for entry in preparation.entries
-        ):
-            retained.extend(
-                {"path": str(path), "reason": "editable installation"}
-                for path in (
-                    record.active_runtime.project,
-                    record.active_runtime.environment,
-                )
-            )
-    return {
-        "preserved": retained,
-        "inspection": _inspection_payload(preparation.inspection),
-        "can_execute": preparation.can_execute,
-        "entries": [
-            {
-                "path": str(entry.path),
-                "kind": entry.kind,
-                "resource": entry.resource,
-            }
-            for entry in preparation.entries
-        ],
-        "diagnostics": [
-            {
-                "code": item.code,
-                "message": item.message,
-                "recovery": item.recovery,
-            }
-            for item in preparation.diagnostics
-        ],
-    }
 
 
 def _emit(payload: dict[str, object], json_output: bool) -> None:

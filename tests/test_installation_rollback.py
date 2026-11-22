@@ -26,7 +26,7 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.definition.paths import Layout
-from apprc.distribution.runtime import installation
+from apprc.distribution.runtime import _command_publication, installation
 from apprc.distribution.runtime._install_progress import (
     InstallProgress,
     installation_progress,
@@ -345,14 +345,16 @@ def test_caught_native_failure_restores_previous_state_and_retry_succeeds(
 
             patch.setattr(case.manager, "initialize", fail_resources)
         elif boundary == "publication":
-            original_publish = installation._publish_stable_command
+            original_publish = _command_publication._publish_stable_command
 
             def fail_publication(*args, **kwargs):
                 original_publish(*args, **kwargs)
                 raise failure
 
             patch.setattr(
-                installation, "_publish_stable_command", fail_publication
+                _command_publication,
+                "_publish_stable_command",
+                fail_publication,
             )
         else:
 
@@ -426,7 +428,9 @@ def test_committed_installation_survives_followup_failure(
             raise OSError("controlled cleanup failure")
 
         monkeypatch.setattr(
-            installation, "_cleanup_publication_images", cleanup_then_raise
+            _command_publication,
+            "cleanup_publication_images",
+            cleanup_then_raise,
         )
     result = case.install()
     assert result.status == "ready"
@@ -841,7 +845,9 @@ def test_pending_windows_publication_preserves_path_intent(
             raise SystemExit(91)
 
         interrupt.setattr(
-            installation, "_publish_stable_command", stop_before_publication
+            _command_publication,
+            "_publish_stable_command",
+            stop_before_publication,
         )
         interrupt.setattr(
             installation, "_failed_operation", stop_before_publication

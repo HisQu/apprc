@@ -67,17 +67,22 @@ class ConfigEditor:
     ) -> None:
         self.manager = manager
         self.workspace_manager = workspace_manager
-        self.selected_workspace = manager.options.workspace
         self.section_renderers = MappingProxyType(dict(section_renderers or {}))
 
     def render(self) -> None:
         """Add controls to the current Gradio container."""
         status = gr.Textbox(label="Configuration status", interactive=False)
         revision = gr.State(0)
+        view_workspace = gr.State(None)
 
-        @gr.render(inputs=revision)
-        def show_current(_revision: int) -> None:
-            inspection = self.manager.inspect(workspace=self.selected_workspace)
+        @gr.render(inputs=[revision, view_workspace])
+        def show_current(_revision: int, workspace: str | None) -> None:
+            inspection = self.manager.inspect(workspace=workspace)
+            selection = inspection.resolved.workspace
+            selector = selection.raw_value if selection is not None else None
+            selected_name = (
+                selection.workspace_name if selection is not None else None
+            )
             if inspection.issues:
                 gr.Markdown(
                     "### Needs attention\n"
@@ -85,9 +90,11 @@ class ConfigEditor:
                 )
             else:
                 gr.Markdown("Configuration is ready.")
-            self._render_workspace(status, revision)
+            self._render_workspace(
+                status, revision, view_workspace, selected_name
+            )
             scopes = self.manager.writable_scopes(
-                workspace=self.selected_workspace
+                workspace=selector, include_workspace=selection is not None
             )
             scope = (
                 gr.Dropdown(
@@ -100,7 +107,7 @@ class ConfigEditor:
                 else None
             )
             if scope is not None:
-                self._render_secret_actions(scopes, status, revision)
+                self._render_secret_actions(scopes, status, revision, selector)
             for owner in self.manager.schema.owners:
                 gr.Markdown(f"### {owner.title or owner.key}")
                 self._render_section(
@@ -112,7 +119,7 @@ class ConfigEditor:
                             for item in inspection.fields
                             if item.owner.key == owner.key
                         ),
-                        workspace=self.selected_workspace,
+                        workspace=selector,
                         scope=scope,
                         status=status,
                         revision=revision,
@@ -129,11 +136,15 @@ class ConfigEditor:
             renderer(context)
             return
         for item in context.fields:
-            self._render_field(
-                item, context.scope, context.status, context.revision
-            )
+            self._render_field(item, context)
 
-    def _render_workspace(self, status: gr.Textbox, revision: gr.State) -> None:
+    def _render_workspace(
+        self,
+        status: gr.Textbox,
+        revision: gr.State,
+        view_workspace: gr.State,
+        selected_name: str | None,
+    ) -> None:
         """Show the selected workspace and registry-backed workspace actions."""
         if not self.manager.schema.uses_workspaces():
             if (
@@ -165,19 +176,21 @@ class ConfigEditor:
             )
             return
         registry = registry_state.registry or self.workspace_manager.registry()
-        if self.selected_workspace is None:
-            self.selected_workspace = registry.selected_workspace
         if registry.workspaces:
             selected = gr.Dropdown(
                 choices=list(registry.workspaces),
-                value=self.selected_workspace,
+                value=(
+                    selected_name
+                    if selected_name in registry.workspaces
+                    else None
+                ),
                 label="Selected workspace",
                 interactive=True,
             )
             gr.Button("Use selected workspace").click(
                 self._select_workspace,
-                inputs=[selected, revision],
-                outputs=[status, revision],
+                inputs=[selected, revision, view_workspace],
+                outputs=[status, revision, view_workspace],
             )
         name = gr.Textbox(
             value="default" if not registry.workspaces else "",
@@ -192,8 +205,8 @@ class ConfigEditor:
         )
         gr.Button("Create and select workspace", variant="primary").click(
             self._create_workspace,
-            inputs=[name, root, revision],
-            outputs=[status, revision],
+            inputs=[name, root, revision, view_workspace],
+            outputs=[status, revision, view_workspace],
         )
 
     def _render_secret_actions(
@@ -201,12 +214,13 @@ class ConfigEditor:
         scopes: tuple[WriteScope, ...],
         status: gr.Textbox,
         revision: gr.State,
+        workspace: str | None,
     ) -> None:
         """Keep legacy secret migration and permission repair available."""
         for scope in scopes:
             try:
                 migration = self.manager.plan_secret_migration(
-                    scope, workspace=self.selected_workspace
+                    scope, workspace=workspace
                 )
             except (OSError, ValueError):
                 migration = None
@@ -215,13 +229,13 @@ class ConfigEditor:
                     partial(
                         self._migrate_secrets,
                         scope,
-                        self.selected_workspace,
+                        workspace,
                     ),
                     inputs=revision,
                     outputs=[status, revision],
                 )
             secret_status = self.manager.secret_status(
-                scope, workspace=self.selected_workspace
+                scope, workspace=workspace
             )
             if not secret_status.available:
                 gr.Textbox(
@@ -233,7 +247,7 @@ class ConfigEditor:
                     partial(
                         self._repair_secrets,
                         scope,
-                        self.selected_workspace,
+                        workspace,
                     ),
                     inputs=revision,
                     outputs=[status, revision],
@@ -242,12 +256,11 @@ class ConfigEditor:
     def _render_field(
         self,
         item: FieldInspection,
-        scope: gr.Dropdown | None,
-        status: gr.Textbox,
-        revision: gr.State,
+        context: ConfigSectionContext,
     ) -> None:
         """Show a declared value, its winning source, and edit actions."""
         spec = item.field
+        scope = context.scope
         key = item.owner.env_key(spec.name)
         title = spec.title or key
         if spec.restart_required:
@@ -297,20 +310,20 @@ class ConfigEditor:
                         key,
                         spec.secret,
                         spec.restart_required,
-                        workspace=self.selected_workspace,
+                        workspace=context.workspace,
                     ),
-                    inputs=[control, scope, revision],
-                    outputs=[status, revision],
+                    inputs=[control, scope, context.revision],
+                    outputs=[context.status, context.revision],
                 )
                 gr.Button("Clear saved value", size="sm").click(
                     partial(
                         self._clear,
                         key,
                         spec.restart_required,
-                        workspace=self.selected_workspace,
+                        workspace=context.workspace,
                     ),
-                    inputs=[scope, revision],
-                    outputs=[status, revision],
+                    inputs=[scope, context.revision],
+                    outputs=[context.status, context.revision],
                 )
         else:
             gr.Textbox(
@@ -428,24 +441,26 @@ class ConfigEditor:
         )
 
     def _create_workspace(
-        self, name: str, root: str, revision: int
-    ) -> tuple[str, int]:
+        self, name: str, root: str, revision: int, workspace: str | None
+    ) -> tuple[str, int, str | None]:
         """Initialize or register one named workspace through its managers."""
         if not name.strip() or not root.strip():
-            return "Enter a workspace name and folder.", revision
+            return "Enter a workspace name and folder.", revision, workspace
         if self.workspace_manager is None:
             raise ValueError(
                 "Workspace management requires a WorkspaceManager."
             )
         try:
-            self.workspace_manager.register_workspace(name.strip(), Path(root))
-            self.workspace_manager.select_workspace(name.strip())
-            self.selected_workspace = name.strip()
+            name = name.strip()
+            self.workspace_manager.register_workspace(name, Path(root))
+            self.workspace_manager.select_workspace(name)
         except (OSError, ValueError) as exc:
-            return str(exc), revision
-        return f"Selected workspace {name.strip()}.", revision + 1
+            return str(exc), revision, workspace
+        return f"Selected workspace {name}.", revision + 1, name
 
-    def _select_workspace(self, name: str, revision: int) -> tuple[str, int]:
+    def _select_workspace(
+        self, name: str, revision: int, workspace: str | None
+    ) -> tuple[str, int, str | None]:
         """Persist the selected registered workspace for later launches."""
         if self.workspace_manager is None:
             raise ValueError(
@@ -453,10 +468,9 @@ class ConfigEditor:
             )
         try:
             self.workspace_manager.select_workspace(name)
-            self.selected_workspace = name
         except (OSError, ValueError) as exc:
-            return str(exc), revision
-        return f"Selected workspace {name}.", revision + 1
+            return str(exc), revision, workspace
+        return f"Selected workspace {name}.", revision + 1, name
 
     def _setup_user(self, revision: int) -> tuple[str, int]:
         """Create the user layer for an application without workspaces."""

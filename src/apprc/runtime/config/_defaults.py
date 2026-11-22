@@ -8,8 +8,7 @@ from typing import Any, Mapping
 
 # == Internal ================================
 from apprc.runtime.provenance import ConfigOriginState
-from apprc.definition.env_config.schema import ConfigOwner
-from apprc.runtime.config._origins import origin_for_field
+from apprc.definition.env_config.schema import ConfigOwner, field_env_key
 
 
 def resolve_owner_defaults(
@@ -32,9 +31,10 @@ def resolve_owner_defaults(
     next_origins = dict(field_origins)
     resolved_defaults: dict[str, Any] = {}
     for spec in owner.fields:
+        origin = next_origins.get(spec.name)
         if (
-            origin_for_field(owner, next_origins, spec.name).origin
-            == "python_constructor_argument"
+            origin is not None
+            and origin.origin == "python_constructor_argument"
         ):
             continue
         if spec.name not in dataclass_fields:
@@ -44,7 +44,7 @@ def resolve_owner_defaults(
             )
         if not spec.has_default():
             continue
-        env_key = owner.env_key(spec.name)
+        env_key = field_env_key(owner, spec)
         if env_key not in resolved_defaults:
             resolved_defaults[env_key] = spec.resolve_default()
         object.__setattr__(

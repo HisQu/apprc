@@ -57,7 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b2...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b3...HEAD
+[0.39.1b3]: https://github.com/HisQu/apprc/compare/v0.39.1b2...v0.39.1b3
 [0.39.1b2]: https://github.com/HisQu/apprc/compare/v0.39.1b1...v0.39.1b2
 [0.39.1b1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b1
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
@@ -100,6 +101,22 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+### 🛠️ Changed
+
+### 🗑️ Deprecated
+
+### 🔥 Removed
+
+### 🐛 Fixed
+
+### 🔒 Security
+
+<br>
+
+## [0.39.1b3] - 2026-11-23
+
+### ✨ Added
+
 - Managed application updates accept `--release TAG` to select an exact
   published GitHub release, including a prerelease.
 - Managed application updates accept `--version` (`-v`) to select a published
@@ -107,12 +124,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - Managed applications can install or update a specific published release as
   Preview. Publishers can make standalone beta and release-candidate setups
   default to Preview.
-
-### 🛠️ Changed
-
-### 🗑️ Deprecated
-
-### 🔥 Removed
 
 ### 🐛 Fixed
 
@@ -126,8 +137,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - Editable update recovery prints copyable retry commands on separate lines.
 - The workspace reconnect prompt explains when it creates the ordinary settings
   file. Source snapshots accept a staging directory with literal glob characters.
-
-### 🔒 Security
 
 <br>
 

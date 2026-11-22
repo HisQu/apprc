@@ -8,7 +8,7 @@ Identify defects and cleanup opportunities that make AppRC easier to maintain an
 
 Reviewed `main` at `11927a` (tree `3a0c57`) on Linux with Python 3.14.2. The review covered the SDK, CLI, Textual and Gradio interfaces, workspace and installation operations, packaging, workflows, docs, examples, and relevant tests. The user selected deeper edge cases and asked to consider breaking proposals.
 
-The correctness pass fixed eight findings. The follow-up completed CSC-01, CSC-02, and CSC-03, and measured CSC-05 on PersoDB's release snapshot. CSC-05 and CSC-10 remain open. [Backlog](BACKLOG.md#2026-11-21)
+The correctness pass fixed eight findings. The follow-up completed CSC-01, CSC-02, and CSC-03 and measured CSC-05 on PersoDB's release snapshot. The measurement and the decision to retain the compatibility alias are recorded below. [Backlog](BACKLOG.md)
 
 | Finding | Disposition |
 | --- | --- |
@@ -16,12 +16,12 @@ The correctness pass fixed eight findings. The follow-up completed CSC-01, CSC-0
 | [CSC-02](#csc-02) | Fixed. Runtime preparation uses one invocation classification. |
 | [CSC-03](#csc-03) | Fixed. Registration, resolution, and binding cases live in separate modules. |
 | [CSC-04](#csc-04) | Fixed. Grouped edits use one captured workspace and destination set. |
-| [CSC-05](#csc-05) | Measured. The implementation stays as measured, with larger workloads still open. |
+| [CSC-05](#csc-05) | Measured. Revisit if a larger workload shows a build constraint. |
 | [CSC-06](#csc-06) | Fixed. Development documents the active CI profiles. |
 | [CSC-07](#csc-07) | Fixed. A confirmed editable update refreshes registration when Git is current. |
 | [CSC-08](#csc-08) | Fixed. The CLI reports the committed destination and cleanup warnings. |
 | [CSC-09](#csc-09) | Fixed. The dead installer rollback path is removed. |
-| [CSC-10](#csc-10) | Explicitly deferred. The alias remains available. |
+| [CSC-10](#csc-10) | Retained for public API compatibility. |
 | [CSC-11](#csc-11) | Fixed. Rollback checks directory identity before moving or removing an owned path. |
 | [CSC-12](#csc-12) | Fixed. The move rejects a changed workspace record after acquiring locks. |
 | [CSC-13](#csc-13) | Fixed. Migration plans bind text and revision to the same byte capture. |
@@ -126,7 +126,7 @@ The existing slot-name cache uses immutable results keyed by class and consumes 
 
 **Evidence and impact.** `rc.field` accepts both `packaged_default` and its deprecated alias `shared_default`, including a conflict branch. Repository search found the old keyword in its implementation, a compatibility test, and changelog history. Current guides and examples use the canonical keyword. The alias adds a second spelling for the same field metadata. [Public field signature](src/apprc/public/field.py#L84) · [Alias handling](src/apprc/public/field.py#L152) · [Compatibility case](tests/public/test_app_rc_public_api.py#L365)
 
-**Correction and verification.** If accepted for a breaking release, replace `shared_default=` with `packaged_default=` in consuming apps and document the migration. Existing callers using the alias would receive a `TypeError` until updated. Persisted dotenv files need no migration. Check known consumers before scheduling removal because this checkout cannot establish downstream use. Keep test coverage for the canonical keyword and remove only the alias-specific example.
+**Disposition.** Retain the alias for compatibility and use `packaged_default=` in new code. If a future breaking release has a reason to remove it, check known consumers and document the keyword migration. Existing callers using the alias would receive a `TypeError` until updated. Persisted dotenv files need no migration.
 
 The duplicate JSON-key checks in the uninstall handoff and namespace finalizer serve distinct execution contexts. The finalizer is staged and can run outside the installed AppRC package after retirement, so sharing parsing code there would require verifying both execution contexts. Workspace and secret migration code likewise retain active callers and user data contracts. [Standalone staging](src/apprc/distribution/runtime/uninstall_handoff.py#L1564) · [Migration guide](docs/How-To-User-Guides.md#migrate-existing-applications)
 

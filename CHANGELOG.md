@@ -57,7 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b1...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b2...HEAD
+[0.39.1b2]: https://github.com/HisQu/apprc/compare/v0.39.1b1...v0.39.1b2
 [0.39.1b1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b1
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0
@@ -107,14 +108,20 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+### 🔒 Security
+
+<br>
+
+## [0.39.1b2] - 2026-11-22
+
+### 🐛 Fixed
+
 - Windows launchers published by install and update carry the application's
   numeric file and product version, full PEP 440 text, and prerelease flag.
 
 - Newly saved string secrets preserve whitespace, Unicode, and literal dotenv
   syntax through preview and reload. Existing unmarked assignments keep their
   interpolation behavior.
-
-### 🔒 Security
 
 <br>
 

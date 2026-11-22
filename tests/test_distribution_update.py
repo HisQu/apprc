@@ -173,6 +173,8 @@ def test_release_download_rejects_invalid_explicit_tag_before_lookup(
         ("-v2.0rc1", "published"),
         ("-v2.0rc1", "draft"),
         ("-v2.0rc1", "missing"),
+        ("-v2.0rc1", "missing-setup"),
+        ("-v2.0rc1", "missing-manifest"),
     ],
 )
 def test_private_release_download_uses_exact_tag(
@@ -212,8 +214,10 @@ def test_private_release_download_uses_exact_tag(
                     }
                 ).encode(),
             )
-        setup.write_bytes(artifact)
-        manifest.write_text(f"{digest}  {setup.name}\n", encoding="ascii")
+        if outcome != "missing-setup":
+            setup.write_bytes(artifact)
+        if outcome != "missing-manifest":
+            manifest.write_text(f"{digest}  {setup.name}\n", encoding="ascii")
         return subprocess.CompletedProcess(args, 0, stdout=b"")
 
     monkeypatch.setattr(_release_assets.subprocess, "run", run)
@@ -240,9 +244,7 @@ def test_private_release_download_uses_exact_tag(
             *(["--", release_tag] if release_tag is not None else []),
         ]
     ]
-    if outcome == "published":
-        assert download() == (setup, digest)
-        assert setup.read_bytes() == artifact
+    if outcome not in {"draft", "missing"}:
         expected_calls.append(
             [
                 "gh",
@@ -260,13 +262,20 @@ def test_private_release_download_uses_exact_tag(
                 tag,
             ]
         )
+    if outcome == "published":
+        assert download() == (setup, digest)
+        assert setup.read_bytes() == artifact
     else:
         with pytest.raises(ValueError, match=repository) as failure:
             download()
         assert tag in str(failure.value)
         if outcome == "missing":
             assert "gh auth status" in str(failure.value)
-        assert not list(tmp_path.iterdir())
+        if outcome in {"draft", "missing"}:
+            assert not list(tmp_path.iterdir())
+        else:
+            assert setup.name in str(failure.value)
+            assert manifest.name in str(failure.value)
     assert calls == expected_calls
 
 

@@ -265,10 +265,19 @@ def download_release_setup(
             f"and its setup assets.{guidance}"
         ) from error
 
-    checksums = _read_native_checksums(manifest, app_id=app_id)
-    assert_no_links(setup)
-    with setup.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    try:
+        if not setup.is_file() or not manifest.is_file():
+            raise ValueError(
+                f"The release must provide both {setup.name} and {manifest.name}."
+            )
+        checksums = _read_native_checksums(manifest, app_id=app_id)
+        assert_no_links(setup)
+        with setup.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    except (OSError, ValueError) as error:
+        raise ValueError(
+            f"Could not verify setup assets for {selection}. {error}"
+        ) from error
     if checksums.get(setup.name) != digest:
         raise ValueError(
             f"The downloaded setup for {selection} does not match its release checksum."

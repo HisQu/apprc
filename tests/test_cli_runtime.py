@@ -302,6 +302,43 @@ def test_runtime_skips_state_for_independent_command_and_preserves_ctx_obj() -> 
     assert factory_calls == []
 
 
+def test_mounted_nested_help_skips_runtime_even_when_standalone_policy_keeps_it() -> (
+    None
+):
+    args = ["tool", "run", "--help"]
+    policy = CliRuntimePolicy(
+        runtime_independent_commands={
+            "tool": RuntimeIndependentCommand(skip_help=False),
+        }
+    )
+    app = typer.Typer()
+    tool = typer.Typer()
+    app.add_typer(tool, name="tool")
+    runtime = CliRuntime[CliRuntimeOptions, DefaultConfigCliState](
+        build_config_only_example_app(),
+        args_provider=lambda: args,
+        runtime_policy=policy,
+    )
+    observations: list[tuple[bool, bool]] = []
+
+    @app.callback()
+    def prepare(ctx: typer.Context) -> None:
+        standalone = policy.request_skips_runtime(
+            ctx, tokens=args, config_group_name="config"
+        )
+        session = runtime.prepare(ctx, CliRuntimeOptions())
+        observations.append((standalone, session.runtime_setup_skipped))
+
+    @tool.command()
+    def run() -> None:
+        pytest.fail("Help must not run the action.")
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert observations == [(False, True)]
+
+
 def test_cli_runtime_run_forwarded_uses_child_args_for_runtime_policy() -> None:
     kit = build_config_only_example_app()
     parent_app = typer.Typer()

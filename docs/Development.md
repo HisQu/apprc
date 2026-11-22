@@ -113,6 +113,9 @@ synchronization, validation, and resource initialization. Its caller owns the
 operation, durable support-publication intent, registration, and activation.
 Managed installation and repair share command publication, registration, final
 checkpoints, and activation; their candidate preparation remains explicit.
+Managed and editable installation share the final checkpoints, installation
+record commit, and post-commit registration and finalization. Each route owns
+its candidate preparation, command publication, and recorded before-images.
 Use `plan_resume()` for an exact pending operation and `plan_repair()` only for
 a new managed repair. A candidate rebuilt during the current invocation is not
 rebuilt again after a probe failure; previously prepared candidates can still be
@@ -132,6 +135,11 @@ process interruption retain honest recovery checkpoints.
 Stable resource locks are never unlinked during rollback. A newly initialized
 state root may retain its owner marker and known subordinate lock files after
 empty logs removal; this inert coordination residue must remain retryable.
+Applications that use resource leases must validate captured installation
+authority and register each new lease inside the same managed resource lock.
+Acquire installation authority before resource and application registry locks.
+A pending uninstall rejects new admissions. Leave lease release independent of
+admission so existing readers can close while the user prepares to retry.
 In `runtime/uninstall_handoff.py`, pending uninstall preparation validates authority and
 containment before the caller-exit handshake. Execution waits outside the
 installation lock, then rechecks authority under the lock before mutation.
@@ -206,6 +214,16 @@ Textual editors or Prompt Toolkit. Load those implementations when the user
 actually launches an editor or enters an interactive prompt. Use the existing
 lazy facade mechanism and matching typing stubs; inspect every parent package's
 `__init__.py`, because an eager ancestor defeats a lazy public facade.
+
+AppRC runtime preparation classifies each invocation from a single capture of
+its current or forwarded argument tokens. Use the existing token parser and
+check the mounted callback identity for generated root commands that can share
+a name with a host command.
+
+Mounted `CliRuntime.prepare()` handles recognized nested help before consulting
+the runtime policy, so nested help stays lightweight. `skip_help=False` applies
+to standalone evaluation through `CliRuntimePolicy.request_skips_runtime()`
+and `RuntimeIndependentCommand.matches()`.
 
 Keep installation wizard prompts, completion text, verification commands,
 and next steps aligned with the current mounted CLI whenever commands,
@@ -609,6 +627,25 @@ The Windows target produces a Windows console executable. Cross-compiling
 from Linux or WSL verifies artifact creation. Native behavior is verified
 from a Windows session. macOS support remains deferred.
 
+### AppRC executable version convention
+
+AppRC stamps the installed Windows launchers with the hosted application's
+validated distribution version during installation and replacement. Numeric
+`FILEVERSION` and `PRODUCTVERSION` use
+`major.minor.patch.(stage × 100 + serial)`. Missing minor and patch components
+are zero. The stages are dev (0), alpha (1), beta (2), RC (3), final (4), and
+post (5). Final releases use serial zero. Dev, alpha, beta, and RC releases set
+the Windows prerelease flag.
+
+Use one stage suffix with serial 0–99 and numeric components in 0–65535.
+Plain four-component releases such as `0.23.1.7` pass through unchanged.
+Native ordering is unspecified when those versions mix with the stage mapping.
+AppRC warns when an automatic projection is unsupported, including combined
+suffixes such as `b1.dev2`, epochs, local versions, and out-of-range components.
+The string `FileVersion`, string `ProductVersion`, CLI output, and Installed
+apps `DisplayVersion` use the full PEP 440 version. AppRC compares updates
+using PEP 440.
+
 ### Verify on Windows
 
 For deferred native Windows verification, use the exact checksummed setup
@@ -624,6 +661,21 @@ Test default command publication without `--command-directory`. The guided
 `dist test -m` workflow supplies a command directory and does not exercise this
 default. A Windows PE build or an automated registry test is not native
 execution evidence.
+
+Check the executable selected from PATH and compare its numeric and text
+versions with the application and uninstall entry. For PersoDB `0.23.1b1`,
+expect `0.23.1.201` from PowerShell, `0.23.1b1` in all three text metadata
+fields and CLI output, and `IsPreRelease` equal to `True`.
+
+```powershell
+$command = Get-Command pdb -CommandType Application
+$command.Path
+$command.Version.ToString()
+(Get-Item -LiteralPath $command.Path).VersionInfo |
+  Format-List FileVersion, ProductVersion, IsPreRelease
+pdb --version
+(Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\persodb').DisplayVersion
+```
 
 
 Final native outputs are `dist/<app-id>-setup-linux-x86_64`,
@@ -745,6 +797,9 @@ editable installation and confirm that the saved checkout fast-forwards,
 its environment is synchronized, and registration is refreshed. Use a
 publisher test release or an isolated authenticated-release fixture to
 supply the setup and manifest.
+Rerun the [Windows version checks](#verify-on-windows) after launcher
+replacement. For an update from `0.23.1b1` to `0.23.1b2`, the same installed
+command path should report `0.23.1.202` and the text version `0.23.1b2`.
 
 ## Verify an application distribution
 

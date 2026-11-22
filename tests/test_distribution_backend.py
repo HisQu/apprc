@@ -1013,14 +1013,18 @@ def test_optional_app_list_update_recovers_partial_writes(
     )
 
     result = metadata.publish_registration(
-        result, "1.2.5", tmp_path / "fixture.exe", "app", preserve_icon=True
+        result, "1.2.5b2", tmp_path / "fixture.exe", "app", preserve_icon=True
     )
     assert result.record is not None
     output = next(
         item for item in result.record.owned_outputs if item.kind == "hkcu"
     )
     assert dict(output.values)["DisplayIcon"] == expected_icon
-    assert dict(output.values)["DisplayVersion"] == "1.2.5"
+    assert dict(output.values)["DisplayVersion"] == "1.2.5b2"
+    assert registry_entry.values["DisplayVersion"] == (
+        "1.2.5b2",
+        windows_registry.REG_SZ,
+    )
     assert registry_entry.values["DisplayIcon"] == (
         expected_icon,
         windows_registry.REG_SZ,

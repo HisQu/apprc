@@ -22,6 +22,8 @@ _ASSIGNMENT_HEAD = re.compile(
     r"(?:=(?P<after_equals>[^\S\r\n]*))?",
 )
 _LINE_ENDING = re.compile(r"\r\n|\r|\n")
+_LITERAL_COMMENT = " # apprc:literal"
+_LITERAL_MARKER = re.compile(r"^[ \t]+# apprc:literal(?=[ \t]*(?:#|$))")
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +45,7 @@ def set_dotenv_document_value(
     *,
     env_key: str,
     value: str,
+    literal: bool = False,
 ) -> DotenvDocumentEdit:
     """Set one key without rewriting unrelated dotenv text.
 
@@ -53,6 +56,7 @@ def set_dotenv_document_value(
     :param text: Existing dotenv text.
     :param env_key: Exact environment key to edit.
     :param value: Normalized value to quote and store.
+    :param literal: Store the exact string without dotenv interpolation.
     :return: Edited text and duplicate line information.
     """
     parts: list[str] = []
@@ -71,6 +75,7 @@ def set_dotenv_document_value(
                 _replace_assignment_value(
                     assignment,
                     value=value,
+                    literal=literal,
                 )
             )
             continue
@@ -81,7 +86,10 @@ def set_dotenv_document_value(
         ending = _preferred_line_ending(text)
         if text and not text.endswith(("\n", "\r")):
             parts.append(ending)
-        parts.append(f"{env_key}={json.dumps(value)}{ending}")
+        marker = _LITERAL_COMMENT if literal else ""
+        parts.append(
+            f"{env_key}={json.dumps(value, ensure_ascii=literal)}{marker}{ending}"
+        )
 
     return DotenvDocumentEdit(
         text="".join(parts),
@@ -131,11 +139,33 @@ def _split_leading_blank_lines(binding: Binding) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def _replace_assignment_value(assignment: str, *, value: str) -> str:
+def literal_assignment_value(binding: Binding) -> str | None:
+    """Read an explicitly marked JSON string from a dotenv assignment."""
+    if _LITERAL_COMMENT.strip() not in binding.original.string:
+        return None
+    _, assignment = _split_leading_blank_lines(binding)
+    body, _ = _without_terminal_line_ending(assignment)
+    head = _ASSIGNMENT_HEAD.match(body)
+    if head is None:
+        return None
+    comment = _inline_comment(body, start=head.end())
+    if not _LITERAL_MARKER.match(comment):
+        return None
+    try:
+        value = json.loads(body[head.end() : -len(comment)])
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _replace_assignment_value(
+    assignment: str, *, value: str, literal: bool
+) -> str:
     """Replace one assignment value and retain its layout and comment.
 
     :param assignment: One active dotenv assignment block.
     :param value: Normalized value to store.
+    :param literal: Whether the value bypasses dotenv interpolation.
     :return: Single-line assignment with the original line ending.
     """
     ending = _terminal_line_ending(assignment)
@@ -144,12 +174,15 @@ def _replace_assignment_value(assignment: str, *, value: str) -> str:
     if match is None:
         raise ValueError("Could not preserve the selected dotenv assignment.")
     comment = _inline_comment(body, start=match.end())
+    comment = _LITERAL_MARKER.sub("", comment, count=1)
+    marker = _LITERAL_COMMENT if literal else ""
     export = match.group("export") or ""
     after_equals = match.group("after_equals") or ""
     return (
         f"{match.group('indent')}{export}{match.group('key')}"
-        f"{match.group('before_equals')}={after_equals}{json.dumps(value)}"
-        f"{comment}{ending}"
+        f"{match.group('before_equals')}={after_equals}"
+        f"{json.dumps(value, ensure_ascii=literal)}"
+        f"{marker}{comment}{ending}"
     )
 
 

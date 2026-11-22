@@ -19,6 +19,7 @@ from apprc.user_files.app_home.writes import (
 )
 from apprc.user_files.env_files._document import (
     clear_dotenv_document_value,
+    literal_assignment_value,
     set_dotenv_document_value,
 )
 from apprc.user_files.env_files.secrets import inspect_secret_file
@@ -78,9 +79,9 @@ def plan_secret_migration(
             raise ValueError(status.issue or "Secret file is unavailable.")
     new_ordinary = ordinary
     new_secret = secret
-    for key, value in moving.items():
+    for key, (value, literal) in moving.items():
         new_secret = set_dotenv_document_value(
-            new_secret, env_key=key, value=value
+            new_secret, env_key=key, value=value, literal=literal
         ).text
         new_ordinary = clear_dotenv_document_value(
             new_ordinary, env_key=key
@@ -138,12 +139,17 @@ def apply_secret_migration(plan: SecretMigrationPlan) -> None:
         write_text_atomic(plan.ordinary_path, plan.ordinary_text)
 
 
-def _assignments(text: str) -> dict[str, str]:
+def _assignments(text: str) -> dict[str, tuple[str, bool]]:
     """Read raw parsed values without interpolating process variables."""
-    values: dict[str, str] = {}
+    values: dict[str, tuple[str, bool]] = {}
     for binding in parse_stream(StringIO(text)):
         if not binding.error and binding.key is not None:
-            values[binding.key] = binding.value or ""
+            literal = literal_assignment_value(binding)
+            values[binding.key] = (
+                (binding.value or "", False)
+                if literal is None
+                else (literal, True)
+            )
     return values
 
 

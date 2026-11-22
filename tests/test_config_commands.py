@@ -178,8 +178,15 @@ def test_workspace_registration_refuses_nonempty_unowned_config(
     assert not root.exists()
 
 
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    (
+        ("private-value", "private-value"),
+        ("${LEGACY_SOURCE} café", "private-value café"),
+    ),
+)
 def test_secret_migration_moves_value_to_private_companion(
-    tmp_path: Path,
+    tmp_path: Path, stored: str, expected: str
 ) -> None:
     kit = rc.AppRC(
         app_id="secret_migration",
@@ -192,13 +199,13 @@ def test_secret_migration_moves_value_to_private_companion(
     class Credentials(rc.Config):
         token: str = rc.field("SECRET_MIGRATION_TOKEN", secret=True)
 
-    manager = kit.manage(environment={})
+    manager = kit.manage(environment={"LEGACY_SOURCE": "private-value"})
     manager.setup()
     files = AppFiles(kit.schema, manager.paths)
     ordinary = files.user_dotenv_path()
     secret = files.user_secret_dotenv_path()
     ordinary.write_text(
-        'SECRET_MIGRATION_TOKEN="private-value"\n', encoding="utf-8"
+        f'SECRET_MIGRATION_TOKEN="{stored}"\n', encoding="utf-8"
     )
     plan = manager.plan_secret_migration("user")
 
@@ -209,10 +216,7 @@ def test_secret_migration_moves_value_to_private_companion(
     assert "SECRET_MIGRATION_TOKEN" not in ordinary.read_text(encoding="utf-8")
     assert "SECRET_MIGRATION_TOKEN" in secret.read_text(encoding="utf-8")
     assert "private-value" not in repr(manager.inspect())
-    assert (
-        manager.resolve().source.values["SECRET_MIGRATION_TOKEN"]
-        == "private-value"
-    )
+    assert manager.resolve().source.values["SECRET_MIGRATION_TOKEN"] == expected
 
 
 @pytest.mark.parametrize("changed_file", ("ordinary", "secret"))
@@ -229,9 +233,11 @@ def test_secret_migration_rejects_an_intervening_write_during_planning(
     foreign = b"# Another writer changed this file\r\n"
     original = secret_migration.set_dotenv_document_value
 
-    def set_after_intervening_write(text: str, *, env_key: str, value: str):
+    def set_after_intervening_write(
+        text: str, *, env_key: str, value: str, literal: bool = False
+    ):
         changed.write_bytes(foreign)
-        return original(text, env_key=env_key, value=value)
+        return original(text, env_key=env_key, value=value, literal=literal)
 
     # > Interleave a write after the planner has read both source documents.
     monkeypatch.setattr(

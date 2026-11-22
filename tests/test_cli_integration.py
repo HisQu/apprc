@@ -191,7 +191,12 @@ def test_mount_app_cli_args_provider_controls_runtime_skip(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     kit = build_config_only_example_app()
     args = ["app", "paths", "--json"]
+    provider_calls: list[list[str]] = []
     state_calls: list[CliRuntimeContext] = []
+
+    def provide_args() -> list[str]:
+        provider_calls.append(args.copy())
+        return args
 
     def state_factory(context: CliRuntimeContext) -> ConfigOnlyExampleState:
         state_calls.append(context)
@@ -203,12 +208,13 @@ def test_mount_app_cli_args_provider_controls_runtime_skip(
         kit,
         state_type=ConfigOnlyExampleState,
         state_factory=state_factory,
-        args_provider=lambda: args,
+        args_provider=provide_args,
     )
     result = CliRunner().invoke(app, args)
 
     assert result.exit_code == 0, result.output
     assert state_calls == []
+    assert provider_calls == [args]
 
 
 def test_cli_argv_provider_alias_accepts_token_provider() -> None:
@@ -572,4 +578,4 @@ def test_root_option_separator_does_not_route_host_launch_to_apprc() -> None:
     )
     root_context.invoked_subcommand = "launch"
 
-    assert not runtime._installation_command_requested(root_context)
+    assert not runtime._classify_invocation(root_context).installation_command

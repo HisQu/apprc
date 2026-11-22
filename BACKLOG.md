@@ -73,136 +73,9 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-21](#2026-11-21)
-   1. [P3 / E1 \[Code smell\] - *Simplify installer activation*](#p3--e1-code-smell---simplify-installer-activation)
-   2. [P3 / E1 \[Code smell\] - *Unify internal CLI command classification*](#p3--e1-code-smell---unify-internal-cli-command-classification)
-   3. [P3 / E2 \[Code smell\] - *Group dependency configuration tests by contract*](#p3--e2-code-smell---group-dependency-configuration-tests-by-contract)
-   4. [P3 / E1 \[Code smell\] - *Bound source snapshot memory*](#p3--e1-code-smell---bound-source-snapshot-memory)
-   5. [P3 / E3 \[Question\] - *Decide when to retire shared_default*](#p3--e3-question---decide-when-to-retire-shared_default)
-3. [2026-11-18](#2026-11-18)
-   1. [P3 / E3 \[Bug risk\] - *Verify managed desktop shortcuts on Windows*](#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows)
-   2. [P3 / E3 \[Tooling\] - *Hosted distribution CLI tests depend on terminal formatting*](#p3--e3-tooling---hosted-distribution-cli-tests-depend-on-terminal-formatting)
-4. [2026-11-16](#2026-11-16)
-   1. [P1 / E1 \[Bug risk\] - *Uninstall cleanup can race with new resource leases*](#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
-   2. [P2 / E2 \[Bug risk\] - *Literal secret interpolation needs an explicit contract*](#p2--e2-bug-risk---literal-secret-interpolation-needs-an-explicit-contract)
-5. [2026-11-13](#2026-11-13)
-   1. [P2 / E2 \[Bug risk\] - *Metadata-only version commands resolve appdata ownership*](#p2--e2-bug-risk---metadata-only-version-commands-resolve-appdata-ownership)
-6. [2026-11-09](#2026-11-09)
+2. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
-
-<br>
-
-# 2026-11-21
-
-## P3 / E1 [Code smell] - *Simplify installer activation*
-
-- **Area:** `src/apprc/distribution/runtime/installation.py`
-- **Observed while:** Following managed setup and editable registration.
-- **Why not fixed now:** The CSC correctness pass deferred the larger refactor.
-- **Evidence:** Managed and editable paths repeat part of the activation orchestration. [CSC-01](code-smells.md#csc-01)
-- **Context:** The installer combines preparation, publication, recovery, and setup output.
-- **Suggested next step:** Consolidate the shared activation sequence while keeping both preparation paths and the existing recovery checkpoints explicit.
-
-<br>
-
-## P3 / E1 [Code smell] - *Unify internal CLI command classification*
-
-- **Area:** `src/apprc/interfaces/cli/runtime.py`
-- **Observed while:** Following CLI help, installation commands, diagnostic commands, and host runtime setup.
-- **Why not fixed now:** Several command identities and option-separator cases need behavior-preserving coverage.
-- **Evidence:** Runtime preparation repeats nested action parsing across multiple predicates and handles generated command identity in separate branches. [CSC-02](code-smells.md#csc-02)
-- **Context:** An added route can affect which context a command receives and whether help imports runtime code.
-- **Suggested next step:** Consolidate internal classification with the existing argument parser and verify aliases, host collisions, and fresh-process help.
-
-<br>
-
-## P3 / E2 [Code smell] - *Group dependency configuration tests by contract*
-
-- **Area:** `tests/public/test_dependency_config_import.py`
-- **Observed while:** Following the tested registration, resolution, and bundle contracts.
-- **Why not fixed now:** This is an independent test organization change.
-- **Evidence:** A 1,613-line module mixes registration rollback, resolution precedence, lifecycle behavior, and bundles. [CSC-03](code-smells.md#csc-03)
-- **Context:** The cases cover distinct contracts and can be easier to locate.
-- **Suggested next step:** Move cases into focused test modules, preserve assertions, and compare collection before and after.
-
-<br>
-
-## P3 / E1 [Code smell] - *Bound source snapshot memory*
-
-- **Area:** `src/apprc/distribution/project.py` and `src/apprc/distribution/_archives.py`
-- **Observed while:** Tracing committed source export and snapshot validation.
-- **Why not fixed now:** Archive byte reproducibility and actual memory savings need verification.
-- **Evidence:** The snapshot path buffers the Git tar, input file bytes, and compressed ZIP in memory. [CSC-05](code-smells.md#csc-05)
-- **Context:** Larger prepared assets increase peak memory during a local build.
-- **Suggested next step:** Measure a representative large snapshot and stream the project archive through the existing private stage while preserving its exact bytes and checks.
-
-<br>
-
-## P3 / E3 [Question] - *Decide when to retire shared_default*
-
-- **Area:** `src/apprc/public/field.py`
-- **Observed while:** Reviewing deprecated parameters and their callers.
-- **Why not fixed now:** Alias removal is a breaking public API change.
-- **Evidence:** The deprecated `shared_default` keyword is still accepted alongside `packaged_default`. [CSC-10](code-smells.md#csc-10)
-- **Context:** Repository usage is limited to compatibility coverage and history. External app usage is unknown.
-- **Suggested next step:** Check consumers and decide on a breaking release window. Any affected caller can use `packaged_default` directly.
-
-<br>
-
-# 2026-11-18
-
-## P3 / E3 [Bug risk] - *Verify managed desktop shortcuts on Windows*
-- **Area:** `src/apprc/distribution/runtime/_manager.py` and `src/apprc/distribution/runtime/_os_integration.py`.
-- **Observed while:** Adding the desktop shortcut prompt to managed setup.
-- **Why not fixed now:** Native Windows execution is unavailable in the current environment.
-- **Evidence:** AppRC stages a new `.lnk` before publishing it. The automated test uses a stand-in for Windows Script Host.
-- **Suggested next step:** On native Windows, verify shortcut creation, launch, and cleanup for managed and editable installs. Check the icon in Windows Installed apps and the separate classic-console uninstall window. See the [deferred native installation checks](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred).
-
-<br>
-
-## P3 / E3 [Tooling] - *Hosted distribution CLI tests depend on terminal formatting*
-- **Area:** `tests/test_cli_distribution.py`
-- **Observed while:** Checking the merge of GitHub one-line install script generation. [Baseline run](https://github.com/HisQu/apprc/actions/runs/44367354562), [pull request run](https://github.com/HisQu/apprc/actions/runs/44377188297).
-- **Why deferred:** The failures also occur on the pre-change revision. CLI output assertions are outside the script generation pass.
-- **Evidence:** Three hosted tests fail to match `--target-current`, `uv sync --locked --all-groups`, or `app install --yes` in Rich output with ANSI formatting. All 11 distribution CLI tests pass in the local environment.
-- **Context:** The tests check help and installer guidance as raw substrings, so a styling boundary or line wrap can break an assertion.
-- **Suggested next step:** Make the assertions insensitive to ANSI formatting and line wrapping while retaining the checks for help text and lightweight startup.
-
-<br>
-
-# 2026-11-16
-
-## P1 / E1 [Bug risk] - *Uninstall cleanup can race with new resource leases*
-- **Area:** `src/apprc/distribution/runtime/uninstall_handoff.py`, `src/apprc/services/maintenance.py`, and application resource-admission callbacks.
-- **Observed while:** Updating PersoDB to AppRC's whole-directory uninstall contract.
-- **Why not fixed now:** Explicitly deferred by the user so the PersoDB update can proceed.
-- **Evidence:** The uninstall controller invokes the application cleanup hook to check leases, then later drains resource locks and removes the selected directories. PersoDB has cache readers that acquire a lease under a resource lock without captured installation authority; such a reader can enter after the hook finishes. AppRC maintenance provider callbacks receive a path or plan, not the captured installation authority needed to reject that admission against the pending uninstall.
-- **Context:** A new lease in this interval could leave a reader using files while uninstall removes their directory. Existing authority-bound admissions are rejected while the uninstall is pending. This is an observed coordination gap, not a demonstrated exploit.
-- **Suggested next step:** Establish an authority-aware admission and cleanup contract that prevents new resource leases between the final lease check and whole-directory deletion, including direct consumers and maintenance callbacks. Add a deterministic multi-process regression for a reader queued across uninstall, and verify retries and release paths do not deadlock.
-
-<br>
-
-## P2 / E2 [Bug risk] - *Literal secret interpolation needs an explicit contract*
-- **Area:** `src/apprc/user_files/env_files/values.py` and dotenv parsing/loading.
-- **Observed while:** Reviewing grouped GS Online credential saving and checking.
-- **Why not fixed now:** Changing existing global secret normalization or interpolation would expand the accepted grouped-edit feature into a configuration-policy change.
-- **Evidence:** String normalization strips surrounding whitespace, and existing dotenv loading expands literal `${VAR}` text in saved quoted values. The credential UI now checks normalized new values and retains existing secrets without rewriting them, using the manager's captured environment for retained-secret parsing.
-- **Context:** A newly entered literal secret containing interpolation syntax can differ when reloaded. This behavior predates grouped edits; no actual credentials or exploit are recorded here.
-- **Suggested next step:** Define literal-secret storage and reload semantics separately from ordinary configuration interpolation, then add round-trip tests for whitespace, dollar/braced text, and captured-versus-ambient environments without exposing values.
-
-<br>
-
-# 2026-11-13
-
-## P2 / E2 [Bug risk] - *Metadata-only version commands resolve appdata ownership*
-- **Area:** `src/apprc/interfaces/cli/runtime.py`, `src/apprc/interfaces/cli/context.py`, and `src/apprc/user_files/installation/validation.py`.
-- **Observed while:** Running an installed application's metadata-only `version` command with AppRC 0.34.0.
-- **Recheck:** PersoDB's eager `--version` and `-V` bypass runtime preparation. Its existing regression passed with invalid settings and with and without unknown appdata. The original failure did not reproduce on these routes. AppRC's runtime-skip policy still resolves paths for host commands that use the prepared path context.
-- **Why not fixed now:** The SDK release is already published. Changing CLI preparation needs a focused regression and an explicitly scoped maintenance change; existing application data must remain untouched.
-- **Evidence:** The command raised `InstallationError: Nonempty native appdata container requires project-owned migration or adoption.` The same installed version query succeeded with an explicit fresh single-root layout.
-- **Context:** CLI preparation resolves application paths before returning package metadata, so unrelated existing appdata can prevent a version query. The appdata ownership guard itself must remain strict.
-- **Suggested next step:** Add an existing-suite CLI regression with an unknown appdata entry. Separate metadata-only command preparation from managed-path resolution without bypassing ownership checks for filesystem operations.
 
 <br>
 
@@ -221,7 +94,11 @@ Treat this as the parking lot for actionable problems discovered while working b
   private ACL helper. The materializer now owns directory creation, with a
   regression covering fresh extraction and rebuild. Native Windows verification
   of the rebuilt installer remains manual and deferred.
-- **Suggested next step:** Leave the native jobs disabled while this work is deferred. Revisit when Windows/macOS validation is explicitly back in scope, starting with the recorded installation/ACL and standalone dependency failures, then path/interpreter and secret/UI workflows. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
-- **Related:** The [desktop shortcut follow-up](#p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows) covers native shortcut creation, launch, and removal.
+- **Suggested next step:** Leave the native jobs disabled while this work is deferred. When suitable environments are available, validate native Windows install and uninstall, ACLs, shortcuts, and standalone dependencies first. Then investigate the recorded macOS path, interpreter, and secret/UI failures. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
+
+<a id="p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows"></a>
+
+- **Desktop shortcut verification (Windows):** The automated test uses a stand-in for Windows Script Host. Verify shortcut creation, launch, and removal for managed and editable installs on native Windows. Check the icon in Windows Installed apps and the classic-console uninstall window.
+- **Executable version verification (Windows):** Check the actual PowerShell command, numeric and textual versions, prerelease flag, and uninstall entry on a fresh PersoDB installation and after an update replaces its launcher. [Windows verification](docs/Development.md#verify-on-windows)
 
 <br>

@@ -1259,6 +1259,57 @@ def _restore_pending_candidate_archive(
     return archive
 
 
+def _checkpoint_activation(
+    manager: InstallationManager, operation_id: UUID, revision: str
+) -> str:
+    """Record the final pre-activation checkpoints for a published command."""
+    for step in (OperationStep.SUPPORT_READY, OperationStep.REGISTRATION_READY):
+        current = _checkpoint(manager, operation_id, revision, step)
+        revision = current.revision or ""
+    report("stage", "Saving Installation Record")
+    return revision
+
+
+def _commit_activation(
+    manager: InstallationManager,
+    *,
+    operation_id: UUID,
+    revision: str,
+    observed: RuntimeSlot | EditableCheckout,
+    outputs: list[OwnedOutput],
+    command: Path,
+    version: str,
+) -> InstallationInspection:
+    """Commit the candidate, then publish optional registration metadata."""
+    result = manager.commit_install(
+        operation_id=operation_id,
+        expected_revision=revision,
+        observed=observed,
+        owned_outputs=tuple(outputs),
+    )
+    report(
+        "result",
+        "Installation record",
+        "RECORDED",
+        manager.directory / "installation.json",
+    )
+    from apprc.distribution.runtime._windows_registration import (
+        publish_registration,
+    )
+    from apprc.distribution.runtime._icons import ready_icon
+
+    result, icon, icon_resolved = ready_icon(result, publish=True)
+    result = publish_registration(
+        result,
+        version,
+        command,
+        _MAINTENANCE_GROUP.get(),
+        icon=icon,
+        preserve_icon=not icon_resolved,
+    )
+    return _finish_installation(manager, result)
+
+
 def _install_managed_candidate(
     manager: InstallationManager,
     plan: InstallPlan,
@@ -1387,41 +1438,17 @@ def _install_managed_candidate(
             report("result", "Global command", "PUBLISHED", item.path)
         paths = {item.path for item in outputs}
         outputs.extend(item for item in prior_outputs if item.path not in paths)
-        for step in (
-            OperationStep.SUPPORT_READY,
-            OperationStep.REGISTRATION_READY,
-        ):
-            current = _checkpoint(manager, plan.operation_id, revision, step)
-            revision = current.revision or ""
-        report("stage", "Saving Installation Record")
+        revision = _checkpoint_activation(manager, plan.operation_id, revision)
         activation_started = True
-        result = manager.commit_install(
+        return _commit_activation(
+            manager,
             operation_id=plan.operation_id,
-            expected_revision=revision,
+            revision=revision,
             observed=observed,
-            owned_outputs=tuple(outputs),
+            outputs=outputs,
+            command=stable,
+            version=observed.version or "",
         )
-        report(
-            "result",
-            "Installation record",
-            "RECORDED",
-            directory / "installation.json",
-        )
-        from apprc.distribution.runtime._windows_registration import (
-            publish_registration,
-        )
-        from apprc.distribution.runtime._icons import ready_icon
-
-        result, icon, icon_resolved = ready_icon(result, publish=True)
-        result = publish_registration(
-            result,
-            observed.version or "",
-            stable,
-            _MAINTENANCE_GROUP.get(),
-            icon=icon,
-            preserve_icon=not icon_resolved,
-        )
-        return _finish_installation(manager, result)
     except BaseException as error:
         committed = _failed_operation(
             manager,
@@ -2424,49 +2451,17 @@ def register_editable_application(
                 *(item for item in prior_outputs if item.path != output.path),
                 output,
             ]
-            current = _checkpoint(
-                manager,
-                operation_id,
-                revision,
-                OperationStep.SUPPORT_READY,
-            )
-            revision = current.revision or ""
-            current = _checkpoint(
-                manager,
-                operation_id,
-                revision,
-                OperationStep.REGISTRATION_READY,
-            )
-            revision = current.revision or ""
-            report("stage", "Saving Installation Record")
+            revision = _checkpoint_activation(manager, operation_id, revision)
             activation_started = True
-            result = manager.commit_install(
+            return _commit_activation(
+                manager,
                 operation_id=operation_id,
-                expected_revision=revision,
+                revision=revision,
                 observed=observed,
-                owned_outputs=tuple(outputs),
+                outputs=outputs,
+                command=global_command,
+                version=str(observations["version"]),
             )
-            report(
-                "result",
-                "Installation record",
-                "RECORDED",
-                manager.directory / "installation.json",
-            )
-            from apprc.distribution.runtime._windows_registration import (
-                publish_registration,
-            )
-            from apprc.distribution.runtime._icons import ready_icon
-
-            result, icon, icon_resolved = ready_icon(result, publish=True)
-            result = publish_registration(
-                result,
-                str(observations["version"]),
-                global_command,
-                _MAINTENANCE_GROUP.get(),
-                icon=icon,
-                preserve_icon=not icon_resolved,
-            )
-            return _finish_installation(manager, result)
         except BaseException as error:
             committed = _failed_operation(
                 manager,

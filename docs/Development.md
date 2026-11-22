@@ -135,6 +135,11 @@ process interruption retain honest recovery checkpoints.
 Stable resource locks are never unlinked during rollback. A newly initialized
 state root may retain its owner marker and known subordinate lock files after
 empty logs removal; this inert coordination residue must remain retryable.
+Applications that use resource leases must validate captured installation
+authority and register each new lease inside the same managed resource lock.
+Acquire installation authority before resource and application registry locks.
+A pending uninstall rejects new admissions. Leave lease release independent of
+admission so existing readers can close while the user prepares to retry.
 In `runtime/uninstall_handoff.py`, pending uninstall preparation validates authority and
 containment before the caller-exit handshake. Execution waits outside the
 installation lock, then rechecks authority under the lock before mutation.
@@ -214,6 +219,11 @@ AppRC runtime preparation classifies each invocation from a single capture of
 its current or forwarded argument tokens. Use the existing token parser and
 check the mounted callback identity for generated root commands that can share
 a name with a host command.
+
+Mounted `CliRuntime.prepare()` handles recognized nested help before consulting
+the runtime policy, so nested help stays lightweight. `skip_help=False` applies
+to standalone evaluation through `CliRuntimePolicy.request_skips_runtime()`
+and `RuntimeIndependentCommand.matches()`.
 
 Keep installation wizard prompts, completion text, verification commands,
 and next steps aligned with the current mounted CLI whenever commands,

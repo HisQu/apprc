@@ -121,7 +121,8 @@ class RuntimeIndependentCommand:
         need runtime state.
     :param skip_empty: Whether a bare command group may skip runtime state.
     :param skip_help: Whether help for this command group or its declared
-        actions may skip runtime state.
+        actions may skip runtime state when evaluating the policy directly.
+        Mounted runtimes handle recognized nested help before policy evaluation.
     """
 
     exact_actions: Collection[tuple[str, ...]] = ()

@@ -19,6 +19,29 @@ from apprc.definition.paths import Layout, Paths
 from apprc.user_files.installation.codec import _decode, _encode, _pairs
 
 
+_PREVIEW_DEFAULT_MEMBER = "preview-default"
+_PREVIEW_DEFAULT_POLICY = b"beta-rc\n"
+
+
+def read_preview_default(archive: ZipFile) -> bool:
+    """Read the optional standalone setup policy outside the binding schema."""
+    entries = [
+        item
+        for item in archive.infolist()
+        if item.filename == _PREVIEW_DEFAULT_MEMBER
+    ]
+    if not entries:
+        return False
+    if (
+        len(entries) != 1
+        or entries[0].file_size != len(_PREVIEW_DEFAULT_POLICY)
+        or archive.read(entries[0]) != _PREVIEW_DEFAULT_POLICY
+        or "preview-binding.json" not in archive.namelist()
+    ):
+        raise ValueError("Native setup has an invalid preview default policy.")
+    return True
+
+
 def relative_destination(value: str | PurePosixPath) -> PurePosixPath:
     """Validate a portable normalized relative file address."""
     path = PurePosixPath(value)
@@ -42,6 +65,7 @@ class PreviewProduct:
     display_name: str
     bootstrap_env_prefix: str
     install_next_step: str | None = None
+    default_for_beta_rc: bool = False
 
 
 @dataclass(frozen=True, slots=True)

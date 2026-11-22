@@ -15,12 +15,13 @@ from typing import TYPE_CHECKING, NamedTuple
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-from zipfile import BadZipFile, ZipFile
+from zipfile import BadZipFile, ZipFile, is_zipfile
 
 from apprc.distribution.models import (
     GitHubReleaseSource,
     NativeBinding,
     read_native_bindings,
+    read_preview_default,
 )
 from apprc.distribution.native import NativeTarget, _artifact_info
 from apprc.user_files.app_home.locations import assert_no_links
@@ -126,6 +127,15 @@ def _inspect_native_products(
         return binding, preview
     except (BadZipFile, KeyError, UnicodeError) as error:
         raise ValueError(f"Invalid native artifact {path}: {error}") from error
+
+
+def regular_setup_arguments(setup: Path) -> tuple[str, ...]:
+    """Select Regular explicitly when a verified setup declares a new default."""
+    if is_zipfile(setup):
+        with ZipFile(setup) as archive:
+            if read_preview_default(archive):
+                return ("--regular",)
+    return ()
 
 
 def _inspect_native_setup(

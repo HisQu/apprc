@@ -1038,8 +1038,26 @@ the first option.
 | Command | Result |
 | --- | --- |
 | `<setup> --preview` | Install or update the preview and leave it installed. |
+| `<setup> --regular` | Install or replace the regular application on a setup that supports the prerelease preview default. |
 | `<setup> --smoke` | Install a fresh preview, verify its runtime, and wait for uninstall to finish. |
 | `<preview-command> app uninstall` | Remove the preview through the ordinary uninstall workflow. |
+
+When the publisher enables the preview default for beta and release candidate
+builds, launching one of those setups directly selects Preview. Pass
+`--regular` as the first option to select the regular installation explicitly.
+
+From the installed managed command, choose a published version and install it
+as Preview. Run update to apply a newer version to an existing Preview.
+
+```shell
+demo app install --preview --version 2.0.0b1
+demo update --preview --version 2.0.0b2
+```
+
+Use `demo app update` if the root alias is disabled. Both commands also accept
+`--release TAG` for exact release selection. Installation follows the setup's
+replacement confirmation. The update command checks the existing preview
+version and rejects downgrades.
 
 On Windows, run the verified preview-enabled setup from its download directory
 in PowerShell.

@@ -104,6 +104,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   published GitHub release, including a prerelease.
 - Managed application updates accept `--version` (`-v`) to select a published
   package version using Python, SemVer, or Windows numeric spelling.
+- Managed applications can install or update a specific published release as
+  Preview. Publishers can make standalone beta and release-candidate setups
+  default to Preview.
 
 ### 🛠️ Changed
 

@@ -23,6 +23,7 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.definition.resolution import CliRuntimeOptions, ResolveOptions
+from apprc.distribution._release_assets import regular_setup_arguments
 from apprc.distribution.frontends import _check_old_setup, _inspect_native_setup
 from apprc.distribution.runtime._os_integration import validate_global_command
 from apprc.distribution.runtime._uninstall_controller import (
@@ -361,7 +362,16 @@ def run_distribution_test(
                 [group, "install", "-e", *flags] if binding is None else flags
             )
             _run(
-                [str(executable), *root_arguments, *arguments],
+                [
+                    str(executable),
+                    *(
+                        regular_setup_arguments(executable)
+                        if binding is not None
+                        else ()
+                    ),
+                    *root_arguments,
+                    *arguments,
+                ],
                 cwd=root,
                 environment=environment,
             )

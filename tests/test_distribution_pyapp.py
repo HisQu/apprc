@@ -1304,6 +1304,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     metadata = preview_project / "pyproject.toml"
     metadata.write_text(
         metadata.read_text()
+        .replace("version = '1.0.0'", "version = '2.0.0b1'", 1)
         .replace(
             "[project.scripts]\n",
             "[project.scripts]\nfixture-preview = 'fixture_preview:main'\n",
@@ -1314,6 +1315,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         "command-name = 'fixture-preview'\n"
         "apprc-reference = 'fixture_preview:APP_RC'\n"
         "bootstrap-env-prefix = 'FIXTURE_PREVIEW'\n"
+        "default-for-beta-rc = true\n"
     )
     (preview_project / "fixture_preview.py").write_text(
         "import os, sys\n"
@@ -1332,6 +1334,8 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     )
     author = {
         **authoring_environment(),
+        "RELEASE_REPO_OLIS": "fixture/app",
+        "RELEASE_PUBLIC": "false",
         "GIT_AUTHOR_NAME": "AppRC native fixture",
         "GIT_COMMITTER_NAME": "AppRC native fixture",
         "GIT_AUTHOR_EMAIL": "native-fixture@example.invalid",
@@ -1391,7 +1395,12 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     sentinel = root / "appdata" / "sentinel.txt"
     sentinel.write_bytes(b"personal data")
     updated = invoke(
-        setup, "--yes", "--skip-setup", "--command-directory", str(commands)
+        setup,
+        "--regular",
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
     )
     assert updated.returncode == 0, updated.stdout + updated.stderr
     regular_before = regular_authority.read_bytes()
@@ -1403,7 +1412,6 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     assert "overlaps a protected path" in overlapping.stderr
     preview = invoke(
         setup,
-        "-p",
         "--yes",
         "--skip-setup",
         "--command-directory",
@@ -1460,6 +1468,147 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     )
     assert sentinel.read_bytes() == b"personal data"
 
+    # > Retain the beta assets while preparing another release from a newer version.
+    beta_release = tmp_path / "beta-release"
+    shutil.copytree(setup.parent, beta_release)
+    metadata.write_text(metadata.read_text().replace("2.0.0b1", "2.0.0rc1", 1))
+    run([str(uv), "lock"], environment=author, cwd=preview_project)
+    run(
+        ["git", "add", "--", "pyproject.toml", "uv.lock"],
+        environment=author,
+        cwd=preview_project,
+    )
+    run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-qm", "preview rc"],
+        environment=author,
+        cwd=preview_project,
+    )
+    rc_spec = read_distribution_spec(preview_project)
+    rc_snapshot = build_project_snapshot(
+        rc_spec, revision="HEAD", destination=tmp_path / "preview-rc.zip"
+    )
+    rc_product = build_native_distribution(
+        rc_spec,
+        rc_snapshot,
+        uv=uv,
+        workspace=tmp_path / "build-rc",
+        environment=author,
+        extras=("native-feature",),
+        targets=("x86_64-unknown-linux-gnu",),
+    )
+    rc_release = tmp_path / "rc-release"
+    shutil.copytree(rc_product.artifacts[0].path.parent, rc_release)
+    gh = commands / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\n"
+        "import json, shutil, sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "tag = args[-1].rsplit('/', 1)[-1]\n"
+        f"releases = {{'v2.0.0b1': {str(beta_release)!r}, 'v2.0.0rc1': {str(rc_release)!r}}}\n"
+        "assert tag in releases, args\n"
+        "if args[0] == 'api':\n"
+        " print('HTTP/2.0 200 OK\\n')\n"
+        " print(json.dumps({'tag_name': tag, 'draft': False, 'prerelease': True}))\n"
+        "else:\n"
+        " assert args[:2] == ['release', 'download']\n"
+        " destination = Path(args[args.index('--dir') + 1])\n"
+        " for index, arg in enumerate(args):\n"
+        "  if arg == '--pattern':\n"
+        "   shutil.copyfile(Path(releases[tag]) / args[index + 1], destination / args[index + 1])\n",
+        encoding="utf-8",
+    )
+    gh.chmod(0o700)
+    missing = invoke(
+        regular_command, "update", "--preview", "--version", "2.0.0rc1", "--yes"
+    )
+    assert missing.returncode != 0
+    assert "Preview is not installed" in missing.stderr
+    install_flags = (
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(commands),
+    )
+    installed = invoke(
+        regular_command,
+        "app",
+        "install",
+        "--preview",
+        "--version",
+        "2.0.0b1",
+        *install_flags,
+    )
+    assert installed.returncode == 0, installed.stdout + installed.stderr
+    assert _record(preview_dir)["active_runtime"]["version"] == "2.0.0b1"
+    preview_data = Path(_record(preview_dir)["placement"]["appdata_dir"])
+    preview_sentinel = preview_data / "preview-data.txt"
+    preview_sentinel.write_text("preview data")
+    preview_before_override = preview_authority.read_bytes()
+    override = invoke(
+        regular_command,
+        "--app-root",
+        str(root),
+        "update",
+        "--preview",
+        "--version",
+        "2.0.0rc1",
+        "--yes",
+    )
+    assert override.returncode != 0
+    assert "Preview uses fixed native application paths." in override.stderr
+    assert preview_authority.read_bytes() == preview_before_override
+    updated = invoke(
+        regular_command,
+        "update",
+        "--preview",
+        "--version",
+        "2.0.0rc1",
+        "--yes",
+    )
+    assert updated.returncode == 0, updated.stdout + updated.stderr
+    assert _record(preview_dir)["active_runtime"]["version"] == "2.0.0rc1"
+    assert preview_sentinel.read_text() == "preview data"
+    down = invoke(
+        regular_command,
+        "app",
+        "update",
+        "--preview",
+        "--release",
+        "v2.0.0b1",
+        "--yes",
+    )
+    assert down.returncode != 0
+    assert "older than installed" in down.stderr
+    replaced = invoke(
+        regular_command,
+        "app",
+        "install",
+        "--preview",
+        "--release",
+        "v2.0.0b1",
+        *install_flags,
+    )
+    assert replaced.returncode == 0, replaced.stdout + replaced.stderr
+    assert _record(preview_dir)["active_runtime"]["version"] == "2.0.0b1"
+    assert preview_sentinel.read_text() == "preview data"
+    assert regular_authority.read_bytes() == regular_before
+    assert (
+        hashlib.sha256(regular_command.read_bytes()).digest() == regular_digest
+    )
+    assert sentinel.read_bytes() == b"personal data"
+
+    preview_before_regular_update = preview_authority.read_bytes()
+    regular_update = invoke(
+        regular_command, "update", "--version", "2.0.0rc1", "--yes"
+    )
+    assert regular_update.returncode == 0, (
+        regular_update.stdout + regular_update.stderr
+    )
+    assert _record(regular_dir)["active_runtime"]["version"] == "2.0.0rc1"
+    assert preview_authority.read_bytes() == preview_before_regular_update
+    assert sentinel.read_bytes() == b"personal data"
+
     # > A legacy setup may choose a custom regular root after preview installs.
     environment, commands = _host(tmp_path / "reverse-host")
     preview_again = invoke(
@@ -1486,7 +1635,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         "--command-directory",
         str(commands),
     )
-    new_setup = invoke(setup, *regular_args)
+    new_setup = invoke(setup, "--regular", *regular_args)
     assert new_setup.returncode != 0
     assert "overlaps a protected path" in new_setup.stderr
     old_setup = invoke(legacy_setup, *regular_args)

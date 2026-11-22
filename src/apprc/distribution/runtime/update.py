@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -10,9 +11,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from queue import Empty, Queue
+from uuid import UUID
 from threading import Thread
 from typing import TYPE_CHECKING
 
@@ -26,6 +28,7 @@ from apprc.definition.installation import (
 )
 from apprc.definition.resolution import resolve_editable_environment
 from apprc.distribution._release_assets import (
+    DownloadedReleaseSetup,
     _inspect_native_products,
     download_release_setup,
 )
@@ -52,6 +55,7 @@ if TYPE_CHECKING:
     from apprc.distribution.models import NativeBinding
     from apprc.distribution.native import NativeTarget
     from apprc.services.installation import InstallationManager
+    from packaging.version import Version
 
 
 def _tool(name: str, environment: Mapping[str, str]) -> str:
@@ -69,19 +73,17 @@ def _retry_command(arguments: list[str]) -> str:
     return shlex.join(arguments)
 
 
-def _managed_update(
-    record: InstallationRecord,
-    active: RuntimeSlot,
+def _verified_release_candidate(
     binding: NativeBinding,
     stage: Path,
     environment: Mapping[str, str],
-    work: UpdateWork,
-    confirm: Callable[[str], None],
     *,
     regular_app_id: str,
     release_tag: str | None,
     release_version: str | None,
-) -> bool:
+    expected_regular: NativeBinding | None = None,
+) -> tuple[DownloadedReleaseSetup, NativeBinding, Version, bool]:
+    """Download one release and verify its package and intended product."""
     from packaging.version import InvalidVersion, Version
 
     source = binding.release_source
@@ -102,13 +104,6 @@ def _managed_update(
         if sys.platform == "win32"
         else "x86_64-unknown-linux-gnu"
     )
-    if (
-        binding.identity != record.identity
-        or binding.command_name != record.command_name
-    ):
-        raise InstallationError(
-            "The manager binding differs from the installed product."
-        )
     try:
         requested = (
             Version(release_version) if release_version is not None else None
@@ -131,23 +126,27 @@ def _managed_update(
     regular, preview = _inspect_native_products(
         setup, app_id=regular_app_id, target=target
     )
-    is_preview = regular.identity != record.identity
+    if expected_regular is not None and (
+        regular.identity != expected_regular.identity
+        or regular.command_name != expected_regular.command_name
+    ):
+        raise InstallationError(
+            "The downloaded setup belongs to a different regular product."
+        )
+    is_preview = (
+        expected_regular is not None or regular.identity != binding.identity
+    )
     candidate = preview if is_preview else regular
     if (
         candidate is None
-        or candidate.identity != record.identity
-        or candidate.command_name != record.command_name
+        or candidate.identity != binding.identity
+        or candidate.command_name != binding.command_name
     ):
         raise InstallationError(
             "The downloaded setup does not match the installed product."
         )
-    if active.version is None:
-        raise InstallationError("The installed runtime version is unavailable.")
     try:
-        current_version, next_version = (
-            Version(active.version),
-            Version(candidate.version),
-        )
+        next_version = Version(candidate.version)
     except InvalidVersion as error:
         raise InstallationError(
             "The installed or publisher version is invalid."
@@ -166,6 +165,107 @@ def _managed_update(
                 f"Release {download.tag!r} contains version {candidate.version}, "
                 f"expected {download.version} for {release_version!r}."
             )
+    return download, candidate, next_version, is_preview
+
+
+def install_preview_release(
+    invoking_manager: InstallationManager,
+    manager: InstallationManager,
+    binding: NativeBinding,
+    *,
+    regular: NativeBinding,
+    release_tag: str | None,
+    release_version: str | None,
+    arguments: Sequence[str],
+) -> int:
+    """Apply an explicit released Preview setup through its manual install path."""
+    from apprc.distribution.runtime._install_progress import installation_color
+    from apprc.distribution.runtime.acquisition import _assert_private_staging
+    from apprc.interfaces._terminal_console import color_environment
+
+    environment = runtime_environment(invoking_manager.environment)
+    parent = Path(tempfile.gettempdir()).resolve(strict=True)
+    if any(
+        parent.is_relative_to(current.directory.resolve())
+        for current in (invoking_manager, manager)
+    ):
+        raise InstallationError(
+            "The temporary directory is inside an installation."
+        )
+    with tempfile.TemporaryDirectory(
+        prefix="apprc-preview-release-", dir=parent
+    ) as staging:
+        stage = Path(staging)
+        if os.name == "nt":
+            set_windows_private_acl(stage)
+        _assert_private_staging(stage)
+        download, _, _, _ = _verified_release_candidate(
+            binding,
+            stage,
+            environment,
+            regular_app_id=regular.identity.app_id,
+            release_tag=release_tag,
+            release_version=release_version,
+            expected_regular=regular,
+        )
+        setup = download.path
+        assert_no_links(setup)
+        with setup.open("rb") as stream:
+            if (
+                hashlib.file_digest(stream, "sha256").hexdigest()
+                != download.digest
+            ):
+                raise InstallationError(
+                    "The verified setup changed before execution."
+                )
+        if os.name != "nt":
+            setup.chmod(0o700)
+        return subprocess.run(
+            [str(setup), "--preview", *arguments],
+            env=color_environment(environment, installation_color.get()),
+            check=False,
+        ).returncode
+
+
+def _managed_update(
+    record: InstallationRecord,
+    active: RuntimeSlot,
+    binding: NativeBinding,
+    stage: Path,
+    environment: Mapping[str, str],
+    work: UpdateWork,
+    confirm: Callable[[str], None],
+    *,
+    regular_app_id: str,
+    release_tag: str | None,
+    release_version: str | None,
+) -> bool:
+    from packaging.version import InvalidVersion, Version
+
+    if (
+        binding.identity != record.identity
+        or binding.command_name != record.command_name
+    ):
+        raise InstallationError(
+            "The manager binding differs from the installed product."
+        )
+    download, candidate, next_version, is_preview = _verified_release_candidate(
+        binding,
+        stage,
+        environment,
+        regular_app_id=regular_app_id,
+        release_tag=release_tag,
+        release_version=release_version,
+    )
+    setup = download.path
+    if active.version is None:
+        raise InstallationError("The installed runtime version is unavailable.")
+    try:
+        current_version = Version(active.version)
+    except InvalidVersion as error:
+        raise InstallationError(
+            "The installed or publisher version is invalid."
+        ) from error
     if next_version < current_version:
         raise InstallationError(
             f"Published version {candidate.version} is older than installed {active.version}."
@@ -179,7 +279,7 @@ def _managed_update(
         return False
     release = (
         f" (release {download.tag!r})"
-        if release_tag is not None or requested is not None
+        if release_tag is not None or release_version is not None
         else ""
     )
     confirm(
@@ -424,6 +524,7 @@ def update_application(
     confirm: Callable[[str], None],
     release_tag: str | None = None,
     release_version: str | None = None,
+    expected_target: tuple[UUID, str] | None = None,
 ) -> int:
     """Update the ready installation associated with this command."""
     if release_tag is not None and release_version is not None:
@@ -441,7 +542,9 @@ def update_application(
                 "No ready installation is registered for this application."
             )
         revision = inspection.revision
-        require_update_record(inspection, (record.generation_id, revision))
+        require_update_record(
+            inspection, expected_target or (record.generation_id, revision)
+        )
         command_dir = recorded_command_directory(record, manager.directory)
     runtime = record.active_runtime
     editable = runtime if isinstance(runtime, EditableCheckout) else None

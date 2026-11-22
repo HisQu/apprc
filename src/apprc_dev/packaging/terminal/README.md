@@ -515,6 +515,12 @@ GitHub release tag. The
 explains release selection, version checks, and the Git/uv workflow for
 editable checkouts. Update support depends on the version the application ships.
 
+For a managed app with a preview identity, use
+`yourapp app install --preview --version VERSION` to install a published release
+as a preview. Use `yourapp update --preview --version VERSION` to update an
+existing preview when the alias is enabled. A publisher can make standalone
+beta and release-candidate setups default to Preview.
+
 ### Keep the installation's saved placement
 
 Managed setup prepares and validates a replacement runtime before activating it.

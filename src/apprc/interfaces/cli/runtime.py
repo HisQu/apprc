@@ -643,6 +643,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             checkout_installation=checkout_installer is not None,
             preview_options=checkout_installer is not None
             and checkout_installer.preview,
+            native_preview_release=self.native_binding is not None,
             host_diagnostics=host_diagnostics,
             resource_diagnostics=resource_diagnostics,
             resource_group_extensions=resource_group_extensions,

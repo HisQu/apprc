@@ -729,6 +729,15 @@ installation and smoke cleanup. On Windows, also check that smoke uses a
 separate uninstall registration and leaves user PATH intact. Record native
 Windows evidence separately from Linux execution and cross-compilation.
 
+Set `default-for-beta-rc = true` under
+`[tool.apprc.distribution.preview]` to make a beta or release candidate setup
+default to Preview when launched directly. Validate the default alongside an
+existing regular installation, then use `--regular` to select Regular
+explicitly. Guided managed validation and Source Builds select Regular for
+setups carrying this policy. Exercise release-selected Preview install and
+update through the installed regular command, and compare both installation
+records before and after the operation.
+
 ### Choose a default action for an installed command
 
 An application can opt into a default action by choosing what its CLI runs

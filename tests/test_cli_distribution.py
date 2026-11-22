@@ -203,6 +203,10 @@ assert "prompt_toolkit" not in sys.modules
             "--release" in line and "TAG" in line
             for line in output.splitlines()
         )
+        assert any(
+            "--version" in line and "-v" in line.split() and "VERSION" in line
+            for line in output.splitlines()
+        )
         assert "Update the registered release or editable checkout." in output
 
 

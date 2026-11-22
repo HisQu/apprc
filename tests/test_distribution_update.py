@@ -11,13 +11,15 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import replace
+from email.message import Message
 from io import BytesIO
 from pathlib import Path
 from typing import cast
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
 import pytest
+from packaging.version import Version
 
 from apprc import AppRC
 from apprc.definition.installation import EditableCheckout, OwnedOutput
@@ -73,7 +75,7 @@ def test_release_download_uses_one_tag_and_checks_manifest(
         lambda request, **_kwargs: BytesIO(responses.pop(request.full_url)),
     )
 
-    def download() -> tuple[Path, str]:
+    def download() -> _release_assets.DownloadedReleaseSetup:
         return _release_assets.download_release_setup(
             GitHubReleaseSource(repository, True),
             app_id="app",
@@ -84,9 +86,10 @@ def test_release_download_uses_one_tag_and_checks_manifest(
         )
 
     if valid:
-        path, downloaded_digest = download()
-        assert path.read_bytes() == artifact
-        assert downloaded_digest == digest
+        result = download()
+        assert result.path.read_bytes() == artifact
+        assert result.digest == digest
+        assert result.tag == (release_tag or "v2.0")
     else:
         with pytest.raises(ValueError, match="release checksum"):
             download()
@@ -173,6 +176,7 @@ def test_release_download_rejects_invalid_explicit_tag_before_lookup(
         ("-v2.0rc1", "published"),
         ("-v2.0rc1", "draft"),
         ("-v2.0rc1", "missing"),
+        ("-v2.0rc1", "forbidden"),
         ("-v2.0rc1", "missing-setup"),
         ("-v2.0rc1", "missing-manifest"),
     ],
@@ -200,9 +204,21 @@ def test_private_release_download_uses_exact_tag(
     ) -> subprocess.CompletedProcess[bytes]:
         calls.append(args)
         assert kwargs["env"] == environment
+        if args[1] == "api":
+            status = {"missing": 404, "forbidden": 403}.get(outcome, 200)
+            body = json.dumps(
+                {
+                    "tag_name": tag,
+                    "draft": outcome == "draft",
+                    "prerelease": True,
+                }
+            ).encode()
+            return subprocess.CompletedProcess(
+                args,
+                int(status != 200),
+                stdout=f"HTTP/2.0 {status}\r\n\r\n".encode() + body,
+            )
         if args[2] == "view":
-            if outcome == "missing":
-                raise subprocess.CalledProcessError(1, args)
             return subprocess.CompletedProcess(
                 args,
                 0,
@@ -222,7 +238,7 @@ def test_private_release_download_uses_exact_tag(
 
     monkeypatch.setattr(_release_assets.subprocess, "run", run)
 
-    def download() -> tuple[Path, str]:
+    def download() -> _release_assets.DownloadedReleaseSetup:
         return _release_assets.download_release_setup(
             GitHubReleaseSource(repository, False),
             app_id="app",
@@ -241,10 +257,18 @@ def test_private_release_download_uses_exact_tag(
             f"github.com/{repository}",
             "--json",
             "tagName,isDraft,isPrerelease",
-            *(["--", release_tag] if release_tag is not None else []),
+        ]
+        if release_tag is None
+        else [
+            "gh",
+            "api",
+            "--hostname",
+            "github.com",
+            "--include",
+            f"repos/{repository}/releases/tags/{release_tag}",
         ]
     ]
-    if outcome not in {"draft", "missing"}:
+    if outcome not in {"draft", "missing", "forbidden"}:
         expected_calls.append(
             [
                 "gh",
@@ -263,15 +287,15 @@ def test_private_release_download_uses_exact_tag(
             ]
         )
     if outcome == "published":
-        assert download() == (setup, digest)
+        assert download() == (setup, digest, tag, None)
         assert setup.read_bytes() == artifact
     else:
         with pytest.raises(ValueError, match=repository) as failure:
             download()
         assert tag in str(failure.value)
-        if outcome == "missing":
+        if outcome in {"missing", "forbidden"}:
             assert "gh auth status" in str(failure.value)
-        if outcome in {"draft", "missing"}:
+        if outcome in {"draft", "missing", "forbidden"}:
             assert not list(tmp_path.iterdir())
         else:
             assert setup.name in str(failure.value)
@@ -280,14 +304,160 @@ def test_private_release_download_uses_exact_tag(
 
 
 @pytest.mark.parametrize(
-    ("version", "changed", "release_tag", "error"),
+    ("requested", "published_tags", "winner", "expected", "lookup_status"),
     [
-        ("1.0", False, None, ""),
-        ("1.0", True, None, "bump the version"),
-        ("0.9", False, None, "older than installed"),
-        ("2.0", True, None, ""),
-        ("0.9rc1", False, "older/v0.9rc1", "older than installed"),
-        ("2.0rc1", True, "preview/v2.0rc1", ""),
+        (
+            "2.0.0rc1",
+            ("v2.0.0rc1", "v2.0.0-rc.1"),
+            "v2.0.0rc1",
+            "2.0.0rc1",
+            404,
+        ),
+        ("v2.0.0rc1", ("v2.0.0-rc.1",), "v2.0.0-rc.1", "2.0.0rc1", 404),
+        ("2.0.0-rc.1", ("2.0.0-rc.1",), "2.0.0-rc.1", "2.0.0rc1", 404),
+        ("v2.0.0-rc.1", ("2.0.0rc1",), "2.0.0rc1", "2.0.0rc1", 404),
+        ("2.0.0.301", ("v2.0.0rc1",), "v2.0.0rc1", "2.0.0rc1", 404),
+        ("v2.0.0.400", ("v2.0",), "v2.0", "2.0.0", 404),
+        ("2.0.0.301", ("v2.0.0.301",), "v2.0.0.301", "2.0.0.301", 404),
+        (
+            "2.0.0.301",
+            ("v2.0.0rc1", "v2.0.0.301"),
+            None,
+            "matches releases",
+            404,
+        ),
+        ("2.0.0", (), None, "No published release", 404),
+        ("2.0.0", ("2.0.0",), None, "at tag", 403),
+    ],
+)
+@pytest.mark.parametrize("public", [True, False])
+def test_release_version_resolves_before_downloading_assets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    requested: str,
+    published_tags: tuple[str, ...],
+    winner: str | None,
+    expected: str,
+    lookup_status: int,
+    public: bool,
+) -> None:
+    setup_name = "app-setup-linux-x86_64"
+    digest = hashlib.sha256(b"setup").hexdigest()
+    assets = {
+        setup_name: b"setup",
+        "SHA256SUMS": f"{digest}  {setup_name}\n".encode(),
+    }
+    downloaded: list[str] = []
+    looked_up: list[str] = []
+
+    def metadata(tag: str) -> bytes:
+        return json.dumps(
+            {
+                "tag_name": tag,
+                "draft": False,
+                "prerelease": "-" in tag or "rc" in tag,
+            }
+        ).encode()
+
+    def open_release(request: Request, **_kwargs: object) -> BytesIO:
+        if "/releases/tags/" in request.full_url:
+            tag = request.full_url.rsplit("/", 1)[-1]
+            looked_up.append(tag)
+            if tag not in published_tags:
+                raise HTTPError(
+                    request.full_url,
+                    lookup_status,
+                    "unavailable",
+                    Message(),
+                    None,
+                )
+            return BytesIO(metadata(tag))
+        _, tag, asset = request.full_url.rsplit("/", 2)
+        downloaded.append(tag)
+        return BytesIO(assets[asset])
+
+    def run(
+        arguments: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        tag = arguments[-1].rsplit("/", 1)[-1]
+        if arguments[1] == "api":
+            looked_up.append(tag)
+            if tag not in published_tags:
+                return subprocess.CompletedProcess(
+                    arguments,
+                    1,
+                    stdout=f"HTTP/2.0 {lookup_status}\n\n{{}}".encode(),
+                )
+            return subprocess.CompletedProcess(
+                arguments, 0, stdout=b"HTTP/2.0 200 OK\n\n" + metadata(tag)
+            )
+        assert arguments[1:3] == ["release", "download"]
+        downloaded.append(tag)
+        for name, contents in assets.items():
+            (tmp_path / name).write_bytes(contents)
+        return subprocess.CompletedProcess(arguments, 0)
+
+    monkeypatch.setattr(_release_assets, "urlopen", open_release)
+    monkeypatch.setattr(
+        _release_assets.shutil, "which", lambda *_a, **_kw: "gh"
+    )
+    monkeypatch.setattr(_release_assets.subprocess, "run", run)
+
+    def download() -> _release_assets.DownloadedReleaseSetup:
+        return _release_assets.download_release_setup(
+            GitHubReleaseSource("author/app", public),
+            app_id="app",
+            target="x86_64-unknown-linux-gnu",
+            directory=tmp_path,
+            environment={},
+            requested_version=Version(requested),
+        )
+
+    if winner is None:
+        with pytest.raises(ValueError, match=expected) as failure:
+            download()
+        if lookup_status == 403:
+            assert looked_up == ["v2.0.0"]
+        elif published_tags:
+            assert all(tag in str(failure.value) for tag in published_tags)
+            assert "--release TAG" in str(failure.value)
+        assert not downloaded
+    else:
+        selected = download()
+        assert selected.tag == winner
+        assert selected.version == Version(expected)
+        assert selected.path.read_bytes() == b"setup"
+        assert downloaded and set(downloaded) == {winner}
+
+
+@pytest.mark.parametrize(
+    (
+        "version",
+        "changed",
+        "release_tag",
+        "release_version",
+        "resolved",
+        "error",
+    ),
+    [
+        ("1.0", False, None, None, None, ""),
+        ("1.0", True, None, None, None, "bump the version"),
+        ("0.9", False, None, None, None, "older than installed"),
+        ("2.0", True, None, None, None, ""),
+        ("0.9rc1", False, "older/v0.9rc1", None, None, "older than installed"),
+        ("2.0rc1", True, "preview/v2.0rc1", None, None, ""),
+        ("2.0.0rc1", True, None, "2.0.0.301", "2.0.0rc1", ""),
+        (
+            "2.0.0.0rc1",
+            True,
+            None,
+            "2.0.0.301",
+            "2.0.0rc1",
+            "expected 2.0.0rc1",
+        ),
+        ("2.0.0rc2", True, None, "2.0.0rc1", "2.0.0rc1", "expected 2.0.0rc1"),
+        ("0.9rc1", False, None, "0.9rc1", "0.9rc1", "older than installed"),
+        ("2.0", True, None, "invalid", None, "Invalid requested version"),
     ],
 )
 def test_managed_update_compares_verified_binding_to_active_runtime(
@@ -296,6 +466,8 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
     version: str,
     changed: bool,
     release_tag: str | None,
+    release_version: str | None,
+    resolved: str | None,
     error: str,
 ) -> None:
     directory, runtime = managed_installation(tmp_path)
@@ -325,13 +497,19 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
     )
     setup = tmp_path / "setup"
     setup.touch()
-    selected_tags: list[str | None] = []
+    selections: list[tuple[str | None, Version | None]] = []
+    tag = release_tag or f"v{resolved or version}"
 
     def download(
-        *_args: object, release_tag: str | None = None, **_kwargs: object
-    ) -> tuple[Path, str]:
-        selected_tags.append(release_tag)
-        return setup, "digest"
+        *_args: object,
+        release_tag: str | None = None,
+        requested_version: Version | None = None,
+        **_kwargs: object,
+    ) -> _release_assets.DownloadedReleaseSetup:
+        selections.append((release_tag, requested_version))
+        return _release_assets.DownloadedReleaseSetup(
+            setup, "digest", tag, Version(resolved) if resolved else None
+        )
 
     monkeypatch.setattr(update, "download_release_setup", download)
     monkeypatch.setattr(
@@ -359,6 +537,7 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
             maintenance_group="app",
             confirm=confirmed.append,
             release_tag=release_tag,
+            release_version=release_version,
         )
 
     if error:
@@ -366,13 +545,18 @@ def test_managed_update_compares_verified_binding_to_active_runtime(
             perform()
     else:
         assert perform() == 0
-    assert selected_tags == [release_tag]
+    if release_version == "invalid":
+        assert not selections
+    else:
+        assert selections == [
+            (release_tag, Version(release_version) if release_version else None)
+        ]
     assert bool(confirmed) is (not error and version != runtime.version)
     assert bool(applied) == bool(confirmed)
     if confirmed:
         assert f"from {runtime.version} to {version}" in confirmed[0]
-        if release_tag is not None:
-            assert release_tag in confirmed[0]
+        if release_tag is not None or release_version is not None:
+            assert tag in confirmed[0]
     if applied:
         assert "--apprc-update-revision" in applied[0]["command"]
         assert applied[0]["command"][0] == str(setup)
@@ -392,7 +576,16 @@ def _git(cwd: Path, *arguments: str) -> str:
 )
 @pytest.mark.parametrize(
     "outcome",
-    ["success", "dirty", "ignored", "diverged", "sync", "registration", "tag"],
+    [
+        "success",
+        "dirty",
+        "ignored",
+        "diverged",
+        "sync",
+        "registration",
+        "tag",
+        "version",
+    ],
 )
 def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     tmp_path: Path,
@@ -478,8 +671,8 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
 
     def run(arguments: Sequence[str], **kwargs: object):
         command = list(arguments)
-        if outcome == "tag":
-            pytest.fail(f"editable tag selection launched {command[0]}")
+        if outcome in {"tag", "version"}:
+            pytest.fail(f"editable release selection launched {command[0]}")
         if command[0] == str(prefix / "bin" / "python"):
             return subprocess.CompletedProcess(command, 0)
         if command[0] in {
@@ -521,11 +714,13 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             maintenance_group="app",
             confirm=confirmed.append,
             release_tag="v2.0" if outcome == "tag" else None,
+            release_version="2.0" if outcome == "version" else None,
         )
 
-    if outcome == "tag":
+    if outcome in {"tag", "version"}:
+        selector = "--release" if outcome == "tag" else "--version"
         with pytest.raises(
-            ValueError, match="--release requires a managed"
+            ValueError, match=f"{selector} requires a managed"
         ) as failure:
             perform()
         assert "upstream branch" in str(failure.value)

@@ -80,6 +80,7 @@ def _managed_update(
     *,
     regular_app_id: str,
     release_tag: str | None,
+    release_version: str | None,
 ) -> bool:
     from packaging.version import InvalidVersion, Version
 
@@ -108,14 +109,25 @@ def _managed_update(
         raise InstallationError(
             "The manager binding differs from the installed product."
         )
-    setup, digest = download_release_setup(
+    try:
+        requested = (
+            Version(release_version) if release_version is not None else None
+        )
+    except InvalidVersion as error:
+        raise InstallationError(
+            f"Invalid requested version {release_version!r}."
+        ) from error
+
+    download = download_release_setup(
         source,
         app_id=regular_app_id,
         target=target,
         directory=stage,
         environment=environment,
         release_tag=release_tag,
+        requested_version=requested,
     )
+    setup = download.path
     regular, preview = _inspect_native_products(
         setup, app_id=regular_app_id, target=target
     )
@@ -140,6 +152,20 @@ def _managed_update(
         raise InstallationError(
             "The installed or publisher version is invalid."
         ) from error
+    if download.version is not None:
+        from apprc.distribution.runtime._windows_version import (
+            numeric_product_version,
+        )
+
+        assert requested is not None
+        if next_version != download.version or (
+            requested != download.version
+            and numeric_product_version(candidate.version) != requested.release
+        ):
+            raise InstallationError(
+                f"Release {download.tag!r} contains version {candidate.version}, "
+                f"expected {download.version} for {release_version!r}."
+            )
     if next_version < current_version:
         raise InstallationError(
             f"Published version {candidate.version} is older than installed {active.version}."
@@ -151,13 +177,17 @@ def _managed_update(
             )
         print(f"Already up to date ({active.version}).")
         return False
-    release = f" (release {release_tag!r})" if release_tag is not None else ""
+    release = (
+        f" (release {download.tag!r})"
+        if release_tag is not None or requested is not None
+        else ""
+    )
     confirm(
         f"Update {record.command_name} from {active.version} to {candidate.version}{release}?"
     )
     if os.name != "nt":
         setup.chmod(0o700)
-    work["setup_digest"] = digest
+    work["setup_digest"] = download.digest
     work["command"] = [
         str(setup),
         *(["--preview"] if is_preview else []),
@@ -393,8 +423,11 @@ def update_application(
     maintenance_group: str,
     confirm: Callable[[str], None],
     release_tag: str | None = None,
+    release_version: str | None = None,
 ) -> int:
     """Update the ready installation associated with this command."""
+    if release_tag is not None and release_version is not None:
+        raise InstallationError("Choose either --version or --release.")
     observed = manager.inspect()
     if observed.record is None or observed.revision is None:
         raise InstallationError(
@@ -412,10 +445,13 @@ def update_application(
         command_dir = recorded_command_directory(record, manager.directory)
     runtime = record.active_runtime
     editable = runtime if isinstance(runtime, EditableCheckout) else None
-    if editable is not None and release_tag is not None:
+    selector = "--release" if release_tag is not None else "--version"
+    if editable is not None and (
+        release_tag is not None or release_version is not None
+    ):
         raise InstallationError(
-            "--release requires a managed installation. Run update without "
-            "--release to follow the checkout's upstream branch."
+            f"{selector} requires a managed installation. Run update without "
+            f"{selector} to follow the checkout's upstream branch."
         )
     executables = tuple(
         Path(item.path)
@@ -498,6 +534,7 @@ def update_application(
                 confirm,
                 regular_app_id=regular_app_id or binding.identity.app_id,
                 release_tag=release_tag,
+                release_version=release_version,
             ):
                 return 0
         if os.name == "nt":

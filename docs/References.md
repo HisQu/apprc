@@ -363,6 +363,7 @@ and [author guidance for running both identities](Development.md#verify-an-opted
 | --- | --- |
 | `<app> app update` | Update the ready installation selected by the installed command. Applications with a custom maintenance group use that group in place of `app`. |
 | `<app> update` | Root alias enabled by default. Set `AppRC(update_alias=False)` to reserve the root name for the host. |
+| `--version VERSION`, `-v VERSION` | Select a published managed release by package version or by its Windows numeric version. Accepts an optional leading `v`. |
 | `--release TAG` | Select an exact published GitHub release tag, including a prerelease. Applies only to managed installations. The default selection is the latest stable release. |
 | `--yes`, `-y` | Apply an available update without prompting. |
 | `RELEASE_REPO_OLIS`, `--olis-repo`, `RELEASE_PUBLIC` | Authoring inputs that select the optional release source embedded in new native setups. |
@@ -371,8 +372,13 @@ Managed updates compare the active package version and source snapshot with
 the verified candidate. The same version and source is current. Changed
 source at the same version requires the publisher to bump the version.
 Older candidates leave the active installation in place. Preview uses the
-same release source and updates the preview identity. A missing or draft tag
-ends the update without selecting a different release.
+same release source and updates the preview identity. Use one selector per
+invocation. Version selection looks for canonical Python version tags first,
+then SemVer alpha, beta, or release candidate tags where applicable. Within
+each spelling AppRC tries the tag with a leading `v` first. It tries another
+spelling only when GitHub reports the tag missing. A numeric Windows version
+can also be a literal package version. If both versions have published
+releases, use the exact tag to select one.
 
 ### One-line install script reference
 

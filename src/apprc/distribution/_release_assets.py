@@ -11,6 +11,8 @@ import re
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING, NamedTuple
+from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from zipfile import BadZipFile, ZipFile
@@ -22,6 +24,10 @@ from apprc.distribution.models import (
 )
 from apprc.distribution.native import NativeTarget, _artifact_info
 from apprc.user_files.app_home.locations import assert_no_links
+
+
+if TYPE_CHECKING:
+    from packaging.version import Version
 
 
 def _read_native_checksums(path: Path, *, app_id: str) -> dict[str, str]:
@@ -126,6 +132,185 @@ def _inspect_native_setup(
     return binding
 
 
+class DownloadedReleaseSetup(NamedTuple):
+    """A verified release setup and the selection used to find it."""
+
+    path: Path
+    digest: str
+    tag: str
+    version: Version | None
+
+
+def _lookup_release_tag(
+    repository: str,
+    tag: str | None,
+    gh: str | None,
+    environment: Mapping[str, str],
+    headers: Mapping[str, str],
+) -> str | None:
+    """Read and validate release metadata, with None reserved for a missing tag."""
+    suffix = f"tags/{quote(tag, safe='')}" if tag is not None else "latest"
+    endpoint = f"repos/{repository}/releases/{suffix}"
+    selection = (
+        f"{repository} at tag {tag!r}" if tag is not None else repository
+    )
+    tag_key, draft_key, prerelease_key = "tag_name", "draft", "prerelease"
+    guidance = (
+        " Check `gh auth status` and access to the release." if gh else ""
+    )
+    try:
+        if gh is None:
+            try:
+                with urlopen(
+                    Request(
+                        f"https://api.github.com/{endpoint}",
+                        headers=dict(headers),
+                    ),
+                    timeout=60,
+                ) as response:
+                    release = json.load(response)
+            except HTTPError as error:
+                if tag is not None and error.code == 404:
+                    error.close()
+                    return None
+                raise
+        elif tag is not None:
+            result = subprocess.run(
+                [gh, "api", "--hostname", "github.com", "--include", endpoint],
+                env=dict(environment),
+                capture_output=True,
+                check=False,
+                timeout=60,
+            )
+            head, separator, body = result.stdout.replace(
+                b"\r\n", b"\n"
+            ).partition(b"\n\n")
+            status = re.match(
+                rb"HTTP/[0-9.]+ ([0-9]{3})(?: |$)", head.split(b"\n", 1)[0]
+            )
+            if separator and status and status[1] == b"404":
+                return None
+            if (
+                result.returncode
+                or not separator
+                or not status
+                or status[1] != b"200"
+            ):
+                raise ValueError(
+                    "GitHub CLI did not return a successful release response."
+                )
+            release = json.loads(body)
+        else:
+            result = subprocess.run(
+                [
+                    gh,
+                    "release",
+                    "view",
+                    "--repo",
+                    f"github.com/{repository}",
+                    "--json",
+                    "tagName,isDraft,isPrerelease",
+                ],
+                env=dict(environment),
+                capture_output=True,
+                check=True,
+                timeout=60,
+            )
+            release = json.loads(result.stdout)
+            tag_key, draft_key, prerelease_key = (
+                "tagName",
+                "isDraft",
+                "isPrerelease",
+            )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise ValueError(
+            f"Could not look up the release for {selection}.{guidance}"
+        ) from error
+    if (
+        not isinstance(release, dict)
+        or not isinstance(published_tag := release.get(tag_key), str)
+        or not published_tag.strip()
+        or published_tag in {".", ".."}
+        or release.get(draft_key) is not False
+        or not isinstance(prerelease := release.get(prerelease_key), bool)
+        or (prerelease if tag is None else published_tag != tag)
+    ):
+        required = "published stable" if tag is None else "published"
+        raise ValueError(
+            f"GitHub did not return a {required} release for {selection}.{guidance}"
+        )
+    return published_tag
+
+
+def _version_tags(version: Version, *, windows: bool) -> tuple[str, ...]:
+    """Return bounded exact tag spellings for one package version."""
+    spellings = [str(version)]
+    if (
+        len(version.release) == 3
+        and version.pre is not None
+        and not version.epoch
+        and version.post is None
+        and version.dev is None
+        and version.local is None
+    ):
+        phase, number = version.pre
+        label = {"a": "alpha", "b": "beta", "rc": "rc"}[phase]
+        spellings.append(f"{version.base_version}-{label}.{number}")
+    if windows:
+        release = version.release
+        suffix = str(version)[len(version.base_version) :]
+        while len(release) > 1 and release[-1] == 0:
+            release = release[:-1]
+            spellings.append(".".join(map(str, release)) + suffix)
+    return tuple(
+        tag for spelling in spellings for tag in (f"v{spelling}", spelling)
+    )
+
+
+def _resolve_release_version(
+    repository: str,
+    requested: Version,
+    gh: str | None,
+    environment: Mapping[str, str],
+    headers: Mapping[str, str],
+) -> tuple[str, Version]:
+    """Select a matching tag across the package and Windows interpretations."""
+    from packaging.version import Version
+
+    from apprc.distribution.runtime._windows_version import (
+        package_version_from_windows_number,
+    )
+
+    candidates = [(requested, False)]
+    if not requested.epoch and str(requested) == requested.base_version:
+        decoded = package_version_from_windows_number(requested.release)
+        if decoded is not None:
+            candidates.append((Version(decoded), True))
+    matches: list[tuple[str, Version]] = []
+    for version, windows in candidates:
+        for tag in _version_tags(version, windows=windows):
+            if (
+                _lookup_release_tag(repository, tag, gh, environment, headers)
+                is not None
+            ):
+                matches.append((tag, version))
+                break
+    if len(matches) > 1:
+        tags = " and ".join(repr(tag) for tag, _ in matches)
+        raise ValueError(
+            f"Version {requested} matches releases {tags} in {repository}. "
+            "Select one with --release TAG."
+        )
+    if not matches:
+        guidance = (
+            " Check `gh auth status` and access to the release." if gh else ""
+        )
+        raise ValueError(
+            f"No published release matches version {requested} in {repository}.{guidance}"
+        )
+    return matches[0]
+
+
 def download_release_setup(
     source: GitHubReleaseSource,
     *,
@@ -134,11 +319,13 @@ def download_release_setup(
     directory: Path,
     environment: Mapping[str, str],
     release_tag: str | None = None,
-) -> tuple[Path, str]:
+    requested_version: Version | None = None,
+) -> DownloadedReleaseSetup:
     """Verify the setup from the exact tag or the latest stable release.
 
     :param release_tag: Exact published tag, which may identify a prerelease.
-    :return: Downloaded setup path and its verified SHA-256 digest.
+    :param requested_version: Package or Windows version to resolve.
+    :return: Downloaded setup, verified digest, and release selection.
     """
     if release_tag is not None and (
         not release_tag.strip() or release_tag in {".", ".."}
@@ -159,63 +346,31 @@ def download_release_setup(
         else repository
     )
     gh: str | None = None
-    try:
-        if source.public:
-            release_path = (
-                f"tags/{quote(release_tag, safe='')}"
-                if release_tag is not None
-                else "latest"
-            )
-            release_url = f"https://api.github.com/repos/{repository}/releases/{release_path}"
-            with urlopen(
-                Request(release_url, headers=headers), timeout=60
-            ) as response:
-                release = json.load(response)
-            tag_key, draft_key, preview_key = "tag_name", "draft", "prerelease"
-        else:
-            gh = shutil.which("gh", path=environment.get("PATH"))
-            if gh is None:
-                raise ValueError(
-                    "Install GitHub CLI and run `gh auth login` to update "
-                    f"from {selection}."
-                )
-            result = subprocess.run(
-                [
-                    gh,
-                    "release",
-                    "view",
-                    "--repo",
-                    f"github.com/{repository}",
-                    "--json",
-                    "tagName,isDraft,isPrerelease",
-                    *(["--", release_tag] if release_tag is not None else []),
-                ],
-                env=dict(environment),
-                capture_output=True,
-                check=True,
-                timeout=60,
-            )
-            release = json.loads(result.stdout)
-            tag_key, draft_key, preview_key = (
-                "tagName",
-                "isDraft",
-                "isPrerelease",
-            )
-        if (
-            not isinstance(release, dict)
-            or not isinstance(tag := release.get(tag_key), str)
-            or not tag.strip()
-            or tag in {".", ".."}
-            or release.get(draft_key) is not False
-            or not isinstance(prerelease := release.get(preview_key), bool)
-            or (prerelease if release_tag is None else tag != release_tag)
-        ):
-            required = (
-                "published stable" if release_tag is None else "published"
-            )
+    if not source.public:
+        gh = shutil.which("gh", path=environment.get("PATH"))
+        if gh is None:
             raise ValueError(
-                f"GitHub did not return a {required} release for {selection}."
+                "Install GitHub CLI and run `gh auth login` to update "
+                f"from {selection}."
             )
+    guidance = (
+        " Check `gh auth status` and access to the release." if gh else ""
+    )
+    version = None
+    if requested_version is not None:
+        tag, version = _resolve_release_version(
+            repository, requested_version, gh, environment, headers
+        )
+        selection = f"{repository} at tag {tag!r}"
+    else:
+        tag = _lookup_release_tag(
+            repository, release_tag, gh, environment, headers
+        )
+        if tag is None:
+            raise ValueError(
+                f"No published release was found for {selection}.{guidance}"
+            )
+    try:
         if gh is None:
             base = f"https://github.com/{repository}/releases/download/{quote(tag, safe='')}"
             for asset in (setup, manifest):
@@ -255,11 +410,6 @@ def download_release_setup(
         json.JSONDecodeError,
         UnicodeError,
     ) as error:
-        guidance = (
-            " Check `gh auth status` and access to the release."
-            if not source.public
-            else ""
-        )
         raise ValueError(
             f"Could not download the setup for {selection}. Verify the release "
             f"and its setup assets.{guidance}"
@@ -282,4 +432,4 @@ def download_release_setup(
         raise ValueError(
             f"The downloaded setup for {selection} does not match its release checksum."
         )
-    return setup, digest
+    return DownloadedReleaseSetup(setup, digest, tag, version)

@@ -69,6 +69,15 @@ def update_command(
             help="Select a published release tag for a managed installation.",
         ),
     ] = None,
+    release_version: Annotated[
+        str | None,
+        typer.Option(
+            "--version",
+            "-v",
+            metavar="VERSION",
+            help="Select a published package or Windows product version.",
+        ),
+    ] = None,
 ) -> None:
     """Update the registered release or editable checkout."""
     from zipfile import ZipFile
@@ -122,6 +131,7 @@ def update_command(
             maintenance_group=group,
             confirm=confirm,
             release_tag=release_tag,
+            release_version=release_version,
         )
     except EditableUpdateRetryError as error:
         # > Rich error panels wrap commands and add border characters.

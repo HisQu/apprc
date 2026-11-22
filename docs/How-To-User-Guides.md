@@ -1426,13 +1426,19 @@ hand work to a helper while the original launcher closes. Read the helper or
 setup output for the final result.
 
 A release installation uses the latest stable release from the publisher's
-configured GitHub repository by default. To choose a specific published
-release, pass its exact tag. For example, if the publisher has released
-`v2.0.0rc1`, run
+configured GitHub repository by default. To choose a published version, use
+`--version` or `-v`. For example, if the publisher has released `2.0.0rc1`,
+use either the app version or the corresponding Windows numeric version.
 
 ```shell
-demo app update --release v2.0.0rc1
+demo app update --version 2.0.0rc1
+demo app update -v 2.0.0.301
 ```
+
+AppRC also accepts SemVer spelling such as `2.0.0-rc.1` and an optional leading
+`v`. If the numeric version matches two published versions, AppRC lists their
+tags. Use `demo app update --release TAG` to choose an exact tag in that case or
+when the publisher uses a custom tag.
 
 This also works with `demo update` when the alias is enabled. You can select a
 published prerelease, and AppRC rejects releases older than the installed
@@ -1451,9 +1457,9 @@ On Windows these hashes include the version metadata stamped onto the
 published command. **Reinstall** indicates an exact command match and proceeds
 through the normal installation steps.
 
-For an editable installation, run the update command without `--release` to
-use its recorded checkout and environment. The checkout must be clean and on
-a branch with an upstream. The update advances the branch only by
+For an editable installation, run the update command without a version or
+release selector to use its recorded checkout and environment. The checkout
+must be clean and on a branch with an upstream. The update advances only by
 fast-forward, then runs `uv sync --locked` and refreshes the
 existing registration, even when Git is already current. Sync uses the
 project's default dependency selection and may remove packages outside that

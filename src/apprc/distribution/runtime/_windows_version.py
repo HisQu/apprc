@@ -10,17 +10,21 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from _win32typing import PyResourceId
 
+_STAGE_SUFFIXES = (
+    (".dev", ("dev",)),
+    ("a", ("a", "alpha")),
+    ("b", ("b", "beta")),
+    ("rc", ("rc", "c", "pre", "preview")),
+    ("", ()),
+    (".post", ("post", "rev", "r")),
+)
 _STAGES = {
-    suffix: stage
-    for stage, suffixes in (
-        (0, ("dev",)),
-        (1, ("a", "alpha")),
-        (2, ("b", "beta")),
-        (3, ("rc", "c", "pre", "preview")),
-        (5, ("post", "rev", "r")),
-    )
-    for suffix in suffixes
+    alias: stage
+    for stage, (_, aliases) in enumerate(_STAGE_SUFFIXES)
+    for alias in aliases
 }
+_FINAL_STAGE = 4
+_STAGE_WIDTH = 100
 _SHORT_VERSION = re.compile(
     r"\s*v?(?P<release>[0-9]+(?:\.[0-9]+){0,2})"
     r"(?:(?:[-_.]?(?P<stage>"
@@ -67,15 +71,45 @@ def _project_version(version: str) -> tuple[_VersionNumbers, bool] | None:
         )
     except ValueError:
         return None
-    if any(part > 65535 for part in parts) or serial > 99:
+    if any(part > 65535 for part in parts) or serial >= _STAGE_WIDTH:
         return None
     if short is None:
         major, minor, patch, revision = parts
         return (major, minor, patch, revision), False
     suffix = short["stage"]
-    stage = _STAGES[suffix.lower()] if suffix else 5 if short["post"] else 4
+    stage = (
+        _STAGES[suffix.lower()]
+        if suffix
+        else _STAGES["post"]
+        if short["post"]
+        else _FINAL_STAGE
+    )
     major, minor, patch = parts + (0,) * (3 - len(parts))
-    return (major, minor, patch, stage * 100 + serial), stage < 4
+    return (
+        major,
+        minor,
+        patch,
+        stage * _STAGE_WIDTH + serial,
+    ), stage < _FINAL_STAGE
+
+
+def package_version_from_windows_number(parts: tuple[int, ...]) -> str | None:
+    """Decode the stage form of a Windows version for release lookup.
+
+    :param parts: Numeric components of the requested Windows version.
+    :return: Package spelling if the stage form round-trips through the encoder.
+    """
+    if len(parts) != 4:
+        return None
+    major, minor, patch, revision = parts
+    stage, serial = divmod(revision, _STAGE_WIDTH)
+    if not 0 <= stage < len(_STAGE_SUFFIXES):
+        return None
+    suffix = _STAGE_SUFFIXES[stage][0]
+    version = f"{major}.{minor}.{patch}"
+    if suffix:
+        version += f"{suffix}{serial}"
+    return version if numeric_product_version(version) == parts else None
 
 
 def _version_block(

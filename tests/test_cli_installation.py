@@ -1143,32 +1143,42 @@ def test_uninstall_path_tree_shares_windows_parents_and_preserves_unc():
         (("manage", "update"), "manage"),
     ],
 )
-@pytest.mark.parametrize("release_tag", [None, "preview/v2.0rc1"])
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        (None, None),
+        ("--release", "preview/v2.0rc1"),
+        ("--version", "2.0.0rc1"),
+        ("-v", "2.0.0.301"),
+    ],
+)
 def test_update_command_routes_share_confirmation(
     arguments: tuple[str, ...],
     group: str,
-    release_tag: str | None,
+    option: str | None,
+    value: str | None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from apprc.distribution.runtime import update
 
-    requests: list[tuple[str, str | None]] = []
+    requests: list[tuple[str, str | None, str | None]] = []
 
     def recorded_update(
         *_args: object,
         confirm: Callable[[str], None],
         maintenance_group: str,
         release_tag: str | None = None,
+        release_version: str | None = None,
         **_kwargs: object,
     ) -> int:
-        requests.append((maintenance_group, release_tag))
+        requests.append((maintenance_group, release_tag, release_version))
         confirm("Replace 1.0 with 2.0?")
         return 0
 
     monkeypatch.setattr(update, "update_application", recorded_update)
     args = [*arguments]
-    if release_tag is not None:
-        args.extend(("--release", release_tag))
+    if option is not None and value is not None:
+        args.extend((option, value))
     app = _app(args=args, maintenance_group_name=group)
     refused = CliRunner().invoke(app, args)
     assert refused.exit_code != 0
@@ -1177,7 +1187,20 @@ def test_update_command_routes_share_confirmation(
     accepted = CliRunner().invoke(app, args)
     assert accepted.exit_code == 0, accepted.output
     assert "Replace 1.0 with 2.0?" in accepted.output
-    assert requests == [(group, release_tag)] * 2
+    release_tag = value if option == "--release" else None
+    release_version = value if option in {"--version", "-v"} else None
+    assert requests == [(group, release_tag, release_version)] * 2
+
+
+def test_update_rejects_conflicting_release_selectors() -> None:
+    args = ["app", "update", "-v", "2.0.0", "--release", "v2.0.0"]
+    result = CliRunner().invoke(_app(args=args), args)
+
+    assert result.exit_code == 1
+    assert (
+        "Choose either --version or --release."
+        in Text.from_ansi(result.output).plain
+    )
 
 
 @pytest.mark.parametrize("arguments", [("app", "update"), ("update",)])

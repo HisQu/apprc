@@ -15,6 +15,7 @@ from apprc.distribution.runtime._windows_version import (
     _replace_version_resource,
     _version_resource,
     numeric_product_version,
+    package_version_from_windows_number,
     versioned_executable,
 )
 
@@ -61,6 +62,29 @@ from apprc.distribution.runtime._windows_version import (
 )
 def test_numeric_product_version(version, expected):
     assert numeric_product_version(version) == expected
+
+
+@pytest.mark.parametrize(
+    ("number", "version"),
+    [
+        ((2, 0, 0, 0), "2.0.0.dev0"),
+        ((2, 0, 0, 199), "2.0.0a99"),
+        ((2, 0, 0, 201), "2.0.0b1"),
+        ((2, 0, 0, 301), "2.0.0rc1"),
+        ((2, 0, 0, 400), "2.0.0"),
+        ((2, 0, 0, 599), "2.0.0.post99"),
+        ((2, 0, 0, 401), None),
+        ((2, 0, 0, 600), None),
+        ((65536, 0, 0, 301), None),
+        ((2, 0, 0), None),
+    ],
+)
+def test_windows_number_decodes_only_round_trippable_stage_versions(
+    number: tuple[int, ...], version: str | None
+) -> None:
+    assert package_version_from_windows_number(number) == version
+    if version is not None:
+        assert numeric_product_version(version) == number
 
 
 def test_projected_versions_sort_in_pep440_order() -> None:

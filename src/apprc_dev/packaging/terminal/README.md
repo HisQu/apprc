@@ -507,8 +507,10 @@ root `update` command can set `AppRC(update_alias=False)` and keep the nested
 `yourapp app update` command.
 
 Managed updates use the latest stable release from the publisher's configured
-source by default. Use `yourapp app update --release TAG` to choose a published
-release by its exact GitHub tag, including a prerelease. The
+source by default. Use `yourapp app update --version VERSION` to choose a
+published version, including a prerelease. You can enter the app version or
+the numeric version shown by Windows. Use `--release TAG` to choose an exact
+GitHub release tag. The
 [update guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#update-an-application)
 explains release selection, version checks, and the Git/uv workflow for
 editable checkouts. Update support depends on the version the application ships.

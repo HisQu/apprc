@@ -255,6 +255,35 @@ def test_main_rejects_requested_version_different_from_project(
         )
 
 
+def test_cumulative_release_notes_follow_the_prepared_stage() -> None:
+    notes = load_release_notes_module()
+    heading = "## [1.2.3] - 2026-07-13"
+    original = sample_changelog(release_entry="- Introduce Preview installs.")
+    beta = original.replace(heading, f"{heading} (b1)")
+    beta2 = beta.replace("(b1)", "(b2)").replace(
+        "- Introduce Preview installs.",
+        "- Introduce Preview installs.\n- Fix a preview update issue.",
+    )
+    candidate = beta2.replace("(b2)", "(rc1)")
+    stable = candidate.replace(" (rc1)", "")
+    assert notes.build_release_notes(beta, "1.2.3b1") == (
+        "## ✨ Added\n\n- Introduce Preview installs.\n"
+    )
+    cumulative = notes.build_release_notes(beta2, "1.2.3b2")
+    assert cumulative == (
+        "## ✨ Added\n\n- Introduce Preview installs.\n"
+        "- Fix a preview update issue.\n"
+    )
+    assert notes.build_release_notes(candidate, "1.2.3rc1") == cumulative
+    assert notes.build_release_notes(stable, "1.2.3") == cumulative
+
+    with pytest.raises(ValueError, match="exactly one release heading"):
+        notes.build_release_notes(beta2, "1.2.3b1")
+    duplicate = beta2.replace("## [1.2.2] - 2026-07-12", f"{heading} (b1)")
+    with pytest.raises(ValueError, match="one cumulative heading"):
+        notes.build_release_notes(duplicate, "1.2.3b2")
+
+
 @pytest.mark.parametrize("version", ("1.2.0b1", "1.2.0rc1"))
 def test_extract_preview_release_and_prevent_toc_clutter(version: str) -> None:
     module = load_release_notes_module()

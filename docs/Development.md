@@ -843,14 +843,18 @@ When false, run and pass the full local test suite before merge or release and
 report hosted CI status separately. When true, exact-commit hosted CI must pass.
 This setting is independent of `RELEASE_PYPI`.
 
-Prepare a dated changelog section for every release. Use package versions such
-as `0.40.0b1` for Beta, `0.40.0rc1` for Pre-release, and `0.40.0` for Stable.
-Preview entries cover the changes since the preceding release. A stable entry
-covers the net changes since the last stable release. Link each version heading
-to the preceding tag comparison and give stable readers a separate link to the
-previous stable comparison when a preview intervenes. Keep all versions in the
-history and reserve the table of contents for stable `X.Y.0` releases and
-`[Unreleased]`. Leave the six empty categories under `[Unreleased]` at release time.
+Keep one cumulative changelog section per target version. Start it as
+`## [0.40.0] - YYYY-MM-DD (b1)` for package version `0.40.0b1`. Update the same
+heading and entries for `rc1`, then remove the stage marker for stable
+`0.40.0`. Use one beta and one release candidate by default. Use `b2` or `rc2`
+when a fix needs another public test. Each tagged build's GitHub notes capture
+the changes that ship since the previous stable release, including changes
+from earlier previews that are still present.
+
+Keep historical preview sections and leave the six categories under
+`[Unreleased]` empty at release time. Add a table-of-contents entry when
+an `X.Y.0` version becomes stable. Link stable entries to the previous stable
+tag comparison.
 
 `just publish-check` rehearses the Python 3.12 tests, metadata validation,
 local package builds, and clean installs without pushing or uploading.

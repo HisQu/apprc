@@ -13,7 +13,8 @@ VERSION_PATTERN = rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}(?:(?P<phase>b|rc)(?P<number
 VERSION_RE = re.compile(VERSION_PATTERN)
 RELEASE_HEADING_RE = re.compile(
     rf"^## \[(?P<version>{VERSION_PATTERN})\] - "
-    r"(?P<date>\d{4}-\d{2}-\d{2})(?P<yanked> \[YANKED\])?$",
+    r"(?P<date>\d{4}-\d{2}-\d{2})(?: \((?P<preview>(?:b|rc)[1-9][0-9]*)\))?"
+    r"(?P<yanked> \[YANKED\])?$",
     re.MULTILINE,
 )
 UNRELEASED_HEADING = "## [Unreleased]"
@@ -148,30 +149,47 @@ def write_release_notes(markdown: str, version: str, output: Path) -> None:
     output.write_text(build_release_notes(markdown, version), encoding="utf-8")
 
 
+def _heading_version(match: re.Match[str]) -> str:
+    """Return the exact package version represented by a changelog heading."""
+    version = match["version"] + (match["preview"] or "")
+    validate_version(version)
+    return version
+
+
 def _release_heading(markdown: str, version: str) -> re.Match[str]:
     """Return the unique released-version heading match."""
+    headings = list(RELEASE_HEADING_RE.finditer(markdown))
     matches = [
-        match
-        for match in RELEASE_HEADING_RE.finditer(markdown)
-        if match.group("version") == version
+        match for match in headings if _heading_version(match) == version
     ]
     if len(matches) != 1:
         raise ValueError(
             f"Changelog must contain exactly one release heading for {version}; "
             f"found {len(matches)}."
         )
-    return matches[0]
+    match = matches[0]
+    target = match["version"]
+    if sum(heading["version"] == target for heading in headings) != 1:
+        raise ValueError(
+            f"Changelog must use one cumulative heading for {target}."
+        )
+    return match
 
 
 def _validate_toc_entry(markdown: str, match: re.Match[str]) -> None:
     """Require major/minor releases, but not patches, in the changelog TOC."""
-    version = match.group("version")
+    version = _heading_version(match)
+    target = match["version"]
+    preview = match["preview"]
     date = match.group("date")
     yanked = match.group("yanked") or ""
-    anchor = f"#{version.replace('.', '')}---{date}" + (
-        "-yanked" if yanked else ""
-    )
-    label = rf"[\[{version}\] - {date}{yanked}]"
+    anchor = f"#{target.replace('.', '')}---{date}"
+    if preview:
+        anchor += f"-{preview}"
+    if yanked:
+        anchor += "-yanked"
+    stage = f" ({preview})" if preview else ""
+    label = rf"[\[{target}\] - {date}{stage}{yanked}]"
     entry = f"{label}({anchor})"
     occurrences = markdown.count(entry)
     if version.endswith(".0") and occurrences != 1:

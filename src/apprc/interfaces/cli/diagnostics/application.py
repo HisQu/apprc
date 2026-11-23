@@ -246,13 +246,17 @@ def _pending_recovery(
                 f"From {target.project}, run `uv run --locked {command} install --editable` "
                 "to resume the saved checkout registration."
             )
-        setup = "Rerun the matching setup executable with the options that started this operation."
         if operation.kind == "repair":
-            setup = f"Run the matching setup executable with `{maintenance_group_name} recover-runtime`."
+            return (
+                f"Run `{command} recover-runtime` to continue rebuilding the application's Python environment. "
+                f"If `{record.command_name}` is unavailable, run the setup executable for this installation "
+                f"with `{maintenance_group_name} recover-runtime`."
+            )
+        setup = "Run the same setup executable again with the same options you used before."
         if isinstance(record.active_runtime, RuntimeSlot):
             return (
-                f"Run `{command} recover-runtime` through the installed native command. "
-                f"If it is unavailable or the saved project archive is missing, use this fallback. {setup}"
+                f"{setup} If you no longer have that executable, "
+                f"try `{command} recover-runtime` to continue from the saved project files."
             )
         return setup
     return "Preserve installation.json and contact application support."

@@ -170,8 +170,8 @@ def test_checkout_doctor_identifies_pending_replacement_and_its_owner(
     )
     assert "replace" in pending["message"] and "failed" in pending["message"]
     if managed_candidate:
-        assert "matching setup executable" in pending["recovery"]
-        assert "options that started this operation" in pending["recovery"]
+        assert "same setup executable" in pending["recovery"]
+        assert "same options" in pending["recovery"]
         assert "uv sync" not in pending["recovery"]
     else:
         assert (

@@ -279,7 +279,7 @@ def mount_maintenance_groups(
                         else:
                             message += (
                                 f" Run `{record.command_name} {maintenance_group_name} "
-                                "recover-runtime` to rebuild the managed runtime."
+                                "recover-runtime` to rebuild the application's Python environment from its saved project files."
                             )
                     cast(list[object], payload["checks"]).extend(
                         [

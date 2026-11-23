@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from rich.text import Text
 import typer
 from textual.coordinate import Coordinate
 from textual.widgets import Button, DataTable, Select, Static
@@ -465,6 +466,12 @@ async def test_launcher_uninstall_cancellation_does_not_start_handoff(
         await pilot.click("#launcher-uninstall")
         await pilot.pause()
         assert isinstance(app.screen, ConfirmScreen)
+        message = app.screen.message
+        assert isinstance(message, Text)
+        assert (
+            "Close the application and its background processes"
+            in message.plain
+        )
         maintenance_worker = next(
             worker
             for worker in app.workers

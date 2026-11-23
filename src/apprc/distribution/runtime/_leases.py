@@ -8,7 +8,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
@@ -192,13 +192,26 @@ def acquire_runtime_lease_locked(directory: Path) -> RuntimeLease:
     return _acquire_runtime_lease_locked(directory)
 
 
-def try_acquire_runtime_quiescence(directory: Path) -> RuntimeLease | None:
-    """Claim a managed runtime exclusively without waiting or deleting it."""
+def try_acquire_runtime_quiescence(
+    directory: Path, *, probe_only: bool = False
+) -> RuntimeLease | None:
+    """Claim a managed runtime exclusively without waiting or deleting it.
+
+    :param directory: Exact managed runtime slot.
+    :param probe_only: Check an existing lease without locking the namespace,
+        creating a lease file, or making the handle inheritable.
+    :return: An exclusive handle, or None when the slot is busy. Probes raise
+        if the lease cannot be inspected for another reason.
+    """
     if directory.parent.name != "runtimes":
         raise InstallationError(
             "Runtime slot is outside its installation runtime area."
         )
-    with installation_lock(directory.parent.parent):
+    with (
+        nullcontext()
+        if probe_only
+        else installation_lock(directory.parent.parent)
+    ):
         assert_no_links(directory)
         if not stat.S_ISDIR(directory.lstat().st_mode):
             raise InstallationError(
@@ -223,22 +236,31 @@ def try_acquire_runtime_quiescence(directory: Path) -> RuntimeLease | None:
                 ]
                 kernel.CreateFileW.restype = wintypes.HANDLE
                 handle = kernel.CreateFileW(
-                    str(lease_path), 0x80000000, 0, None, 4, 0x80, None
+                    str(lease_path),
+                    0x80000000,
+                    0,
+                    None,
+                    3 if probe_only else 4,  # < OPEN_EXISTING or OPEN_ALWAYS.
+                    0x80,
+                    None,
                 )
                 if handle == wintypes.HANDLE(-1).value:
-                    if ctypes.get_last_error() in {5, 32, 33}:
+                    error = ctypes.get_last_error()
+                    if error in {32, 33} or (error == 5 and not probe_only):
                         return None
-                    raise OSError(
-                        ctypes.get_last_error(), "Unable to claim runtime slot"
-                    )
+                    raise OSError(error, "Unable to claim runtime slot")
                 descriptor = int(handle)
-                os.set_handle_inheritable(descriptor, True)
+                if not probe_only:
+                    os.set_handle_inheritable(descriptor, True)
             else:
                 import fcntl
 
+                flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+                if not probe_only:
+                    flags |= os.O_CREAT
                 descriptor = os.open(
                     lease_path,
-                    os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                    flags,
                     0o600,
                 )
                 metadata = os.fstat(descriptor)
@@ -252,10 +274,11 @@ def try_acquire_runtime_quiescence(directory: Path) -> RuntimeLease | None:
                 except BlockingIOError:
                     os.close(descriptor)
                     return None
-                os.set_inheritable(descriptor, True)
+                if not probe_only:
+                    os.set_inheritable(descriptor, True)
             return RuntimeLease(directory, descriptor, exclusive=True)
         except OSError as error:
-            if error.errno in {13, 16, 26}:
+            if not probe_only and error.errno in {13, 16, 26}:
                 return None
             raise InstallationError(
                 "Unable to claim runtime slot quiescence."

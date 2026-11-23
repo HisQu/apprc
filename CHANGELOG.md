@@ -118,6 +118,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   command. Declining a local setup build confirms that the installer did not run.
 - Show the application's reason when its cleanup hook blocks uninstall or
   guided installation validation, such as when a running server holds a lease.
+- Warn about active managed runtimes before interactive uninstall confirmation.
+  Distribution tests and preview smoke report a recorded uninstall failure
+  promptly and preserve its recovery files.
 
 ### 🔒 Security
 

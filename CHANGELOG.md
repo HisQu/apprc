@@ -57,8 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b4...HEAD
-[0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b4
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b5...HEAD
+[0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b5
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/HisQu/apprc/compare/v0.36.1...v0.37.0
@@ -99,15 +99,36 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+### 🛠️ Changed
+
+### 🗑️ Deprecated
+
+### 🔥 Removed
+
+### 🐛 Fixed
+
+### 🔒 Security
+
+<br>
+
+## [0.39.1] - 2026-11-23 (b5)
+
+### ✨ Added
+
+- Managed updates and Preview installs accept `--version` (`-v`) to select a
+  published release by exact GitHub tag, Python, SemVer, or Windows version.
+- Managed applications can install or update a specific published release as
+  Preview. Publishers can make standalone beta and release-candidate setups
+  default to Preview.
 - Preview setups publish a short `-p` alias for commands ending in
   `-preview`. Authors can opt out, and existing commands take precedence.
 
 ### 🛠️ Changed
 
+- Build and verify release packages locally. GitHub retains the latest
+  published beta, three release candidates, and all stable releases.
 - Publish cumulative GitHub release notes from one changelog section per
   target version across betas, release candidates, and stable releases.
-
-### 🗑️ Deprecated
 
 ### 🔥 Removed
 
@@ -131,30 +152,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   promptly and preserve its recovery files.
 - Request focus for the initial Windows uninstall window in Console Host.
   Flash its taskbar button if Windows declines the request.
-
-### 🔒 Security
-
-<br>
-
-## [0.39.1] - 2026-11-23 (b4)
-
-### ✨ Added
-
-- Managed application updates accept `--release TAG` to select an exact
-  published GitHub release, including a prerelease.
-- Managed application updates accept `--version` (`-v`) to select a published
-  package version using Python, SemVer, or Windows numeric spelling.
-- Managed applications can install or update a specific published release as
-  Preview. Publishers can make standalone beta and release-candidate setups
-  default to Preview.
-
-### 🛠️ Changed
-
-- Build and verify release packages locally. GitHub retains the latest
-  published beta, three release candidates, and all stable releases.
-
-### 🐛 Fixed
-
 - Root help uses ASCII panel borders when redirected stdout cannot encode
   the Unicode borders.
 - Workspace archive, restore, and unregister recheck the selected registry

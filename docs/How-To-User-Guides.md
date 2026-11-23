@@ -1491,10 +1491,16 @@ through the normal installation steps.
 For an editable installation, run the update command without a version or
 release selector to use its recorded checkout and environment. The checkout
 must be clean and on a branch with an upstream. The update advances only by
-fast-forward, then runs `uv sync --locked` and refreshes the
-existing registration, even when Git is already current. Sync uses the
-project's default dependency selection and may remove packages outside that
-selection. If sync or registration fails, the command reports any Git change
+fast-forward. If the application declares an
+[asset preparation command](References.md#application-update), AppRC shows it
+before confirmation and runs it first. AppRC then runs `uv sync --locked` and
+refreshes the existing registration. These steps also run when Git is already
+current. Sync uses the project's default dependency selection and may remove
+packages outside that selection.
+
+If asset preparation fails, correct the build error, restore a clean checkout
+if needed, and run the same update command again. Git may already be at the
+confirmed revision. If sync or registration fails, AppRC reports any Git change
 and gives recovery steps. In the reported checkout directory, copy the command
 on its own line to retry the indicated step. Run the update again to finish a
 ready installation. If AppRC reports an incomplete installation, use the direct

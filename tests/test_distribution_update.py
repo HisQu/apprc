@@ -622,6 +622,11 @@ def _git(cwd: Path, *arguments: str) -> str:
         "dirty",
         "ignored",
         "diverged",
+        "prepare",
+        "prepare-current",
+        "prepare-failure",
+        "prepare-invalid",
+        "prepare-declined",
         "sync",
         "registration",
         "tag",
@@ -642,17 +647,43 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
         ("user.email", "test@example.invalid"),
     ):
         _git(upstream, "config", key, value)
-    metadata = upstream / "pyproject.toml"
+    # > An editable project can be a subdirectory of the Git checkout.
+    prepares_assets = outcome.startswith("prepare")
+    project_path = Path("nested project") if prepares_assets else Path(".")
+    project = upstream / project_path
+    project.mkdir(exist_ok=True)
+    metadata = project / "pyproject.toml"
     metadata.write_text(
         '[project]\nname = "coordination-fixture"\nversion = "1.0"\n'
     )
-    (upstream / ".gitignore").write_text(".venv/\n")
+    (upstream / ".gitignore").write_text(".venv/\nasset.txt\n")
     _git(upstream, "add", ".")
     _git(upstream, "commit", "-qm", "base")
-    checkout = tmp_path / "checkout's project"
-    _git(tmp_path, "clone", "-q", str(upstream), str(checkout))
+    clone = tmp_path / "checkout's project"
+    _git(tmp_path, "clone", "-q", str(upstream), str(clone))
+    checkout = clone / project_path
     start = _git(checkout, "rev-parse", "HEAD")
     metadata.write_text(metadata.read_text().replace("1.0", "2.0"))
+    prepare = [sys.executable, "prepare.py", "fresh runtime asset"]
+    asset = checkout / "asset.txt"
+    if prepares_assets:
+        declaration = json.dumps(
+            "python prepare.py" if outcome == "prepare-invalid" else prepare
+        )
+        metadata.write_text(
+            f"{metadata.read_text()}\n[tool.apprc.editable-update]\nprepare = {declaration}\n"
+        )
+        script = project / "prepare.py"
+        script.write_text(
+            "import os, sys\n"
+            "from pathlib import Path\n"
+            "environment = Path(os.environ['UV_PROJECT_ENVIRONMENT'])\n"
+            "if (environment / 'build-blocked').exists():\n"
+            "    sys.exit(17)\n"
+            "Path('asset.txt').write_text(sys.argv[1])\n"
+        )
+        _git(upstream, "add", str(script))
+        asset.write_text("stale asset")
     if outcome == "ignored":
         (checkout / ".git" / "info" / "exclude").write_text("local.env\n")
         (checkout / "local.env").write_text("local configuration")
@@ -660,6 +691,8 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
         _git(upstream, "add", "local.env")
     _git(upstream, "commit", "-qam", "version bump")
     end = _git(upstream, "rev-parse", "HEAD")
+    if outcome == "prepare-current":
+        _git(checkout, "pull", "--ff-only")
     if outcome == "dirty":
         (checkout / "local").touch()
     elif outcome == "diverged":
@@ -678,6 +711,9 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
 
     prefix = checkout / ".venv"
     prefix.mkdir()
+    build_blocker = prefix / "build-blocked"
+    if outcome == "prepare-failure":
+        build_blocker.touch()
     command_dir = tmp_path / "global command's bin"
     command_dir.mkdir()
     base = installation_record()
@@ -716,10 +752,17 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
             pytest.fail(f"editable release selection launched {command[0]}")
         if command[0] == str(prefix / "bin" / "python"):
             return subprocess.CompletedProcess(command, 0)
+        if prepares_assets and command == prepare:
+            assert confirmed
+            assert _git(checkout, "rev-parse", "HEAD") == end
+            calls.append((command, kwargs))
+            return original(arguments, **kwargs)
         if command[0] in {
             sys.executable,
             str(prefix / "bin" / record.command_name),
         }:
+            if prepares_assets:
+                assert asset.read_text() == prepare[-1]
             calls.append((command, kwargs))
             code = (
                 1
@@ -747,13 +790,18 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     monkeypatch.chdir(tmp_path)
     confirmed: list[str] = []
 
+    def confirm(message: str) -> None:
+        confirmed.append(message)
+        if outcome == "prepare-declined":
+            raise InterruptedError("update declined")
+
     def perform() -> int:
         return update.update_application(
             manager,
             binding=None,
             regular_app_id=None,
             maintenance_group="app",
-            confirm=confirmed.append,
+            confirm=confirm,
             release_selector={"tag": "v2.0", "version": "2.0"}.get(outcome),
         )
 
@@ -773,6 +821,35 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
         assert _git(checkout, "rev-parse", "HEAD") == start
         assert (checkout / "local.env").read_text() == "local configuration"
         return
+
+    if outcome in {"prepare-declined", "prepare-invalid"}:
+        if outcome == "prepare-declined":
+            with pytest.raises(InterruptedError, match="update declined"):
+                perform()
+            assert json.dumps(prepare) in confirmed[0]
+        else:
+            with pytest.raises(ValueError, match=r"editable-update\.prepare"):
+                perform()
+            assert not confirmed
+        assert not calls
+        assert _git(checkout, "rev-parse", "HEAD") == start
+        assert asset.read_text() == "stale asset"
+        return
+
+    if outcome == "prepare-failure":
+        with pytest.raises(
+            EditableUpdateRetryError,
+            match="Application asset preparation failed",
+        ) as failure:
+            perform()
+        assert "run the update again" in str(failure.value)
+        assert "17" in str(failure.value)
+        assert [command for command, _ in calls] == [prepare]
+        assert _git(checkout, "rev-parse", "HEAD") == end
+        assert asset.read_text() == "stale asset"
+        build_blocker.unlink()
+        calls.clear()
+        confirmed.clear()
 
     if outcome in {"dirty", "diverged", "sync"}:
         expected = {
@@ -801,6 +878,16 @@ def test_editable_update_uses_saved_checkout_and_reports_partial_failure(
     else:
         assert confirmed
         assert _git(checkout, "rev-parse", "HEAD") == end
+        if prepares_assets:
+            assert "Prepare application assets" in confirmed[0]
+            assert json.dumps(prepare) in confirmed[0]
+            if outcome != "prepare":
+                assert "checkout is current" in confirmed[0]
+            prep_command, prep_options = calls.pop(0)
+            assert prep_command == prepare
+            assert prep_options["cwd"] == checkout
+        else:
+            assert "Prepare application assets" not in confirmed[0]
         assert calls[0][0] == [sys.executable, "sync", "--locked"]
         assert calls[0][1]["cwd"] == checkout
         assert isinstance(env := calls[0][1]["env"], dict)

@@ -385,6 +385,32 @@ Within each normalized spelling, AppRC tries the tag with a leading `v` first.
 A numeric Windows version can also be a literal package version. If both
 interpretations find a release, pass an exact tag to `--version` to choose one.
 
+**Editable update preparation.** In the editable project's `pyproject.toml`, an
+application can declare one command that builds its generated assets:
+
+```toml
+[tool.apprc.editable-update]
+prepare = ["just", "build-assets"]
+```
+
+This excerpt assumes the application provides a `build-assets` recipe. The
+`prepare` array starts with a nonblank executable name or path, followed by
+literal string arguments. AppRC reads the declaration from the project's tracked
+`pyproject.toml` at the selected Git revision and shows the argument list before
+confirmation. The setting is available to applications shipping an AppRC build
+that includes editable update preparation.
+
+AppRC starts the command from the recorded project directory after the
+fast-forward and environment check, with `UV_PROJECT_ENVIRONMENT` set to the
+recorded environment. AppRC passes the arguments directly to the executable.
+The app supplies its own build tools and should keep generated outputs ignored
+by Git so the checkout remains clean for future updates. Preparation runs on
+every confirmed editable update, including when Git is current. A nonzero exit
+or a failure to start stops the update before dependency sync and registration.
+The selected Git revision and any files written by the command remain in place.
+See [Update an application](How-To-User-Guides.md#update-an-application) for retry
+instructions.
+
 ### One-line install script reference
 
 | Term | Meaning |

@@ -11,12 +11,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from queue import Empty, Queue
-from uuid import UUID
 from threading import Thread
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import filelock
 
@@ -54,10 +55,11 @@ from apprc.user_files.app_home.permissions import set_windows_private_acl
 from apprc.user_files.installation.coordination import installation_lock
 
 if TYPE_CHECKING:
+    from packaging.version import Version
+
     from apprc.distribution.models import NativeBinding
     from apprc.distribution.native import NativeTarget
     from apprc.services.installation import InstallationManager
-    from packaging.version import Version
 
 
 def _tool(name: str, environment: Mapping[str, str]) -> str:
@@ -286,6 +288,63 @@ def _managed_update(
     return True
 
 
+def _editable_preparation(
+    git: str, project: Path, candidate: str, environment: Mapping[str, str]
+) -> list[str]:
+    """Read the selected project's preparation command from the confirmed tree."""
+    entry = _git_value(
+        git,
+        project,
+        "ls-tree",
+        candidate,
+        "--",
+        "pyproject.toml",
+        env=environment,
+    )
+    if not entry.startswith(("100644 blob ", "100755 blob ")):
+        return []
+    metadata = subprocess.run(
+        [
+            git,
+            "-C",
+            str(project),
+            "cat-file",
+            "blob",
+            f"{candidate}:./pyproject.toml",
+        ],
+        check=True,
+        capture_output=True,
+        env=environment,
+    ).stdout
+    try:
+        document = tomllib.loads(metadata.decode("utf-8"))
+    except ValueError as error:
+        raise InstallationError(
+            f"Cannot read pyproject.toml at {candidate[:12]} in {project}: {error}"
+        ) from error
+    tool = document.get("tool", {})
+    apprc = tool.get("apprc", {}) if isinstance(tool, dict) else {}
+    settings = apprc.get("editable-update") if isinstance(apprc, dict) else None
+    if settings is None:
+        return []
+    if not isinstance(settings, dict) or settings.keys() != {"prepare"}:
+        raise InstallationError(
+            "[tool.apprc.editable-update] in pyproject.toml must declare only prepare."
+        )
+    prepare = settings["prepare"]
+    if (
+        not isinstance(prepare, list)
+        or not prepare
+        or not all(isinstance(arg, str) and "\0" not in arg for arg in prepare)
+        or not prepare[0].strip()
+    ):
+        raise InstallationError(
+            "tool.apprc.editable-update.prepare in pyproject.toml must be a list "
+            "with a command name followed by optional string arguments."
+        )
+    return prepare
+
+
 def _editable_update(
     record: InstallationRecord,
     runtime: EditableCheckout,
@@ -353,15 +412,20 @@ def _editable_update(
         )
     environment["UV_PROJECT_ENVIRONMENT"] = str(prefix)
     sync = [uv, "sync", "--locked"]
-    # > A current checkout and environment can still need registration.
-    # > Reuse confirmed registration and its idempotent initialization.
+    prepare = _editable_preparation(git, project, candidate, environment)
     change = (
-        f"Fast-forward {head[:12]} to {candidate[:12]} and synchronize"
+        f"Fast-forward {head[:12]} to {candidate[:12]}."
         if head != candidate
-        else "The checkout is current. Synchronize"
+        else "The checkout is current."
+    )
+    preparation = (
+        f" Prepare application assets with {json.dumps(prepare)} before synchronization."
+        if prepare
+        else ""
     )
     confirm(
-        f"{change} the recorded environment at {prefix} using the project's default dependency selection and refresh registration?"
+        f"{change}{preparation} Synchronize the recorded environment at {prefix} "
+        "using the project's default dependency selection and refresh registration?"
     )
     command_dir = recorded_command_directory(
         record, Path(work["authority"]).parent
@@ -397,14 +461,17 @@ def _editable_update(
         upstream=upstream,
         candidate=candidate,
         git=git,
+        prepare=prepare,
         sync=sync,
         validate_environment=[
             str(runtime_interpreter(Path(work["authority"]).parent, runtime)),
             "-I",
             "-c",
-            "from pathlib import Path; import sys; "
-            "from apprc.definition.resolution import resolve_editable_environment; "
-            "sys.exit(0 if resolve_editable_environment(Path(sys.argv[1])).samefile(sys.argv[2]) else 1)",
+            (
+                "from pathlib import Path; import sys; "
+                "from apprc.definition.resolution import resolve_editable_environment; "
+                "sys.exit(0 if resolve_editable_environment(Path(sys.argv[1])).samefile(sys.argv[2]) else 1)"
+            ),
             str(project),
             str(prefix),
         ],
@@ -595,6 +662,7 @@ def update_application(
             upstream=None,
             candidate=None,
             git=None,
+            prepare=[],
             sync=[],
             validate_environment=[],
             sync_retry="",

@@ -519,8 +519,10 @@ source by default. Use `yourapp app update --version VERSION` or `-v` to choose
 a published release, including a prerelease. Enter the GitHub release tag, the
 app version, or the numeric version shown by Windows. The
 [update guide](docs/How-To-User-Guides.md#update-an-application)
-explains release selection, version checks, and the Git/uv workflow for
-editable checkouts. Update support depends on the version the application ships.
+explains release selection, version checks, and editable checkout updates.
+Applications can declare an [asset preparation command](docs/References.md#application-update)
+that runs before editable dependency sync and registration. Update support
+depends on the version the application ships.
 
 For a managed app with a preview identity, use
 `yourapp app install --preview --version VERSION` to install a published release

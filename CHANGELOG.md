@@ -99,6 +99,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Editable updates can run an application-declared asset preparation command
+  before dependency sync and registration, even when the Git checkout is current.
+
 ### 🛠️ Changed
 
 ### 🗑️ Deprecated

@@ -40,6 +40,7 @@ class UpdateWork(TypedDict):
     upstream: str | None
     candidate: str | None
     git: str | None
+    prepare: list[str]
     sync: list[str]
     validate_environment: list[str]
     sync_retry: str
@@ -59,7 +60,7 @@ def _git_value(git: str, cwd: Path, *args: str, env: Mapping[str, str]) -> str:
 def run_update(
     work: UpdateWork, env: Mapping[str, str], *, output: TextIO | None = None
 ) -> int:
-    """Apply a verified setup or finish the recorded Git, uv, registration sequence."""
+    """Apply a verified setup or finish the confirmed editable update sequence."""
     cwd = Path(work["workdir"])
     authority = Path(work["authority"])
     if work["setup_digest"] is not None:
@@ -151,6 +152,22 @@ def run_update(
                 raise ValueError(
                     f"The checkout no longer selects the recorded environment. Restore its workspace layout or explicitly register the new environment from {cwd}."
                 ) from error
+            if work["prepare"]:
+                print("Preparing application assets.", flush=True)
+                try:
+                    subprocess.run(
+                        work["prepare"],
+                        cwd=cwd,
+                        check=True,
+                        env=env,
+                        stdout=output,
+                    )
+                except (OSError, subprocess.CalledProcessError) as error:
+                    raise EditableUpdateRetryError(
+                        f"Application asset preparation failed in {cwd}: {error}\n"
+                        "Fix the preparation error and run the update again. "
+                        "Dependency sync and registration are still pending."
+                    ) from error
             try:
                 subprocess.run(
                     work["sync"],

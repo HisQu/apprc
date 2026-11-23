@@ -107,30 +107,30 @@ schema-2 installation records require the explicit
 [reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1-or-2),
 not a version-number edit or automatic conversion.
 
-Start in [`managed.py`](../src/apprc/distribution/runtime/installation/managed.py)
+Start in [`_managed.py`](../src/apprc/distribution/runtime/installation/_managed.py)
 for setup, replacement, and managed repair, or in
-[`editable.py`](../src/apprc/distribution/runtime/installation/editable.py)
+[`_editable.py`](../src/apprc/distribution/runtime/installation/_editable.py)
 for checkout registration. Each route selects its candidate and command outputs
 under the installation lock. Managed candidate preparation materializes and
 verifies the project snapshot, synchronizes and probes the runtime, and invokes
 resource initialization. Editable registration probes an existing environment.
-[Candidate preparation](../src/apprc/distribution/runtime/installation/candidate.py)
+[Candidate preparation](../src/apprc/distribution/runtime/installation/_candidate.py)
 
 Both routes use the same checkpoints, activation commit, Windows registration,
 and caught-failure recovery. Resource handling validates ownership and records
 whether each root and owner marker existed before initialization, so rollback
 can identify artifacts created by the attempt.
-[Transaction](../src/apprc/distribution/runtime/installation/transaction.py) ·
-[Resource handling](../src/apprc/distribution/runtime/installation/resources.py)
+[Transaction](../src/apprc/distribution/runtime/installation/_transaction.py) ·
+[Resource handling](../src/apprc/distribution/runtime/installation/_resources.py)
 
 Command placement selects destinations and can add a verified, committed
 command directory to the Windows user PATH. Command publication owns the writes,
 recorded before-images, resume, and command rollback. The native manager and
 editable CLI call optional configuration setup and shortcut creation after
 activation.
-[Placement](../src/apprc/distribution/runtime/installation/commands.py) ·
+[Placement](../src/apprc/distribution/runtime/installation/_commands.py) ·
 [Publication](../src/apprc/distribution/runtime/_command_publication.py) ·
-[Optional setup](../src/apprc/distribution/runtime/installation/post_install.py)
+[Optional setup](../src/apprc/distribution/runtime/installation/_post_install.py)
 
 Use `plan_resume()` for an exact pending operation and `plan_repair()` only for
 a new managed repair. A candidate rebuilt during the current invocation is not
@@ -161,10 +161,10 @@ containment before the caller-exit handshake. Execution waits outside the
 installation lock, then rechecks authority under the lock before mutation.
 Committed finalization instead requires its saved cleanup proof and never
 restores pending authority after commit.
-The handoff follows provider cleanup, runtime removal, data removal and
-finalization helpers using the existing checkpoints. `_uninstall_controller.py`
-prepares and starts the handoff; `_os_integration.py` owns command publication,
-registry access and shortcuts. Installed bridge handlers execute only after
+The handoff uses the existing checkpoints for provider cleanup, runtime
+removal, data removal, and finalization. `_uninstall_controller.py` prepares and
+starts the handoff. `_os_integration.py` provides the underlying command-file,
+registry, and shortcut operations. Installed bridge handlers execute only after
 the common request and captured-authority validation succeeds.
 
 `ConfigEditorScreen` owns workspace presentation state and the single

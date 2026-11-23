@@ -26,7 +26,7 @@ from apprc.distribution.runtime._install_progress import (
     InstallProgress,
     installation_progress,
 )
-from apprc.distribution.runtime.installation import candidate
+from apprc.distribution.runtime.installation import _candidate
 from apprc.services.installation import InstallationManager
 from apprc.user_files.installation.coordination import installation_lock
 
@@ -130,7 +130,7 @@ def test_candidate_rebuild_budget(
         return observed, {}
 
     def prepare() -> tuple[RuntimeSlot, str]:
-        return candidate.prepare_candidate(
+        return _candidate.prepare_candidate(
             manager,
             plan,
             runtime,
@@ -140,8 +140,8 @@ def test_candidate_rebuild_budget(
             manager_executable=tmp_path / "manager",
         )
 
-    monkeypatch.setattr(candidate, "sync_runtime_slot", sync)
-    monkeypatch.setattr(candidate, "_probe_runtime_observations", probe)
+    monkeypatch.setattr(_candidate, "sync_runtime_slot", sync)
+    monkeypatch.setattr(_candidate, "_probe_runtime_observations", probe)
     fails = probes <= probe_failures
     with (
         installation_progress(events.append),
@@ -224,8 +224,8 @@ def test_managed_source_is_created_through_private_staging(
         "_path_permissions_are_private",
         lambda path: path in applied,
     )
-    monkeypatch.setattr(candidate, "sync_runtime_slot", lambda *a, **kw: None)
-    candidate._rebuild_candidate_runtime(
+    monkeypatch.setattr(_candidate, "sync_runtime_slot", lambda *a, **kw: None)
+    _candidate._rebuild_candidate_runtime(
         directory,
         archive,
         InstallationIdentity(

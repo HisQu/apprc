@@ -136,7 +136,7 @@ def test_native_install_extracts_payload_below_physical_temp_root(
         ),
     )
     from apprc.distribution.runtime import _os_integration
-    from apprc.distribution.runtime.installation import managed, post_install
+    from apprc.distribution.runtime.installation import _managed, _post_install
 
     ready = manager.inspect()
     if scenario == "update":
@@ -186,12 +186,12 @@ def test_native_install_extracts_payload_below_physical_temp_root(
 
     monkeypatch.setattr(typer, "confirm", confirm)
     monkeypatch.setattr(
-        post_install,
+        _post_install,
         "publish_optional_shortcuts",
         publish,
     )
     monkeypatch.setattr(
-        post_install,
+        _post_install,
         "offer_configuration_setup",
         configure,
     )
@@ -209,7 +209,7 @@ def test_native_install_extracts_payload_below_physical_temp_root(
             raise InstallationError("Fixture failed")
         return ready
 
-    monkeypatch.setattr(managed, "install_application", capture_install)
+    monkeypatch.setattr(_managed, "install_application", capture_install)
     assert _manager._install(binding, manager, tmp_path / "setup", args) == (
         1 if scenario == "failed" else 0
     )

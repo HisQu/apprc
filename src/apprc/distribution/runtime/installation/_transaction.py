@@ -29,7 +29,7 @@ from apprc.distribution.runtime._leases import (
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.operations import _matches_candidate
 
-from .resources import ResourceSnapshot, rollback_resources
+from ._resources import ResourceSnapshot, rollback_resources
 
 if TYPE_CHECKING:
     from apprc.services.installation import InstallationManager

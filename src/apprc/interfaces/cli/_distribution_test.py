@@ -31,7 +31,7 @@ from apprc.distribution.runtime._uninstall_controller import (
     run_checked_uninstall,
     verify_windows_registration,
 )
-from apprc.distribution.runtime.installation.commands import (
+from apprc.distribution.runtime.installation._commands import (
     select_command_directory,
 )
 from apprc.interfaces._terminal_console import cli_line

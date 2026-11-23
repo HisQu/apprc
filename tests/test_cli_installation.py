@@ -729,7 +729,7 @@ def test_editable_retry_uses_only_exact_pending_placement(
 
     from apprc.definition.installation import EditableCheckout
     from apprc.definition.resolution import CliRuntimeOptions
-    from apprc.distribution.runtime.installation import editable
+    from apprc.distribution.runtime.installation import _editable
     from apprc.interfaces.cli import installation_command
     from typer.main import get_command
 
@@ -768,7 +768,7 @@ def test_editable_retry_uses_only_exact_pending_placement(
         observed.append((identity, runtime, placement))
         return manager.inspect()
 
-    monkeypatch.setattr(editable, "register_editable_application", register)
+    monkeypatch.setattr(_editable, "register_editable_application", register)
     ctx = typer.Context(get_command(_app(args=[])))
     if conflict is not None:
         with pytest.raises(
@@ -793,7 +793,7 @@ def test_editable_retry_uses_only_exact_pending_placement(
 def test_editable_install_reports_rollback_notes_and_guidance_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from apprc.distribution.runtime.installation import editable
+    from apprc.distribution.runtime.installation import _editable
     from apprc.distribution.runtime._install_progress import report
 
     _context, commands = _pending_editable_context(tmp_path, monkeypatch)
@@ -806,7 +806,7 @@ def test_editable_install_reports_rollback_notes_and_guidance_once(
         raise error
 
     monkeypatch.setattr(
-        editable, "register_editable_application", fail_registration
+        _editable, "register_editable_application", fail_registration
     )
     args = ["app", "install", "-e", "--command-directory", str(commands)]
     result = CliRunner().invoke(_app(args=args), args, terminal_width=1000)
@@ -840,7 +840,7 @@ def test_editable_install_reports_outcome(
     import subprocess
 
     from apprc.definition.installation import EditableCheckout, OwnedOutput
-    from apprc.distribution.runtime.installation import post_install
+    from apprc.distribution.runtime.installation import _post_install
     from apprc.interfaces.cli import installation_command
 
     context, commands = _pending_editable_context(tmp_path, monkeypatch)
@@ -886,15 +886,15 @@ def test_editable_install_reports_outcome(
         shortcuts.append(destination)
         return ready
 
-    monkeypatch.setattr(post_install, "confirm_desktop_shortcut", confirm)
-    monkeypatch.setattr(post_install, "publish_optional_shortcuts", publish)
+    monkeypatch.setattr(_post_install, "confirm_desktop_shortcut", confirm)
+    monkeypatch.setattr(_post_install, "publish_optional_shortcuts", publish)
 
     def setup(*args, **kwargs):
         if setup_fails:
             raise subprocess.CalledProcessError(1, "setup")
         return False
 
-    monkeypatch.setattr(post_install, "offer_configuration_setup", setup)
+    monkeypatch.setattr(_post_install, "offer_configuration_setup", setup)
     args = ["app", "install", "-e"]
     if shortcut_mode == "explicit":
         args.extend(("--desktop", "--yes"))

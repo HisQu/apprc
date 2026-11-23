@@ -206,13 +206,13 @@ def _install_managed(
     from apprc.distribution.runtime._install_progress import warn
     from apprc.definition.paths import Layout
     from apprc.definition.resolution import ResolveOptions
-    from apprc.distribution.runtime.installation.commands import (
+    from apprc.distribution.runtime.installation._commands import (
         uv_command_directory,
     )
-    from apprc.distribution.runtime.installation.managed import (
+    from apprc.distribution.runtime.installation._managed import (
         install_application,
     )
-    from apprc.distribution.runtime.installation.transaction import (
+    from apprc.distribution.runtime.installation._transaction import (
         installation_maintenance_group,
     )
     from apprc.interfaces.cli.context import CliRuntimeOptions
@@ -402,7 +402,7 @@ def _install_managed(
     if smoke_command_directory is not None:
         return None, inspection
 
-    from apprc.distribution.runtime.installation.post_install import (
+    from apprc.distribution.runtime.installation._post_install import (
         confirm_desktop_shortcut,
         offer_configuration_setup,
         publish_optional_shortcuts,
@@ -474,7 +474,7 @@ def _run_preview_smoke(
         run_checked_uninstall,
         verify_windows_registration,
     )
-    from apprc.distribution.runtime.installation.commands import (
+    from apprc.distribution.runtime.installation._commands import (
         command_filename,
     )
     from apprc.user_files.app_home.permissions import (
@@ -757,10 +757,10 @@ def _preview_update_target(
     manager: InstallationManager,
 ) -> tuple[InstallationManager, NativeBinding, tuple[UUID, str]]:
     """Resolve a managed Preview and capture its verified update revision."""
-    from apprc.distribution.runtime.installation.commands import (
+    from apprc.distribution.runtime.installation._commands import (
         command_filename,
     )
-    from apprc.distribution.runtime.installation.transaction import (
+    from apprc.distribution.runtime.installation._transaction import (
         require_update_record,
     )
     from apprc.user_files.app_home.locations import assert_no_links
@@ -973,7 +973,7 @@ def main() -> int:
     executable = _executable()
     os.environ["_APPRC_NATIVE_MANAGER"] = "1"
     os.environ["_APPRC_NATIVE_EXECUTABLE"] = str(executable)
-    from apprc.distribution.runtime.installation.commands import (
+    from apprc.distribution.runtime.installation._commands import (
         command_filename,
     )
 

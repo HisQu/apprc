@@ -306,7 +306,7 @@ def test_registration_rejects_unusable_callbacks_before_initializing_resources(
         RuntimeSlot,
     )
     from apprc.definition.paths import Layout
-    from apprc.distribution.runtime.installation.resources import (
+    from apprc.distribution.runtime.installation._resources import (
         initialize_resources,
     )
     from apprc.services.installation import InstallationManager

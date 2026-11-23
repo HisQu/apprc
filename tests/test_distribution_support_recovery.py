@@ -25,7 +25,7 @@ from apprc.distribution.runtime._leases import (
     try_retire_runtime_slot,
 )
 from apprc.distribution.runtime._os_integration import publish_global_command
-from apprc.distribution.runtime.installation import candidate
+from apprc.distribution.runtime.installation import _candidate
 from apprc.user_files.installation.coordination import installation_lock
 
 
@@ -60,7 +60,7 @@ def test_broken_pending_candidate_repair_preserves_runtime_with_shared_lease(
         acquire_runtime_lease(slot),
         pytest.raises(InstallationError, match="Candidate runtime is busy"),
     ):
-        candidate._rebuild_candidate_runtime(
+        _candidate._rebuild_candidate_runtime(
             directory,
             archive,
             identity,

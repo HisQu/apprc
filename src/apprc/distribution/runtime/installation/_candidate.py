@@ -27,8 +27,8 @@ from apprc.distribution.runtime.backend import runtime_prefix, sync_runtime_slot
 from apprc.distribution.runtime.probe import _probe_runtime_observations
 from apprc.user_files.app_home.locations import assert_no_links
 
-from .resources import ResourceSnapshot, initialize_resources, report_resources
-from .transaction import checkpoint
+from ._resources import ResourceSnapshot, initialize_resources, report_resources
+from ._transaction import checkpoint
 
 if TYPE_CHECKING:
     from apprc.services.installation import InstallationManager

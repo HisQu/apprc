@@ -782,7 +782,7 @@ def test_editable_interpreter_identity_is_checked_before_registration(
 
     import apprc as rc
     from apprc.distribution.runtime.installation import (
-        editable,
+        _editable,
         register_editable_application,
     )
     from apprc.services.installation import InstallationManager
@@ -815,7 +815,7 @@ def test_editable_interpreter_identity_is_checked_before_registration(
     def probe(*args: object, **kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(stdout="invalid metadata")
 
-    monkeypatch.setattr(editable, "subprocess", SimpleNamespace(run=probe))
+    monkeypatch.setattr(_editable, "subprocess", SimpleNamespace(run=probe))
     if alias:
         with pytest.raises(
             InstallationError, match="metadata probe is invalid"

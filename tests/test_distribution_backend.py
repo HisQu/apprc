@@ -56,7 +56,9 @@ from apprc.distribution.runtime._os_integration import (
 from apprc.distribution.runtime.installation import (
     offer_configuration_setup,
 )
-from apprc.distribution.runtime.installation.candidate import snapshot_metadata
+from apprc.distribution.runtime.installation._candidate import (
+    snapshot_metadata,
+)
 from apprc.services.installation import InstallationManager
 from apprc.user_files.installation.codec import decode_record, encode_record
 from apprc.user_files.installation.coordination import (

@@ -366,7 +366,7 @@ def mount_installation_group(
                         "Installation did not return an editable checkout."
                     )
                 try:
-                    from apprc.distribution.runtime.installation.post_install import (
+                    from apprc.distribution.runtime.installation._post_install import (
                         confirm_desktop_shortcut,
                         offer_configuration_setup,
                         publish_optional_shortcuts,
@@ -634,10 +634,10 @@ def mount_installation_group(
             installation_progress,
         )
         from apprc.distribution.runtime._manager import _manager_uv
-        from apprc.distribution.runtime.installation.managed import (
+        from apprc.distribution.runtime.installation._managed import (
             repair_managed_installation,
         )
-        from apprc.distribution.runtime.installation.transaction import (
+        from apprc.distribution.runtime.installation._transaction import (
             installation_maintenance_group,
         )
         from apprc.interfaces._terminal_console import human_report
@@ -947,13 +947,13 @@ def _register_editable(
     placement = _editable_placement(
         context, distribution_spec, project_root, prefix, guidance
     )
-    from apprc.distribution.runtime.installation.commands import (
+    from apprc.distribution.runtime.installation._commands import (
         recorded_command_directory,
     )
-    from apprc.distribution.runtime.installation.editable import (
+    from apprc.distribution.runtime.installation._editable import (
         register_editable_application,
     )
-    from apprc.distribution.runtime.installation.transaction import (
+    from apprc.distribution.runtime.installation._transaction import (
         require_update_record,
     )
 
@@ -976,7 +976,7 @@ def _register_editable(
     )
 
     try:
-        from apprc.distribution.runtime.installation.transaction import (
+        from apprc.distribution.runtime.installation._transaction import (
             installation_maintenance_group,
         )
 

@@ -37,17 +37,17 @@ from apprc.distribution.runtime.probe import (
 )
 from apprc.user_files.installation.coordination import installation_lock
 
-from .commands import (
+from ._commands import (
     command_filename,
     recorded_command_directory,
     select_command_directory,
 )
-from .resources import (
+from ._resources import (
     capture_resource_snapshot,
     initialize_resources,
     report_resources,
 )
-from .transaction import (
+from ._transaction import (
     checkpoint,
     checkpoint_activation,
     commit_activation,

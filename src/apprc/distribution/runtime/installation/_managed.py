@@ -33,21 +33,21 @@ from apprc.distribution.runtime.backend import (
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.planning import resource_roots
 
-from .candidate import (
+from ._candidate import (
     prepare_candidate,
     retained_archive,
     restore_pending_candidate_archive,
     snapshot_metadata,
 )
-from .commands import (
+from ._commands import (
     command_filename,
     recorded_command_directory,
     select_command_directory,
     select_windows_global_command,
     update_windows_user_path,
 )
-from .resources import capture_resource_snapshot
-from .transaction import (
+from ._resources import capture_resource_snapshot
+from ._transaction import (
     _MAINTENANCE_GROUP,
     checkpoint_activation,
     commit_activation,

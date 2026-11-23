@@ -40,7 +40,7 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 **Evidence and impact.** Managed and editable installation each repeated the final checkpoints, installation authority commit, Windows registration, and finalization. A change to those steps required tracing both paths and their shared recovery function.
 
-**Correction and verification.** Managed and editable callers share the final checkpoints, activation commit, and post-commit registration and finalization. Each caller prepares its candidate and publishes its command using its existing before-images and output ordering. The installer and rollback tests exercise both paths. [Activation](src/apprc/distribution/runtime/installation/transaction.py) · [Rollback tests](tests/test_installation_rollback.py)
+**Correction and verification.** Managed and editable callers share the final checkpoints, activation commit, and post-commit registration and finalization. Each caller prepares its candidate and publishes its command using its existing before-images and output ordering. The installer and rollback tests exercise both paths. [Activation](src/apprc/distribution/runtime/installation/_transaction.py) · [Rollback tests](tests/test_installation_rollback.py)
 
 ## Intuitive code traversal
 

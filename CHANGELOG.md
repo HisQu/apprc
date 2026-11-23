@@ -57,8 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b5...HEAD
-[0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b5
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1rc1...HEAD
+[0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1rc1
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/HisQu/apprc/compare/v0.36.1...v0.37.0
@@ -101,22 +101,17 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🛠️ Changed
 
-- CLI confirmations show yes in green and no in red on color-enabled terminals.
-
 ### 🗑️ Deprecated
 
 ### 🔥 Removed
 
 ### 🐛 Fixed
 
-- Installed native commands let foreground applications finish shutting down
-  after Ctrl+C without printing a launcher traceback.
-
 ### 🔒 Security
 
 <br>
 
-## [0.39.1] - 2026-11-23 (b5)
+## [0.39.1] - 2026-11-23 (rc1)
 
 ### ✨ Added
 
@@ -134,6 +129,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   published beta, three release candidates, and all stable releases.
 - Publish cumulative GitHub release notes from one changelog section per
   target version across betas, release candidates, and stable releases.
+- CLI confirmations show yes in green and no in red on color-enabled terminals.
 
 ### 🔥 Removed
 
@@ -157,6 +153,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   promptly and preserve its recovery files.
 - Request focus for the initial Windows uninstall window in Console Host.
   Flash its taskbar button if Windows declines the request.
+- Installed native commands let foreground applications finish shutting down
+  after Ctrl+C without printing a launcher traceback.
 - Root help uses ASCII panel borders when redirected stdout cannot encode
   the Unicode borders.
 - Workspace archive, restore, and unregister recheck the selected registry

@@ -137,6 +137,7 @@ def test_native_install_extracts_payload_below_physical_temp_root(
     )
     from apprc.distribution.runtime import _os_integration
     from apprc.distribution.runtime.installation import _managed, _post_install
+    from apprc.interfaces.cli import _typer_utils
 
     ready = manager.inspect()
     if scenario == "update":
@@ -184,7 +185,7 @@ def test_native_install_extracts_payload_below_physical_temp_root(
         events.append("config")
         return False
 
-    monkeypatch.setattr(typer, "confirm", confirm)
+    monkeypatch.setattr(_typer_utils, "cli_confirm", confirm)
     monkeypatch.setattr(
         _post_install,
         "publish_optional_shortcuts",

@@ -11,6 +11,7 @@ import typer
 from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces._setup_text import setup_finish_text
 from apprc.interfaces.cli._errors import app_path_bad_parameter
+from apprc.interfaces.cli._typer_utils import cli_confirm
 from apprc.public.app_rc import AppRC
 from apprc.services.manager import ConfigManager
 from apprc.services.inspection import FieldInspection
@@ -56,7 +57,7 @@ def run_config_setup(
             return
         if not _missing_required_fields(active_manager):
             return
-        if not typer.confirm(
+        if not cli_confirm(
             "Set up missing required settings now?", default=False
         ):
             return

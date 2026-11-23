@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 import typer
 
 from apprc.definition.resolution import resolve_editable_environment
-from apprc.interfaces.cli._typer_utils import click
+from apprc.interfaces.cli._typer_utils import cli_confirm, click
 from apprc.interfaces.cli._editable_checkout import (
     _distribution_name,
     editable_entry_point,
@@ -109,7 +109,7 @@ class CheckoutAuthoring:
                             f"{exc} Run `dist build -t` first or pass "
                             "`app install --yes` to authorize the local build."
                         ) from exc
-                    if not typer.confirm(
+                    if not cli_confirm(
                         f"{exc} Build the setup for this platform?"
                     ):
                         write_line(

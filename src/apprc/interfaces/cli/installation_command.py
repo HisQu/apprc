@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 import typer
-from apprc.interfaces.cli._typer_utils import click
+from apprc.interfaces.cli._typer_utils import cli_confirm, click
 from typer.core import TyperCommand
 
 from apprc.definition.installation import (
@@ -98,7 +98,7 @@ def update_command(
                 raise click.ClickException(
                     f"{message} Rerun with --yes to apply the update."
                 )
-            if not typer.confirm(message, default=False):
+            if not cli_confirm(message, default=False):
                 raise typer.Abort()
 
     try:
@@ -520,7 +520,7 @@ def mount_installation_group(
                 return
             if not assume_yes and not sys.stdin.isatty():
                 raise typer.BadParameter("Unattended migration requires --yes.")
-            if not assume_yes and not typer.confirm(
+            if not assume_yes and not cli_confirm(
                 "Migration requires old application consumers to be stopped. Proceed?",
                 default=False,
                 err=json_output,
@@ -607,7 +607,7 @@ def mount_installation_group(
                 raise click.ClickException(
                     f"{prompt} Add --yes to confirm runtime recovery."
                 )
-            if not typer.confirm(prompt, default=False):
+            if not cli_confirm(prompt, default=False):
                 raise typer.Abort()
 
         from contextlib import nullcontext
@@ -763,7 +763,7 @@ def mount_installation_group(
                     record.placement.config_dir,
                     error=json_output,
                 )
-                keep_config = typer.confirm(
+                keep_config = cli_confirm(
                     "Keep this configuration directory (settings and secrets)?",
                     default=True,
                     err=json_output,
@@ -819,7 +819,7 @@ def mount_installation_group(
                 )
                 if warning is not None:
                     cli_line(ctx, warning, style="warning", error=True)
-                if not typer.confirm(
+                if not cli_confirm(
                     f'Uninstall {command_context.manager.spec.display_name or command_context.manager.spec.app_id} and delete the items marked "Delete"?',
                     default=False,
                     err=json_output,

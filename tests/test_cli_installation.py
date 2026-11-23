@@ -1286,6 +1286,59 @@ def test_update_command_routes_share_confirmation(
     assert requests == [(group, value)] * 2
 
 
+@pytest.mark.parametrize(
+    ("default", "answer", "accepted", "color", "no_color", "err"),
+    [
+        (False, "\n", False, True, None, False),
+        (True, "\n", True, True, None, True),
+        (True, "no\n", False, False, None, True),
+        (False, "yes\n", True, True, "", True),
+        (False, "y\n", True, None, None, False),
+    ],
+)
+def test_confirmation_colors_respect_default_and_stream(
+    default: bool,
+    answer: str,
+    accepted: bool,
+    color: bool | None,
+    no_color: str | None,
+    err: bool,
+) -> None:
+    from apprc.interfaces.cli._typer_utils import cli_confirm
+
+    app = typer.Typer(context_settings={"color": color})
+
+    @app.command()
+    def run() -> None:
+        decision = cli_confirm("Continue?", default=default, err=err)
+        typer.echo("accepted" if decision else "declined")
+
+    result = CliRunner().invoke(
+        app,
+        input=answer,
+        color=True,
+        env={"NO_COLOR": no_color, "_APPRC_TERMINAL_COLOR": None},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[-1] == (
+        "accepted" if accepted else "declined"
+    )
+    prompt, other_stream = (
+        (result.stderr, result.stdout)
+        if err
+        else (result.stdout, result.stderr)
+    )
+    yes, no = ("Y", "n") if default else ("y", "N")
+    assert f"Continue? [{yes}/{no}]:" in Text.from_ansi(prompt).plain
+    assert "Continue?" not in other_stream
+    if color and no_color is None:
+        assert f"\x1b[32m{yes}\x1b[0m" in prompt
+        assert f"\x1b[31m{no}\x1b[0m" in prompt
+    else:
+        assert "\x1b[" not in prompt
+
+
 @pytest.mark.parametrize("route", [["update"], ["app", "update"]])
 def test_preview_update_requires_managed_invocation(route: list[str]) -> None:
     args = [*route, "--preview", "--version", "2.0.0b1"]

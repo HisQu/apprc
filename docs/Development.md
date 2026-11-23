@@ -289,6 +289,7 @@ results. Use a distinct layout for help, diagnostics, and previews.
 | Confirmed results and overall success | Green |
 | Warnings and actions needed | Yellow |
 | Failures and destructive actions | Red |
+| Yes/no confirmation choices | Green for yes and red for no |
 | Secondary labels and relevant skips | Dim |
 
 Use the shared styles and structured path formatter in
@@ -301,6 +302,8 @@ absence of `--json`. Color preferences never change the selected layout.
 Keep redirected and explicit JSON output compatible. Prompt on stderr when
 stdout carries JSON. An explicit color choice can travel to an AppRC child
 process. The presence of `NO_COLOR`, including an empty value, takes priority.
+Use `cli_confirm` from `apprc.interfaces.cli._typer_utils` for yes/no
+prompts. The uppercase choice shows the default when the user presses Enter.
 
 Textual uses its theme for widgets and uses the shared path and semantic styles
 for AppRC's values. Emphasize the effective source in bold and keep path values

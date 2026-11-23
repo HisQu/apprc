@@ -9,7 +9,7 @@ import sys
 # == 3rd Party ===============================
 import typer
 
-from apprc.interfaces.cli._typer_utils import dump_json
+from apprc.interfaces.cli._typer_utils import cli_confirm, dump_json
 from apprc.interfaces.cli.config_command._base import ConfigCommandBase
 
 # == Internal ================================
@@ -108,7 +108,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 "?",
             )
         )
-        if not assume_yes and not typer.confirm("Apply this secret migration?"):
+        if not assume_yes and not cli_confirm("Apply this secret migration?"):
             typer.echo("No files were changed.")
             return
         try:
@@ -155,9 +155,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 f". Allow access only to {allowed_principals}.",
             )
         )
-        if not assume_yes and not typer.confirm(
-            "Apply this permission repair?"
-        ):
+        if not assume_yes and not cli_confirm("Apply this permission repair?"):
             typer.echo("No files were changed.")
             return
         try:
@@ -227,7 +225,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 cli_line(
                     ctx, f"Warning: {warning}", style="warning", error=True
                 )
-            if not typer.confirm("Continue with this dotenv edit?"):
+            if not cli_confirm("Continue with this dotenv edit?"):
                 typer.echo("Aborted.")
                 raise typer.Exit(code=1)
         return manager.apply_edit(plan)

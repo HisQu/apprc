@@ -158,11 +158,12 @@ def confirm_desktop_shortcut(
     from apprc.distribution.runtime._os_integration import (
         desktop_shortcut_available,
     )
+    from apprc.interfaces.cli._typer_utils import cli_confirm
 
     if not desktop_shortcut_available(identity):
         return False
     try:
-        return typer.confirm("Add Desktop shortcut?", default=False)
+        return cli_confirm("Add Desktop shortcut?", default=False)
     except typer.Abort:
         return False
 

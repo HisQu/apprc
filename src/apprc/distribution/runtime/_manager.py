@@ -284,15 +284,15 @@ def _install_managed(
         and previous.operation is None
         and isinstance(previous.active_runtime, EditableCheckout)
     ):
-        import typer
         from apprc.interfaces._terminal_console import cli_line
+        from apprc.interfaces.cli._typer_utils import cli_confirm
 
         cli_line(
             None,
             "Existing editable checkout",
             path=previous.active_runtime.project,
         )
-        if not typer.confirm(
+        if not cli_confirm(
             "Switch to a managed installation and keep the checkout files?",
             default=False,
         ):

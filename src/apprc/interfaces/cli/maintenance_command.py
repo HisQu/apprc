@@ -20,6 +20,7 @@ from apprc.definition.maintenance import (
     RemovalResult,
 )
 from apprc.definition.paths import ResourceKind
+from apprc.interfaces.cli._typer_utils import cli_confirm
 from apprc.interfaces.cli.installation_command import (
     installation_context,
     mount_installation_group,
@@ -510,7 +511,7 @@ def _resource_group(
                 human = human_report()
                 if human and not assume_yes:
                     cli_line(ctx, "Backup to restore", path=source)
-                if not assume_yes and not typer.confirm(
+                if not assume_yes and not cli_confirm(
                     "Restore AppData from this backup?"
                     if human
                     else f"Restore AppData from {source}?"
@@ -593,9 +594,7 @@ def _add_operation_commands(
                     raise typer.BadParameter(
                         f"Noninteractive {kind} {operation_name} requires --yes."
                     )
-                if not typer.confirm(
-                    f"Apply {kind} {operation_name}?", err=True
-                ):
+                if not cli_confirm(f"Apply {kind} {operation_name}?", err=True):
                     raise typer.Exit(code=1)
             if human:
                 cli_line(
@@ -707,7 +706,7 @@ def _workspace_group(apprc: AppRC) -> typer.Typer:
                     raise typer.BadParameter(
                         "Reusing a nonempty workspace requires --yes."
                     )
-                if not typer.confirm(
+                if not cli_confirm(
                     "Initialize settings in this nonempty workspace?"
                 ):
                     raise typer.Exit(code=1)

@@ -22,6 +22,25 @@ StateT = TypeVar("StateT")
 _HELP_OPTIONS = frozenset(("--help", "-h"))
 
 
+def cli_confirm(
+    message: str, *, default: bool = False, err: bool = False
+) -> bool:
+    """Style yes and no while Typer handles input and the default answer."""
+    from apprc.interfaces._terminal_console import _color_enabled
+    from apprc.interfaces._terminal_styles import ERROR_STYLE, SUCCESS_STYLE
+
+    ctx = click.globals.get_current_context(silent=True)
+    stream = typer.get_text_stream("stderr" if err else "stdout")
+    use_color = _color_enabled(stream, ctx.color if ctx is not None else None)
+    if use_color:
+        yes = typer.style("Y" if default else "y", fg=SUCCESS_STYLE)
+        no = typer.style("n" if default else "N", fg=ERROR_STYLE)
+        message = f"{message} [{yes}/{no}]"
+    return typer.confirm(
+        message, default=default, show_default=not use_color, err=err
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedCommandTokens:
     """Parsed command tokens after known CLI options.

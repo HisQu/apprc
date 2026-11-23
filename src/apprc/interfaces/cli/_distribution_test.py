@@ -40,7 +40,7 @@ from apprc.interfaces.cli._distribution_authoring import (
     _revision,
     _targets,
 )
-from apprc.interfaces.cli._typer_utils import click
+from apprc.interfaces.cli._typer_utils import cli_confirm, click
 from apprc.interfaces.cli.context import cli_runtime_options_to_args
 from apprc.user_files.app_home.locations import (
     assert_no_links,
@@ -340,7 +340,7 @@ def run_distribution_test(
                     ctx, "Final cleanup will preserve configuration", path=path
                 )
             steps.append("pre-existing uninstall")
-        elif not assume_yes and not typer.confirm(
+        elif not assume_yes and not cli_confirm(
             "Install and remove this application as a test?"
         ):
             raise typer.Abort()

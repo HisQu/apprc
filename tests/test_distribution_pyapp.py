@@ -1513,7 +1513,10 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     )
     reason = "Application data is in use. Close the application and retry."
     assert cleanup_failure.returncode != 0
-    assert f"{preview_dir}. {reason}" in cleanup_failure.stderr
+    assert (
+        f"Preview cleanup is incomplete at {preview_dir}. Uninstall failed: {reason}"
+        in cleanup_failure.stderr
+    )
     failed_uninstall = _record(preview_dir)["operation"]
     assert failed_uninstall["diagnostic"]["message"] == reason
     (recovery,) = Path(environment["TMPDIR"]).glob("apprc-dist-test-*")

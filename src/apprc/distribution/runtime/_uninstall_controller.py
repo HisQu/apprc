@@ -116,7 +116,7 @@ class UninstallPreparation:
 def uninstall_activity_warning(preparation: UninstallPreparation) -> str | None:
     """Give the confirmation prompt an advisory observation of existing leases."""
     from apprc.distribution.runtime._leases import (
-        try_acquire_runtime_quiescence,
+        runtime_slot_is_busy,
     )
 
     record = preparation.inspection.record
@@ -133,10 +133,8 @@ def uninstall_activity_warning(preparation: UninstallPreparation) -> str | None:
     for slot_id in slot_ids:
         slot = preparation.inspection.directory / "runtimes" / str(slot_id)
         try:
-            claim = try_acquire_runtime_quiescence(slot, probe_only=True)
-            if claim is None:
+            if runtime_slot_is_busy(slot):
                 return f"A managed runtime is in use. {close_application}"
-            claim.close()
         except (OSError, ValueError):
             detection_unavailable = True
     return close_application if detection_unavailable else None

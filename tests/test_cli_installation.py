@@ -979,14 +979,17 @@ def test_uninstall_config_prompt_and_unattended_policy(
 
 
 @pytest.mark.parametrize(
-    "mode", ["busy", "idle", "unknown", "yes", "unattended", "preview"]
+    "mode",
+    ["busy", "idle", "unknown", "lock-busy", "yes", "unattended", "preview"],
 )
 def test_uninstall_activity_warning_is_advisory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
-    from contextlib import nullcontext
+    from contextlib import ExitStack
     from types import SimpleNamespace
     from unittest.mock import Mock
+
+    from filelock import FileLock
 
     from apprc.definition.installation import InstallationHooks
     from apprc.definition.resolution import CliRuntimeOptions
@@ -1032,18 +1035,24 @@ def test_uninstall_activity_warning_is_advisory(
         args.append("--yes")
     elif mode == "preview":
         args.append("--dry-run")
-    with (
-        acquire_runtime_lease(slot)
-        if mode in {"busy", "yes", "unattended", "preview"}
-        else nullcontext()
-    ):
+    with ExitStack() as stack:
+        if mode in {"busy", "yes", "unattended", "preview"}:
+            stack.enter_context(acquire_runtime_lease(slot))
+        if mode == "lock-busy":
+            stack.enter_context(
+                FileLock(
+                    directory / "locks" / "operation.lock",
+                    preserve_lock_file=True,
+                    fallback_to_soft=False,
+                )
+            )
         result = CliRunner().invoke(
             _app(app, args=args), args, input="y\n", terminal_width=1000
         )
 
     assert result.exit_code == (2 if mode == "unattended" else 0), result.output
     prompt = 'delete the items marked "Delete"?'
-    if mode in {"busy", "idle", "unknown"}:
+    if mode in {"busy", "idle", "unknown", "lock-busy"}:
         assert result.output.count(prompt) == 1
     else:
         assert prompt not in result.output
@@ -1052,12 +1061,13 @@ def test_uninstall_activity_warning_is_advisory(
         assert result.output.index("A managed runtime is in use.") < (
             result.output.index(prompt)
         )
-    elif mode == "unknown":
+    elif mode in {"unknown", "lock-busy"}:
         assert reminder in result.stderr
         assert "A managed runtime is in use." not in result.stderr
-        assert not marker.exists()
     else:
         assert reminder not in result.stderr
+    if mode == "unknown":
+        assert not marker.exists()
     if mode in {"preview", "unattended"}:
         start.assert_not_called()
     else:

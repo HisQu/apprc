@@ -1549,24 +1549,24 @@ editable registration, run `uv run --locked demo app install --editable` from
 the checkout named in the report. For an editable installation with broken
 Python dependencies, run `uv sync --locked` in the recorded checkout.
 
-If doctor identifies a pending managed installation and there is no installed
-native command yet, rerun the matching setup with the original options. If the
-native command is available, it can resume the candidate or rebuild a broken
-managed runtime:
+If doctor reports an interrupted setup, run the same setup executable again with
+the same options you used before. If you no longer have that executable, the
+installed `demo app recover-runtime` command can continue from the saved project
+files when available.
+
+To rebuild a broken application environment in a release installation, run:
 
 ```shell
 demo app recover-runtime
 ```
 
-The command describes the action and asks for confirmation. Pass `--yes` for
-unattended execution. A pending managed installation resumes its saved candidate.
-For a ready managed installation, recovery rebuilds the saved project at its
-recorded placement. AppRC selects the replacement only after validation and
-publication. Dependency acquisition may require network access and credentials.
+The command uses the saved project files and asks for confirmation. Pass `--yes`
+for unattended execution. When installation is pending, the command continues
+that attempt. Otherwise, AppRC builds and validates a replacement environment
+before activating it at the recorded placement. Installing dependencies may
+require network access and credentials.
 
-If the pending project's archive is missing, rerun the setup that started that
-installation with the original options. For a broken managed runtime whose
-installed command is unavailable, run the matching setup executable with
+If `demo` is unavailable, run the setup executable for that installation with
 `app recover-runtime` as its arguments.
 Application-specific migrations and cleanup run in an application runtime; if
 required code is unavailable, the dependent operation stops safely.

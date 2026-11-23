@@ -20,20 +20,72 @@ RESULT_ICON_FILENAME = "uninstall.ico"
 
 
 def prepare() -> None:
-    """Connect Windows-launched uninstall to a visible console when necessary."""
+    """Prepare the console for the Windows uninstall confirmation."""
     if os.name != "nt":
         return
     import ctypes
+    from ctypes import wintypes
 
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    if not kernel.GetConsoleWindow() and not kernel.AllocConsole():
-        raise OSError(ctypes.get_last_error(), "Cannot open uninstall terminal")
+    kernel.GetConsoleWindow.argtypes = []
+    kernel.GetConsoleWindow.restype = wintypes.HWND
+    window = kernel.GetConsoleWindow()
+    if not window:
+        if not kernel.AllocConsole():
+            raise OSError(
+                ctypes.get_last_error(), "Cannot open uninstall terminal"
+            )
+        window = kernel.GetConsoleWindow()
     if not sys.stdin.isatty():
         sys.stdin = open("CONIN$", encoding="utf-8")
     if not sys.stderr.isatty():
         sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
     if not sys.stdout.isatty():
         sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+    if window:
+        _request_console_focus(window)
+
+
+def _request_console_focus(window: int) -> None:
+    """Ask Windows to focus the confirmation console or draw attention to it."""
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        user = ctypes.WinDLL("user32", use_last_error=True)
+        user.IsWindowVisible.argtypes = [wintypes.HWND]
+        user.IsWindowVisible.restype = wintypes.BOOL
+        user.GetForegroundWindow.argtypes = []
+        user.GetForegroundWindow.restype = wintypes.HWND
+        if (
+            not user.IsWindowVisible(window)
+            or user.GetForegroundWindow() == window
+        ):
+            return
+        user.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user.SetForegroundWindow.restype = wintypes.BOOL
+        if user.SetForegroundWindow(window):
+            return
+
+        class FlashWindowInfo(ctypes.Structure):
+            _fields_ = [
+                ("size", wintypes.UINT),
+                ("window", wintypes.HWND),
+                ("flags", wintypes.DWORD),
+                ("count", wintypes.UINT),
+                ("timeout", wintypes.DWORD),
+            ]
+
+        flash_tray = 0x00000002  # < FLASHW_TRAY
+        info = FlashWindowInfo(
+            ctypes.sizeof(FlashWindowInfo), window, flash_tray, 3, 0
+        )
+        user.FlashWindowEx.argtypes = [ctypes.POINTER(FlashWindowInfo)]
+        user.FlashWindowEx.restype = wintypes.BOOL
+        user.FlashWindowEx(ctypes.byref(info))
+    except OSError:
+        # > Confirmation remains available even if the focus request fails.
+        return
 
 
 def apply_result_icon(icon: Path) -> None:

@@ -654,7 +654,10 @@ For deferred native Windows verification, use the exact checksummed setup
 artifact in a normal user session. Double-click a fresh setup and confirm that
 the result stays visible. Open PowerShell from Windows and run `Get-Command pdb`
 (or the app's command). Confirm Windows Installed apps shows the expected
-version, uninstall with configuration retained, then reinstall. Check a
+version. Start uninstall from Settings and check whether the confirmation
+window gets focus with both Windows Console Host and Windows Terminal. If
+Windows declines focus for the classic console, check for a taskbar flash.
+Then uninstall with configuration retained and reinstall. Check a
 controlled failed setup for a visible error and local diagnostic log. Also
 verify that starting setup from an existing PowerShell session returns its
 exit code without waiting for Enter.

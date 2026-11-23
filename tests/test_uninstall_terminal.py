@@ -9,6 +9,70 @@ from types import SimpleNamespace
 from apprc.distribution.runtime import _uninstall_terminal as terminal
 
 
+@pytest.mark.parametrize(
+    ("allocate", "visible", "already_focused", "allow_focus"),
+    [
+        pytest.param(False, True, False, True, id="visible"),
+        pytest.param(True, True, False, False, id="new-console-denied"),
+        pytest.param(False, True, True, False, id="already-focused"),
+        pytest.param(False, False, False, False, id="hidden-console"),
+    ],
+)
+def test_prepare_requests_focus_for_the_windows_confirmation_console(
+    monkeypatch, allocate, visible, already_focused, allow_focus
+):
+    import ctypes
+    from unittest.mock import Mock
+
+    window = 10
+    kernel = SimpleNamespace(
+        GetConsoleWindow=Mock(
+            side_effect=[None, window] if allocate else [window]
+        ),
+        AllocConsole=Mock(return_value=True),
+    )
+    user = SimpleNamespace(
+        IsWindowVisible=Mock(return_value=visible),
+        GetForegroundWindow=Mock(
+            return_value=window if already_focused else 20
+        ),
+        SetForegroundWindow=Mock(return_value=allow_focus),
+        FlashWindowEx=Mock(),
+    )
+    monkeypatch.setattr(terminal, "os", SimpleNamespace(name="nt"))
+    tty = SimpleNamespace(isatty=lambda: True)
+    monkeypatch.setattr(
+        terminal, "sys", SimpleNamespace(stdin=tty, stdout=tty, stderr=tty)
+    )
+    monkeypatch.setattr(
+        ctypes,
+        "WinDLL",
+        lambda name, **kwargs: {"kernel32": kernel, "user32": user}[name],
+        raising=False,
+    )
+
+    terminal.prepare()
+
+    assert kernel.AllocConsole.call_count == int(allocate)
+    expect_focus_request = visible and not already_focused
+    if expect_focus_request:
+        user.SetForegroundWindow.assert_called_once_with(window)
+    else:
+        user.SetForegroundWindow.assert_not_called()
+
+    if expect_focus_request and not allow_focus:
+        user.FlashWindowEx.assert_called_once()
+        (info_pointer,) = user.FlashWindowEx.call_args.args
+        info = ctypes.cast(
+            info_pointer, user.FlashWindowEx.argtypes[0]
+        ).contents
+        assert info.window == window
+        assert info.flags == 0x00000002  # < FLASHW_TRAY
+        assert info.count == 3
+    else:
+        user.FlashWindowEx.assert_not_called()
+
+
 def test_acknowledgement_uses_interactive_input(monkeypatch, capsys):
     monkeypatch.setattr(terminal, "os", SimpleNamespace(name="posix"))
     stream = io.StringIO("\n")

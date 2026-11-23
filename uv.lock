@@ -53,7 +53,7 @@ wheels = [
 
 [[package]]
 name = "apprc"
-version = "0.39.1b3"
+version = "0.39.1b4"
 source = { editable = "src/apprc_dev/packaging/terminal" }
 dependencies = [
     { name = "apprc-core" },
@@ -74,7 +74,7 @@ requires-dist = [
 
 [[package]]
 name = "apprc-core"
-version = "0.39.1b3"
+version = "0.39.1b4"
 source = { editable = "." }
 dependencies = [
     { name = "filelock" },
@@ -152,14 +152,14 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "apprc", specifier = ">=0.39.1b3,<0.40" },
-    { name = "apprc-gui", marker = "extra == 'desktop'", specifier = ">=0.39.1b3,<0.40" },
+    { name = "apprc", specifier = ">=0.39.1b4,<0.40" },
+    { name = "apprc-gui", marker = "extra == 'desktop'", specifier = ">=0.39.1b4,<0.40" },
 ]
 provides-extras = ["desktop"]
 
 [[package]]
 name = "apprc-gui"
-version = "0.39.1b3"
+version = "0.39.1b4"
 source = { editable = "src/apprc_dev/packaging/gui" }
 dependencies = [
     { name = "apprc-core" },

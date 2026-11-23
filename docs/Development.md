@@ -845,16 +845,16 @@ This setting is independent of `RELEASE_PYPI`.
 
 Keep one cumulative changelog section per target version. Start it as
 `## [0.40.0] - YYYY-MM-DD (b1)` for package version `0.40.0b1`. Update the same
-heading and entries for `rc1`, then remove the stage marker for stable
-`0.40.0`. Use one beta and one release candidate by default. Use `b2` or `rc2`
-when a fix needs another public test. Each tagged build's GitHub notes capture
-the changes that ship since the previous stable release, including changes
-from earlier previews that are still present.
+heading, date, and entries for another beta or for `rc1`, then remove the stage
+marker for stable `0.40.0`. Use one beta and one release candidate by default.
+Use `b2` or `rc2` when a fix needs another public test. Each tagged build's
+GitHub notes capture the changes that ship since the previous stable release,
+including changes from earlier previews that are still present.
 
-Keep historical preview sections and leave the six categories under
-`[Unreleased]` empty at release time. Add a table-of-contents entry when
-an `X.Y.0` version becomes stable. Link stable entries to the previous stable
-tag comparison.
+Keep the six categories under `[Unreleased]` empty at release time. Add a
+table-of-contents entry when an `X.Y.0` version becomes stable. Link the
+cumulative section to the comparison from the previous stable tag to the
+current tagged build.
 
 `just publish-check` rehearses the Python 3.12 tests, metadata validation,
 local package builds, and clean installs without pushing or uploading.
@@ -869,9 +869,11 @@ and stores the verified bundle under `.cache/apprc/releases/`. It then pushes
 main and the tag and publishes the cached files on GitHub. Rerun the same command
 to resume an interrupted GitHub upload. A raw tag push triggers CI checks.
 
-GitHub tests the published artifacts. It keeps the newest three published betas
-and three release candidates. Older preview downloads expire and their Git tags
-and changelog entries stay available. For stable releases, the release command
+GitHub tests the published artifacts. Publishing a beta keeps only the latest
+published beta. Publishing a release candidate keeps the latest three release
+candidates. Pruning removes the older GitHub Release and its downloads. Git
+tags preserve the original changelog snapshots. All stable releases stay
+available. For stable releases, the release command
 requests trusted publishing of the same GitHub files to PyPI. The publisher
 sends `apprc-core` first, then `apprc` and `apprc-gui`. Use
 `just publish-pypi TAG` to retry PyPI publication of an existing stable release.

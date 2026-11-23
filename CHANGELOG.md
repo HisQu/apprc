@@ -6,16 +6,16 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 > [!IMPORTANT]
 > ## Rules
 > 1. Follow [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) and [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
-> 2. Keep stable sections and existing historical preview sections in this file. Git tags preserve each preview's changelog snapshot.
+> 2. Keep stable sections and the current cumulative section for each in-progress target. Git tags preserve earlier preview snapshots.
 > 3. Use `## [X.Y.Z] - YYYY-MM-DD (b1)` or `## [X.Y.Z] - YYYY-MM-DD (rc1)` for a preview. Update the date and stage in the same heading as the target progresses. For stable, use `## [X.Y.Z] - YYYY-MM-DD`. Append `[YANKED]` only for a yanked release. Keep all six categories under [Unreleased] and omit empty categories from released sections.
 > 4. Include only curated changes with a notable effect on users or contributors. Exclude routine internal refactors, test-only work, and other changes without a user- or contributor-facing effect; resolving an issue alone does not require an entry.
 > 5. File entries under their actual category. Start every breaking entry with **Breaking:** 💥 under that category, identify affected users, and include migration guidance when possible.
 > 6. Use the emoji mapping informed by [Gitmoji](https://github.com/carloscuesta/gitmoji) and [conventional-changelog-emoji](https://github.com/favoloso/conventional-changelog-emoji): ✨ Added, 🛠️ Changed, 🗑️ Deprecated, 🔥 Removed, 🐛 Fixed, and 🔒 Security.
-> 7. Keep one cumulative section per target version. Describe the changes that ship since the previous stable release, including earlier preview changes still present in the current build. Each GitHub Release gets a snapshot of that section.
+> 7. Keep one cumulative section per target version. Describe the changes that ship since the previous stable release, including earlier preview changes still present in the current build. Each GitHub Release gets a snapshot of that section. Keep only the latest published beta download.
 > 8. Use 🐛 Fixed only for defects in previously released behavior; describe new features under ✨ Added.
-> 9. List [Unreleased] and stable major/minor `X.Y.0` releases in the TOC. Place version reference definitions immediately after the TOC. [Unreleased] compares the latest existing release tag with HEAD. Link new stable entries to the previous stable comparison and use only existing tags.
+> 9. List [Unreleased] and stable major/minor `X.Y.0` releases in the TOC. Place version reference definitions immediately after the TOC. [Unreleased] compares the latest existing release tag with HEAD. For cumulative sections, compare the previous stable tag with the current tagged build. Use only existing tags.
 >
-> Local presentation exceptions: retain the project header, rules block, TOC, and `<br>` / `---` layout; use emoji-prefixed category headings and the inline 💥 breaking marker; keep all six category headings under [Unreleased] even when empty; list only [Unreleased] and stable `X.Y.0` releases in the TOC, leaving patch and preview entries in the history; place reference definitions immediately after the TOC instead of at the bottom.
+> Local presentation exceptions: retain the project header, rules block, TOC, and `<br>` / `---` layout; use emoji-prefixed category headings and the inline 💥 breaking marker; keep all six category headings under [Unreleased] even when empty; list only [Unreleased] and stable `X.Y.0` releases in the TOC; place reference definitions immediately after the TOC instead of at the bottom.
 
 <br>
 
@@ -58,10 +58,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 <br>
 
 [Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b4...HEAD
-[0.39.1b4]: https://github.com/HisQu/apprc/compare/v0.39.1b3...v0.39.1b4
-[0.39.1b3]: https://github.com/HisQu/apprc/compare/v0.39.1b2...v0.39.1b3
-[0.39.1b2]: https://github.com/HisQu/apprc/compare/v0.39.1b1...v0.39.1b2
-[0.39.1b1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b1
+[0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b4
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/HisQu/apprc/compare/v0.36.1...v0.37.0
@@ -126,16 +123,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-## [0.39.1b4] - 2026-11-23
-
-### 🐛 Fixed
-
-- Root help uses ASCII panel borders when redirected stdout cannot encode
-  the Unicode borders.
-
-<br>
-
-## [0.39.1b3] - 2026-11-23
+## [0.39.1] - 2026-11-23 (b4)
 
 ### ✨ Added
 
@@ -147,8 +135,15 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   Preview. Publishers can make standalone beta and release-candidate setups
   default to Preview.
 
+### 🛠️ Changed
+
+- Build and verify release packages locally. GitHub retains the latest
+  published beta, three release candidates, and all stable releases.
+
 ### 🐛 Fixed
 
+- Root help uses ASCII panel borders when redirected stdout cannot encode
+  the Unicode borders.
 - Workspace archive, restore, and unregister recheck the selected registry
   entry after acquiring locks. Registration and restore report private companion
   problems with repair guidance after the workspace is committed.
@@ -160,30 +155,11 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 - The workspace reconnect prompt explains when it creates the ordinary settings
   file. Source snapshots accept a staging directory with literal glob characters.
 
-<br>
-
-## [0.39.1b2] - 2026-11-22
-
-### 🐛 Fixed
-
 - Windows launchers published by install and update carry the application's
   numeric file and product version, full PEP 440 text, and prerelease flag.
-
 - Newly saved string secrets preserve whitespace, Unicode, and literal dotenv
   syntax through preview and reload. Existing unmarked assignments keep their
   interpolation behavior.
-
-<br>
-
-## [0.39.1b1] - 2026-11-21
-
-### 🛠️ Changed
-
-- Build and verify release packages locally. GitHub retains three betas and
-  three release candidates, along with all stable releases and Git tags.
-
-### 🐛 Fixed
-
 - Preserve unrelated directories during workspace move rollback and reject
   moves when the registered source changes while waiting. The CLI reports
   the committed destination and any cleanup warnings.

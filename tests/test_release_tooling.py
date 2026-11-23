@@ -16,8 +16,10 @@ def _package_files(directory: Path, version: str) -> None:
             (directory / f"{name}-{version}{suffix}").write_bytes(name.encode())
 
 
-@pytest.mark.parametrize("suffix", ["b", "rc"])
-def test_retention_leaves_other_channels_and_tags_alone(suffix: str) -> None:
+@pytest.mark.parametrize(("suffix", "expired"), [("b", [3, 2, 1]), ("rc", [1])])
+def test_retention_leaves_other_channels_and_tags_alone(
+    suffix: str, expired: list[int]
+) -> None:
     def release(
         number: int, tag: str, *, draft: bool = False, preview: bool = True
     ) -> dict[str, object]:
@@ -41,7 +43,7 @@ def test_retention_leaves_other_channels_and_tags_alone(suffix: str) -> None:
         release(10, "testing"),
         release(11, f"v1.0.0{other}1"),
     ]
-    assert assets.expired_releases(releases, f"v1.0.0{suffix}1") == [1]
+    assert assets.expired_releases(releases, f"v1.0.0{suffix}1") == expired
     assert assets.expired_releases(releases, "v1.0.0") == []
 
 

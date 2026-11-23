@@ -448,7 +448,7 @@ def test_installation_recovery_preserves_app_owned_ctx_obj() -> None:
     kit = build_config_only_example_app()
     app = typer.Typer()
     marker = {"application": "owned"}
-    args = ["app", "repair"]
+    args = ["app", "migrate"]
     runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
         kit,
         args_provider=lambda: args,
@@ -465,8 +465,8 @@ def test_installation_recovery_preserves_app_owned_ctx_obj() -> None:
     maintenance = typer.Typer()
     app.add_typer(maintenance, name="app")
 
-    @maintenance.command("repair")
-    def repair() -> None:
+    @maintenance.command("migrate")
+    def migrate() -> None:
         typer.echo("installation diagnostics available")
 
     result = CliRunner().invoke(app, args)

@@ -537,9 +537,9 @@ describes activation, recovery, and retained runtimes.
 ### Inspect before choosing a recovery action
 
 Use `yourapp app paths --json` to inspect placement and `yourapp app doctor --json`
-for structured diagnostics. The [inspection and repair guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#inspect-or-repair-installation)
-explains which recovery action applies. Managed `app repair` rebuilds the
-recorded project without selecting a newer source or changing its placement.
+for structured diagnostics. Doctor identifies any pending operation and gives its
+retry step. The [installation recovery guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#inspect-or-repair-installation)
+explains how to resume a checkout registration or recover a managed runtime.
 
 <br>
 

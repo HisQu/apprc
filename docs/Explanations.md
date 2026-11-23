@@ -549,7 +549,8 @@ operation dispatch.
 In the CLI, these operations appear under the nested `app` maintenance group:
 `app data backup/restore`, `app cache prune/clear`, and `app state prune/reset`.
 Each command exists only when that provider operation is supported. Installation
-management enables repair, uninstall, migration, and editable registration.
+management enables editable registration. Managed runtime recovery runs through
+the native command or matching setup executable.
 The [CLI reference](References.md#terminal-commands) describes when installation
 can also call a native installer.
 
@@ -600,9 +601,9 @@ The `app` group is always mounted and contains `paths` and `doctor`. The
 config-only initialization and user-dotenv setup. The app group exposes
 `app data backup/restore`, `app cache prune/clear`, and `app state prune/reset`
 only for supported provider operations. Set `installation_management=True`
-to enable repair, uninstall, migration, and editable registration. A
-distribution-enabled checkout can also use its authoring backend for a Source
-Build. An explicit `installer_entrypoint` takes precedence for that route.
+to enable editable registration. A distribution-enabled checkout can also use
+its authoring backend for a Source Build. An explicit `installer_entrypoint`
+takes precedence for that route.
 
 A host may provide `launcher_spec` and `launcher_handlers` to add root `launch`,
 which opens the existing Textual management launcher. It is not the host's
@@ -826,9 +827,10 @@ Use Git and uv to update or repair it.
 
 ## Activation, repair, and rollback
 
-An update prepares a new slot from the newer installer. Repair builds a
-replacement using the previously recorded archive and placement. The command
-continues to use active slot A while AppRC validates candidate B. Activation
+An update prepares a new slot from the newer installer. `app recover-runtime`
+resumes a saved managed candidate or builds a replacement using the previously
+recorded archive and placement. The command continues to use active slot A while
+AppRC validates candidate B. Activation
 commits the new selection. If an old application process still holds a lease
 on A, AppRC defers deletion of that slot.
 

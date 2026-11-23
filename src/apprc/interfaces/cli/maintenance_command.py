@@ -13,6 +13,7 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
+from apprc.definition.installation import EditableCheckout
 from apprc.definition.maintenance import (
     MaintenanceHandlers,
     RemovalPlan,
@@ -61,7 +62,7 @@ def mount_maintenance_groups(
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     checkout_installation: bool = False,
     preview_options: bool = False,
-    native_preview_release: bool = False,
+    native_management: bool = False,
     resource_diagnostics: Mapping[
         Literal["appdata", "cache", "state"],
         Callable[[Path], Mapping[str, object]],
@@ -104,7 +105,7 @@ def mount_maintenance_groups(
         installer_entrypoint=installer_entrypoint,
         checkout_installation=checkout_installation,
         preview_options=preview_options,
-        native_preview_release=native_preview_release,
+        native_management=native_management,
     )
 
     @maintenance.command("paths", rich_help_panel=maintenance_help_panel)
@@ -206,6 +207,7 @@ def mount_maintenance_groups(
         payload = build_application_doctor_payload(
             ctx,
             apprc,
+            maintenance_group_name=maintenance_group_name,
             verbose=verbose,
             host_diagnostics=host_diagnostics,
             resource_diagnostics=resource_diagnostics or {},
@@ -267,12 +269,24 @@ def mount_maintenance_groups(
                         host = cast(dict[str, object], details["host"])
                         host["runtime"] = observations
                 except (OSError, ValueError) as exc:
+                    message = f"Active runtime probe failed: {exc}"
+                    if record.operation is None:
+                        if isinstance(record.active_runtime, EditableCheckout):
+                            message += (
+                                " To restore dependencies, run `uv sync --locked` "
+                                f"in {record.active_runtime.project}."
+                            )
+                        else:
+                            message += (
+                                f" Run `{record.command_name} {maintenance_group_name} "
+                                "recover-runtime` to rebuild the managed runtime."
+                            )
                     cast(list[object], payload["checks"]).extend(
                         [
                             {
                                 "name": "runtime_health",
                                 "status": "error",
-                                "message": f"Active runtime probe failed: {exc}",
+                                "message": message,
                             },
                             {
                                 "name": "application_runtime",
@@ -405,7 +419,14 @@ def mount_maintenance_groups(
     order = {
         name: index
         for index, name in enumerate(
-            ("doctor", "paths", "install", "repair", "uninstall", "migrate")
+            (
+                "doctor",
+                "paths",
+                "install",
+                "recover-runtime",
+                "uninstall",
+                "migrate",
+            )
         )
     }
     maintenance.registered_commands.sort(

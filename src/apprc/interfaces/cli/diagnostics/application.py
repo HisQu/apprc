@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import replace
 import re
 from typing import Any, Callable, Literal, cast
 from pathlib import Path
@@ -18,6 +19,7 @@ from apprc.definition.installation import (
     EditableCheckout,
     InstallationDiagnostic,
     InstallationIdentity,
+    InstallationRecord,
     RuntimeSlot,
 )
 from apprc.definition.paths import ResourceKind
@@ -223,10 +225,44 @@ def _build_runtime_diagnostics(
     }
 
 
+def _pending_recovery(
+    record: InstallationRecord, maintenance_group_name: str
+) -> str:
+    """Describe how to retry the saved operation using its original owner."""
+    operation = record.operation
+    assert operation is not None
+    command = f"{record.command_name} {maintenance_group_name}"
+    if operation.kind == "migrate":
+        return f"Run `{command} migrate` to resume the saved migration."
+    if operation.kind == "uninstall":
+        return (
+            f"Rerun `{command} uninstall` with its original options. "
+            "Add `--dry-run` to review the saved removal first."
+        )
+    if operation.intended is not None:
+        target = operation.intended.runtime
+        if isinstance(target, EditableCheckout):
+            return (
+                f"From {target.project}, run `uv run --locked {command} install --editable` "
+                "to resume the saved checkout registration."
+            )
+        setup = "Rerun the matching setup executable with the options that started this operation."
+        if operation.kind == "repair":
+            setup = f"Run the matching setup executable with `{maintenance_group_name} recover-runtime`."
+        if isinstance(record.active_runtime, RuntimeSlot):
+            return (
+                f"Run `{command} recover-runtime` through the installed native command. "
+                f"If it is unavailable or the saved project archive is missing, use this fallback. {setup}"
+            )
+        return setup
+    return "Preserve installation.json and contact application support."
+
+
 def build_application_doctor_payload(
     ctx: typer.Context,
     apprc: AppRC,
     *,
+    maintenance_group_name: str,
     verbose: bool,
     host_diagnostics: Callable[[], Mapping[str, object]] | None,
     resource_diagnostics: Mapping[
@@ -256,6 +292,18 @@ def build_application_doctor_payload(
     if inspection is None:
         raise RuntimeError(
             "AppRC doctor has no installation inspection context."
+        )
+    record = inspection.record
+    if record is not None and record.operation is not None:
+        recovery = _pending_recovery(record, maintenance_group_name)
+        inspection = replace(
+            inspection,
+            diagnostics=tuple(
+                replace(item, recovery=recovery)
+                if item.code == "pending-operation"
+                else item
+                for item in inspection.diagnostics
+            ),
         )
     unusable = inspection.status in {"invalid", "provisional", "incomplete"}
     path_diagnostics = (
@@ -293,13 +341,19 @@ def build_application_doctor_payload(
                 diagnostic.path_error,
             )
         )
-        additional_diagnostics.append(
-            InstallationDiagnostic(
-                "path-resolution",
-                diagnostic.path_error,
-                "Inspect saved placement and run explicit migration if needed.",
+        if not any(
+            item.message == diagnostic.path_error
+            for item in inspection.diagnostics
+        ):
+            additional_diagnostics.append(
+                InstallationDiagnostic(
+                    "path-resolution",
+                    diagnostic.path_error,
+                    "Resolve the installation issue above before retrying path resolution."
+                    if unusable
+                    else "Review the reported path and its ownership.",
+                )
             )
-        )
 
     paths_detail: dict[str, object] | None = None
     operations_by_kind: dict[str, list[str]] = {}

@@ -871,8 +871,21 @@ def test_pending_windows_publication_preserves_path_intent(
 
     monkeypatch.setattr(installation, "_prepare_candidate", reuse_prepared)
     if retry == "repair":
+        pending = case.manager.inspect()
+        assert pending.revision is not None
+        with pytest.raises(InstallationError, match="changed before recovery"):
+            installation._repair_managed_application(
+                case.manager,
+                manager_executable=case.setup,
+                uv=case.uv,
+                expected_revision="0" * 64,
+            )
+        assert case.manager.inspect() == pending
         result = installation._repair_managed_application(
-            case.manager, manager_executable=case.setup, uv=case.uv
+            case.manager,
+            manager_executable=case.setup,
+            uv=case.uv,
+            expected_revision=pending.revision,
         )
     else:
         result = attempt(bin_dir if retry == "explicit" else None)

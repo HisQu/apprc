@@ -181,8 +181,8 @@ class InstallationProgressOutput:
         self._version = ""
         if mode != "managed":
             title = (
-                "Repair installation"
-                if mode == "repair"
+                "Recover runtime"
+                if mode == "recovery"
                 else f"{mode.title()} installation"
             )
             self._write(f"{name} · {title}")
@@ -238,7 +238,9 @@ class InstallationProgressOutput:
             f"{self._name} {self._version}" if self._version else self._name
         )
         action = (
-            "repair" if self._mode == "repair" else f"{self._mode} installation"
+            "runtime recovery"
+            if self._mode == "recovery"
+            else f"{self._mode} installation"
         )
         self._write(f"\n{product} {action} complete.", style="success")
         if next_step:

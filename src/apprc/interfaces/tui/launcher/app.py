@@ -154,14 +154,10 @@ class LauncherHomeScreen(Screen[None]):
                     id="launcher-migrate",
                     disabled=inspection.status not in _SAFE_STATUSES,
                 )
-                repairable = inspection.status in {
-                    "provisional",
-                    "incomplete",
-                    "invalid",
-                    "removed-retained",
-                }
                 yield Button(
-                    "Repair", id="launcher-repair", disabled=not repairable
+                    "Recovery guidance",
+                    id="launcher-recovery",
+                    disabled=not inspection.diagnostics,
                 )
                 has_record = (
                     inspection.record is not None
@@ -206,9 +202,14 @@ class LauncherHomeScreen(Screen[None]):
                 group="launcher-maintenance",
                 exclusive=True,
             )
-        elif action_id == "launcher-repair":
-            self.run_worker(
-                self._repair(), group="launcher-maintenance", exclusive=True
+        elif action_id == "launcher-recovery":
+            self.notify(
+                "\n".join(
+                    item.recovery
+                    for item in self.context.inspection.diagnostics
+                ),
+                severity="warning",
+                markup=False,
             )
         elif action_id == "launcher-uninstall":
             self._uninstall_pending = True
@@ -412,25 +413,6 @@ class LauncherHomeScreen(Screen[None]):
         self.notify(
             f"Installation migration completed with status {inspection.status}."
         )
-
-    async def _repair(self) -> None:
-        """Explain which owner can repair the captured application runtime."""
-        from apprc.definition.installation import EditableCheckout
-
-        record = self.context.inspection.record
-        if record is not None and isinstance(
-            record.active_runtime, EditableCheckout
-        ):
-            message = (
-                "This editable environment is owned by Git and uv. Restore it "
-                "with `uv sync --locked` in the recorded checkout."
-            )
-        else:
-            message = (
-                "Managed repair requires the matching native setup executable. "
-                "Run that setup executable to repair the installation."
-            )
-        self.notify(message, severity="warning", markup=False)
 
     async def _uninstall(self) -> None:
         """Guard the complete saved-uninstall interaction against competing actions."""

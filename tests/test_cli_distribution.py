@@ -100,6 +100,7 @@ def _app(
         (("--help",), "utf-8"),
         (("--help",), "cp1252"),
         (("dist", "build", "--help"), "utf-8"),
+        (("app", "--help"), "utf-8"),
         (("app", "install", "--help"), "utf-8"),
         (("app", "update", "--help"), "utf-8"),
         (("update", "--help"), "utf-8"),
@@ -209,6 +210,9 @@ assert "prompt_toolkit" not in sys.modules
     elif help_args[:2] == ("dist", "build"):
         assert "--target-current" in output
         assert "--olis-repo" in output
+    elif help_args == ("app", "--help"):
+        assert "doctor" in output and "install" in output
+        assert "repair" not in output and "recover-runtime" not in output
     elif help_args[:2] == ("app", "install"):
         assert "Source Build (SB)" in output
         assert "--preview" in output

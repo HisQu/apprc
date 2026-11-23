@@ -112,6 +112,11 @@ class CheckoutAuthoring:
                     if not typer.confirm(
                         f"{exc} Build the setup for this platform?"
                     ):
+                        write_line(
+                            stream,
+                            "Skipped the setup build. The installer did not run.",
+                            color=color,
+                        )
                         raise typer.Exit(1) from exc
                 write_line(
                     stream,

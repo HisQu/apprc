@@ -19,7 +19,7 @@ Choose the journey that matches what you want to do.
 | --- | --- | --- |
 | **Use the SDK** | [Install the SDK](../README.md#install-the-apprc-sdk) and [read typed settings](How-To-User-Guides.md#read-typed-settings). | [Choose an example](EXAMPLES.md#choose-a-setup) to add the resources or settings interfaces you need. |
 | **Ship an application** | [Prepare a release package](How-To-User-Guides.md#prepare-a-release-package). | [Validate installation](How-To-User-Guides.md#validate-installation-on-your-machine) and check the [native authoring requirements](Development.md#native-application-frontends). |
-| **Use an installed application** | [Run a published installer](How-To-User-Guides.md#run-a-published-installer) or [register your checkout](How-To-User-Guides.md#install-from-a-checkout). | [Launch the app](How-To-User-Guides.md#run-the-installed-application), then [update it](How-To-User-Guides.md#update-an-application), [repair it](How-To-User-Guides.md#inspect-or-repair-installation), or [uninstall it](How-To-User-Guides.md#remove-a-managed-program). |
+| **Use an installed application** | [Run a published installer](How-To-User-Guides.md#run-a-published-installer) or [register your checkout](How-To-User-Guides.md#install-from-a-checkout). | [Launch the app](How-To-User-Guides.md#run-the-installed-application), then [update it](How-To-User-Guides.md#update-an-application), [recover it](How-To-User-Guides.md#inspect-or-repair-installation), or [uninstall it](How-To-User-Guides.md#remove-a-managed-program). |
 
 ```mermaid
 flowchart TD

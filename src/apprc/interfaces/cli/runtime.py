@@ -491,17 +491,14 @@ class CliRuntime(Generic[OptionsT, StateT]):
             context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
         invocation = self._classify_invocation(ctx)
+        if invocation.help_requested:
+            return CliRuntimeSession(apprc_context=None)
         if invocation.installation_command:
             ctx.meta["apprc.update.maintenance_group"] = (
                 self.maintenance_group_name
             )
-            if invocation.help_requested:
-                return CliRuntimeSession(apprc_context=None)
             diagnostic_context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=diagnostic_context)
-        if invocation.skip_runtime_setup and invocation.help_requested:
-            context = self._installation_context(ctx, options)
-            return CliRuntimeSession(apprc_context=context)
         try:
             apprc_context = prepare_cli_runtime_context(
                 ctx,
@@ -643,7 +640,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             checkout_installation=checkout_installer is not None,
             preview_options=checkout_installer is not None
             and checkout_installer.preview,
-            native_preview_release=self.native_binding is not None,
+            native_management=self.native_binding is not None,
             host_diagnostics=host_diagnostics,
             resource_diagnostics=resource_diagnostics,
             resource_group_extensions=resource_group_extensions,
@@ -762,7 +759,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 maintenance_action = parsed.action_tokens[0]
         installation_command = maintenance_action in {
             "install",
-            "repair",
+            "recover-runtime",
             "uninstall",
             "migrate",
             "update",

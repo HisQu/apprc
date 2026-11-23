@@ -990,6 +990,7 @@ def _repair_managed_application(
     *,
     manager_executable: Path,
     uv: Path,
+    expected_revision: str,
 ) -> InstallationInspection:
     if not manager_executable.is_absolute() or not manager_executable.is_file():
         raise InstallationError(
@@ -1002,6 +1003,10 @@ def _repair_managed_application(
     directory = manager.directory
     with installation_lock(directory):
         prior = manager.inspect()
+        if prior.revision != expected_revision:
+            raise InstallationError(
+                "The installation changed before recovery started. Run doctor and try again."
+            )
         record = prior.record
         if record is None or prior.revision is None:
             raise InstallationError(

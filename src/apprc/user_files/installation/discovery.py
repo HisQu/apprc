@@ -124,14 +124,19 @@ def inspect_installation(
         content = path.read_bytes()
         revision = sha256(content).hexdigest()
         record = decode_record(content, app_id=app_id)
+        operation = record.operation
         diagnostics = (
             ()
             if record.status in {"ready", "removed-retained"}
             else (
                 InstallationDiagnostic(
                     "pending-operation",
-                    f"Installation is {record.status}.",
-                    "Inspect installation and resume its matching installer or repair.",
+                    f"The saved {operation.kind} operation is {operation.phase}."
+                    if operation is not None
+                    else f"Installation is {record.status}.",
+                    "Run the application's installation diagnostics for recovery guidance."
+                    if operation is not None
+                    else "Preserve installation.json and contact application support.",
                 ),
             )
         )
@@ -148,7 +153,7 @@ def inspect_installation(
                 InstallationDiagnostic(
                     "invalid-authority",
                     str(error),
-                    "Preserve installation.json and run installation doctor/repair.",
+                    "Preserve installation.json and contact application support.",
                 ),
             ),
         )

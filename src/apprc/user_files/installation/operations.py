@@ -230,7 +230,7 @@ def plan_uninstall(
     """
     if record.operation is not None:
         raise InstallationError(
-            "Resume or repair the pending operation before removal."
+            "Complete the pending operation before removal. Run the application's installation diagnostics for guidance."
         )
     if not complete and (categories or forget_retained):
         raise InstallationError(

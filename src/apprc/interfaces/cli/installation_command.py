@@ -187,7 +187,7 @@ def mount_installation_group(
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     checkout_installation: bool = False,
     preview_options: bool = False,
-    native_preview_release: bool = False,
+    native_management: bool = False,
 ) -> typer.Typer:
     """Register explicitly enabled installation actions on a maintenance group."""
     child = app
@@ -210,7 +210,7 @@ def mount_installation_group(
         else:
             install_help = "Run the configured installer."
 
-        if native_preview_release:
+        if native_management:
             install_help += (
                 "\n\nUse --preview --version VERSION or --preview --release TAG "
                 "to install a published release into Preview."
@@ -268,7 +268,7 @@ def mount_installation_group(
                 False,
                 "--preview",
                 "-p",
-                hidden=not (preview_options or native_preview_release),
+                hidden=not (preview_options or native_management),
                 help="Install or update the preview and leave it installed.",
             ),
             smoke: bool = typer.Option(
@@ -308,7 +308,7 @@ def mount_installation_group(
                 ) from error
             if (
                 editable
-                and native_preview_release
+                and native_management
                 and any(
                     token.split("=", 1)[0] in {"--version", "-v", "--release"}
                     for token in ctx.args
@@ -564,26 +564,69 @@ def mount_installation_group(
         else:
             _emit(installation_inspection_payload(result), json_output)
 
-    @child.command("repair")
-    def repair(ctx: typer.Context) -> None:
-        """Repair a managed runtime with its authenticated native manager."""
+    def recover_runtime(
+        ctx: typer.Context,
+        assume_yes: Annotated[
+            bool,
+            typer.Option("--yes", "-y", help="Apply managed runtime recovery."),
+        ] = False,
+    ) -> None:
+        """Resume a pending managed installation or rebuild its saved runtime."""
         context = _inspection(ctx)
-        if (
-            context.native_binding is None
-            or context._native_manager_executable is None
-        ):
-            record = context.inspection.record
-            if record is not None and isinstance(
-                record.active_runtime, EditableCheckout
-            ):
-                raise typer.BadParameter(
-                    "This editable environment is owned by Git and uv. "
-                    "Restore it with `uv sync --locked` in the recorded checkout."
-                )
-            raise typer.BadParameter(
-                "Managed repair requires the matching native setup executable. "
-                "Run that setup executable to repair the installation."
+        binding = context.native_binding
+        executable = context._native_manager_executable
+        if binding is None or executable is None:
+            raise click.ClickException(
+                "Run runtime recovery through the installed native command or matching native setup."
             )
+        from apprc.definition.installation import RuntimeSlot
+
+        record = context.inspection.record
+        revision = context.inspection.revision
+        doctor = f"{binding.command_name} {maintenance_group_name} doctor"
+        if (
+            record is None
+            or revision is None
+            or record.identity != binding.identity
+            or record.command_name != binding.command_name
+        ):
+            raise click.ClickException(
+                f"Recovery requires a matching installation record. Run `{doctor}`."
+            )
+        operation = record.operation
+        if operation is not None:
+            if (
+                operation.kind not in {"install", "replace", "repair"}
+                or operation.intended is None
+                or not isinstance(operation.intended.runtime, RuntimeSlot)
+            ):
+                raise click.ClickException(
+                    f"The pending {operation.kind} operation has a separate recovery route. Run `{doctor}`."
+                )
+            prompt = f"Resume the saved managed {operation.kind} operation?"
+        elif isinstance(record.active_runtime, EditableCheckout):
+            raise click.ClickException(
+                "To restore dependencies for this editable installation, run "
+                f"`uv sync --locked` in {record.active_runtime.project}."
+            )
+        elif record.status == "ready" and isinstance(
+            record.active_runtime, RuntimeSlot
+        ):
+            prompt = (
+                "Rebuild the managed runtime from its saved project archive?"
+            )
+        else:
+            raise click.ClickException(
+                f"No managed runtime is available for recovery. Run `{doctor}`."
+            )
+        if not assume_yes:
+            if not sys.stdin.isatty():
+                raise click.ClickException(
+                    f"{prompt} Add --yes to confirm runtime recovery."
+                )
+            if not typer.confirm(prompt, default=False):
+                raise typer.Abort()
+
         from contextlib import nullcontext
 
         from apprc.distribution.runtime._install_progress import (
@@ -593,6 +636,7 @@ def mount_installation_group(
         from apprc.distribution.runtime._manager import _manager_uv
         from apprc.distribution.runtime.installation import (
             _repair_managed_application,
+            installation_maintenance_group,
         )
         from apprc.interfaces._terminal_console import human_report
         from apprc.interfaces.cli._installation_output import (
@@ -603,7 +647,7 @@ def mount_installation_group(
 
         output = (
             InstallationProgressOutput(
-                ctx, context.manager.spec.display_name, "repair"
+                ctx, context.manager.spec.display_name, "recovery"
             )
             if human_report()
             else None
@@ -612,23 +656,35 @@ def mount_installation_group(
             output(InstallProgress("stage", "Preparing Runtime"))
         try:
             with (
+                installation_maintenance_group(maintenance_group_name),
                 installation_progress(output)
                 if output is not None
-                else nullcontext()
+                else nullcontext(),
             ):
                 result = _repair_managed_application(
                     context.manager,
-                    manager_executable=context._native_manager_executable,
+                    manager_executable=executable,
                     uv=_manager_uv(),
+                    expected_revision=revision,
                 )
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(_installation_error_message(exc)) from exc
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+            subprocess.CalledProcessError,
+        ) as exc:
+            raise click.ClickException(
+                _installation_error_message(exc)
+            ) from exc
         if output is None:
             _emit(installation_inspection_payload(result), False)
         elif result.status == "ready":
             output.complete()
         else:
-            print_installation_result(ctx, result, operation="Repair")
+            print_installation_result(ctx, result, operation="Runtime recovery")
+
+    if native_management:
+        child.command("recover-runtime")(recover_runtime)
 
     @child.command("uninstall")
     def uninstall(

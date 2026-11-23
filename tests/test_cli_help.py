@@ -160,7 +160,6 @@ def test_root_help_maintenance_summary_uses_available_order_without_truncation()
     names = (
         "doctor",
         "paths",
-        "repair",
         "uninstall",
         "migrate",
         "data",
@@ -192,7 +191,6 @@ def test_root_help_wraps_to_requested_width() -> None:
                 (
                     "doctor",
                     "paths",
-                    "repair",
                     "uninstall",
                     "migrate",
                     "data",

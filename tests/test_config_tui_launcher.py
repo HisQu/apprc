@@ -82,7 +82,7 @@ def _launcher_context(
                 InstallationDiagnostic(
                     code="malformed",
                     message="The saved record is invalid.",
-                    recovery="Run app repair after inspection.",
+                    recovery="Preserve installation.json and contact application support.",
                 ),
             ),
         )
@@ -149,7 +149,7 @@ async def test_invalid_installation_shows_diagnostics_and_disables_unsafe_action
         assert app.home.query_one("#launcher-config", Button).disabled
         assert app.home.query_one("#launcher-workspaces", Button).disabled
         assert app.home.query_one("#launcher-uninstall", Button).disabled
-        assert not app.home.query_one("#launcher-repair", Button).disabled
+        assert not app.home.query_one("#launcher-recovery", Button).disabled
 
 
 @pytest.mark.asyncio
@@ -666,7 +666,8 @@ def test_cli_launch_uses_captured_selectors_and_real_launcher(
             assert status["diagnostics"] == original_diagnostics
             assert app.home.query_one("#launcher-action-run", Button).disabled
             assert (
-                app.home.query_one("#launcher-repair", Button).disabled is False
+                app.home.query_one("#launcher-recovery", Button).disabled
+                is False
             )
 
     def run(app: LauncherApp) -> None:

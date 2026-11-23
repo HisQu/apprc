@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,10 +16,13 @@ import apprc as rc
 from apprc.definition.installation import (
     EditableCheckout,
     InstallationIdentity,
+    InstallationOperation,
     InstallationPlacement,
     InstallationRecord,
+    InstallationTarget,
     ProjectSnapshot,
     RuntimeSelection,
+    RuntimeSlot,
 )
 from apprc.definition.paths import Layout, Paths
 from apprc.definition.resolution import (
@@ -104,6 +108,88 @@ def test_bridge_preserves_relative_env_file_across_working_directory_change(
     )
 
     assert resolved.build(ConfigOnlyExampleEnv).profile == "from-captured-cwd"
+
+
+@pytest.mark.parametrize("managed_candidate", [False, True])
+def test_checkout_doctor_identifies_pending_replacement_and_its_owner(
+    tmp_path: Path, managed_candidate: bool
+) -> None:
+    environment = native_environment()
+    name = "doctor-pending-checkout"
+    declaration = rc.AppRC(app_id=name, command_name=name, paths=Paths())
+    directory = declaration.installation(environment=environment).directory
+    create_private_directory_if_missing(directory)
+    initial = _removed_record(name, name)
+    original = EditableCheckout(
+        tmp_path / "original", tmp_path / "original" / ".venv"
+    )
+    checkout = tmp_path / "pending checkout"
+    target = (
+        RuntimeSlot(
+            uuid4(),
+            ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+            RuntimeSelection("3.12"),
+        )
+        if managed_candidate
+        else EditableCheckout(checkout, checkout / ".venv")
+    )
+    record = replace(
+        initial,
+        status="incomplete",
+        active_runtime=original,
+        operation=InstallationOperation(
+            uuid4(),
+            "replace",
+            "failed",
+            InstallationTarget(initial.identity, initial.placement, target),
+            initial.placement,
+        ),
+    )
+    authority = directory / "installation.json"
+    content = encode_record(record)
+    authority.write_bytes(content)
+    arguments = ["maintain", "doctor", "--json"]
+    app = typer.Typer()
+    rc.cli.mount_app_cli(
+        app,
+        declaration,
+        installation_management=True,
+        maintenance_group_name="maintain",
+        args_provider=lambda: arguments,
+    )
+    runner = CliRunner()
+    result = runner.invoke(app, arguments, env=environment)
+
+    assert result.exit_code == 1, result.output
+    installation = json.loads(result.stdout)["installation"]
+    assert installation["status"] == "incomplete"
+    pending = next(
+        item
+        for item in installation["diagnostics"]
+        if item["code"] == "pending-operation"
+    )
+    assert "replace" in pending["message"] and "failed" in pending["message"]
+    if managed_candidate:
+        assert "matching setup executable" in pending["recovery"]
+        assert "options that started this operation" in pending["recovery"]
+        assert "uv sync" not in pending["recovery"]
+    else:
+        assert (
+            f"uv run --locked {name} maintain install --editable"
+            in pending["recovery"]
+        )
+        assert str(checkout) in pending["recovery"]
+    assert all(
+        " migrate" not in item["recovery"]
+        for item in installation["diagnostics"]
+    )
+
+    arguments[:] = ["maintain", "--help"]
+    help_result = runner.invoke(app, arguments, env=environment)
+    assert help_result.exit_code == 0, help_result.output
+    assert "repair" not in help_result.output
+    assert "recover-runtime" not in help_result.output
+    assert authority.read_bytes() == content
 
 
 def test_root_doctor_omits_verbose_details_without_verbose_option() -> None:

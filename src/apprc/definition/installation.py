@@ -651,7 +651,7 @@ class InstallationInspection:
             detail = "; ".join(item.message for item in self.diagnostics)
             raise InstallationError(
                 detail
-                or f"Installation is {self.status}; inspect and repair it."
+                or f"Installation is {self.status}. Run the application's installation diagnostics."
             )
         return self.record
 

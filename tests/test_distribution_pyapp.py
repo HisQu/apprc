@@ -386,9 +386,31 @@ def test_native_managed_repair_update_and_cleanup_lifecycle(
     assert unavailable.stderr == ""
     unavailable_report = json.loads(unavailable.stdout)
     assert unavailable_report["status"] != "ok"
-    assert "checks" in unavailable_report
+    assert any(
+        check["name"] == "runtime_health"
+        and "app recover-runtime" in check["message"]
+        for check in unavailable_report["checks"]
+    )
+    authority = directory / "installation.json"
+    before_recovery = authority.read_bytes()
+    recovery_help = run(
+        [str(setup_a), "app", "recover-runtime", "--help"],
+        environment=environment,
+        cwd=tmp_path,
+    )
+    assert "recover-runtime" in recovery_help.stdout
+    assert "--yes" in recovery_help.stdout
+    unconfirmed_recovery = run(
+        [str(setup_a), "app", "recover-runtime"],
+        environment=environment,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert unconfirmed_recovery.returncode != 0
+    assert "--yes" in unconfirmed_recovery.stderr
+    assert authority.read_bytes() == before_recovery
     repair = run(
-        [str(setup_a), "app", "repair"],
+        [str(setup_a), "app", "recover-runtime", "--yes"],
         environment=environment,
         cwd=tmp_path,
         check=False,
@@ -1436,7 +1458,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     assert "requires a fresh preview" in refused.stderr
     assert preview_authority.read_bytes() == original_preview
 
-    repaired = invoke(preview_command, "app", "repair")
+    repaired = invoke(preview_command, "app", "recover-runtime", "--yes")
     assert repaired.returncode == 0, repaired.stdout + repaired.stderr
     updated_preview = invoke(
         setup,

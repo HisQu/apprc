@@ -692,7 +692,8 @@ def _forward(
                 )
             ):
                 raise RuntimeError(
-                    "The application runtime is unavailable; use app doctor or repair."
+                    "The application runtime is unavailable. "
+                    f"Run `{binding.command_name} {binding.maintenance_group_name} doctor`."
                 )
             runtime = record.active_runtime
             command = runtime_command(
@@ -1025,7 +1026,7 @@ def main() -> int:
     core_actions = {
         "doctor",
         "paths",
-        "repair",
+        "recover-runtime",
         "uninstall",
         "migrate",
         "install",
@@ -1059,7 +1060,7 @@ def main() -> int:
     if preview_command:
         if group_args is not None and group_args[:1] in (
             ["uninstall"],
-            ["repair"],
+            ["recover-runtime"],
         ):
             from apprc.user_files.installation.planning import resource_roots
 

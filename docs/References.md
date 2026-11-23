@@ -510,8 +510,9 @@ installation support namespace are not supported. Obtain the link revision with
 identity before removal and unlinks the link itself; it does not follow or remove
 the target. Linked ancestor paths remain invalid.
 
-The native command handles `app doctor`, `paths`, `repair`, `uninstall` and
-`migrate` through the same AppRC maintenance implementation as the app CLI.
+The native command handles `app doctor`, `paths`, `uninstall`, and `migrate`
+through the same AppRC maintenance implementation as the app CLI. It also
+provides `app recover-runtime` for managed installations.
 Normal application/config/workspace commands, application-owned data/cache/state
 operations and `launch` run in the absolute recorded runtime. Doctor always
 reports independent installation health and may add actual application checks;
@@ -939,7 +940,7 @@ The composition extension keywords have these exact types and defaults:
 | Keyword | Type/default | Meaning |
 | --- | --- | --- |
 | `maintenance_group_name` | `str = "app"` | Maintenance command path and returned mapping prefix. |
-| `installation_management` | `bool = False` | Enable editable installation plus `repair`, `uninstall` and `migrate`; never inferred from an existing record at mount time. |
+| `installation_management` | `bool = False` | Enable editable registration. The option is set by the host at mount time. |
 | `installer_entrypoint` | `Callable[[Sequence[str]], int] \| None = None` | Optional authored delegate for noneditable `app install`; otherwise direct the user to native setup. A noncallable is rejected. |
 | `host_diagnostics` | `Callable[[], Mapping[str, object]] \| None = None` | Local, read-only host metadata, evaluated only by verbose doctor. |
 | `resource_diagnostics` | `Mapping[Literal["appdata", "cache", "state"], Callable[[Path], Mapping[str, object]]] \| None = None` | Explicit local, read-only resource details on safe existing roots, only in verbose doctor. |
@@ -991,7 +992,7 @@ expands nested commands into extra root rows.
 
 The maintenance row reads `Inspect and maintain the application (<available names>).`
 from its actual immediate commands in registration order: `doctor`, `paths`,
-`install`, `repair`, `uninstall`, `migrate`, `data`, `cache`, `state`, filtering
+`install`, `recover-runtime`, `uninstall`, `migrate`, `data`, `cache`, `state`, filtering
 unavailable entries. Registered host extensions determine resource availability.
 The remaining injected descriptions are:
 
@@ -1054,7 +1055,8 @@ flowchart LR
     Host --> Config["Declarations: config and workspace"]
     Host --> Providers["Resource providers: app data, cache, or state"]
     Host --> Install["Management or a delegate: app install"]
-    Host --> Maintain["Management: app repair, uninstall, migrate"]
+    Host --> Maintain["Maintenance: app uninstall and migrate"]
+    Native["Native command and setup"] --> Recover["app recover-runtime"]
     Host --> Launch["LauncherSpec: launch"]
     Host --> Dist["Checkout authoring: dist build and check"]
     Dist --> Test["With management: dist test"]
@@ -1066,7 +1068,7 @@ flowchart LR
 | `app doctor [--verbose] [--json]` | Always. Aggregate local/read-only installation, path, ownership, boundary and config diagnostics; no host business factories or remote services. JSON contract below. |
 | `app paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. Without a category, list all paths; a category prints its absolute path. Disabled category and invalid `--open` combinations exit 2. Open only an existing directory; never create it. Original authority/path failures exit nonzero without fallback locations. |
 | `app install [-e/--editable] [--preview/-p] [--smoke/-s] [--desktop] [ARGS]...` | Enabled by installation management or an explicit installer delegate. Editable registration uses the invocation's actual checkout `.venv`. With `-e`, `--desktop` explicitly requests a shortcut. With installation management, an opted-in checkout can verify or build a Source Build. Preview-enabled Source Builds advertise `--preview` and `--smoke`. Both require a managed installation. An explicit installer delegate takes precedence and receives forwarded arguments. `--help` remains local. |
-| `app repair` | `installation_management=True`. Rebuild the recorded managed project through authenticated native support without selecting newer source or changing placement. Editable environments receive `uv sync --locked` guidance instead. |
+| `app recover-runtime [--yes/-y]` | Installed native command or matching setup executable. Resume the saved managed candidate or rebuild the recorded managed project at its saved placement. Confirm interactively or pass `--yes`. |
 | `app uninstall [--dry-run] [--keep-config] [--remove-repository] [--yes/-y] [--wait]` | `installation_management=True`. Preview or execute the saved removal inventory. See the [CLI uninstall guide](How-To-User-Guides.md#remove-a-managed-program) for confirmation, retention, and Windows completion. |
 | `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview/apply exact resource migration, or resume its saved pending inventory/revision, with confirmation and quiescence checks. Unrecognized data needs application-owned inventory; recovery never rescans it silently. |
 | `app data backup/restore` | Declared appdata and corresponding provider operations. Restore confirms unless `--yes`; data means AppRC appdata, never workspace/project payloads. |
@@ -1137,7 +1139,7 @@ resolution error without changing otherwise valid saved authority. An explicit
 invocation layout does not erase captured installation errors or rewrite the
 record.
 
-Repair, migration, resource maintenance, and workspace list output is
+Runtime recovery, migration, resource maintenance, and workspace list output is
 human-readable when stdout is a terminal and `--json` is absent. Explicit
 `--json` and redirected output retain their existing formats. Color never
 selects the format. AppRC respects `NO_COLOR`, explicit Click color settings,
@@ -1159,7 +1161,8 @@ No compatibility aliases survive. Existing scripts must change as follows:
 | Root `paths` | `app paths` |
 | Root/config/installation doctor or host diagnose | `app doctor` |
 | `installation show`, resource `info` | `app doctor --verbose` |
-| `installation repair/uninstall/migrate` | `app repair/uninstall/migrate` |
+| `installation repair`, `app repair` | `app recover-runtime` on the native command or matching setup. For an editable checkout, follow `app doctor`. |
+| `installation uninstall/migrate` | `app uninstall/migrate` |
 | `config init` | `config setup` |
 | `appdata backup/restore` | `app data backup/restore` |
 | Root cache/state operations | `app cache ...`, `app state ...` |

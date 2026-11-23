@@ -269,7 +269,7 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
     assert not stable_manager.exists()
 
     repair = run(
-        [str(setup), "app", "repair"],
+        [str(setup), "app", "recover-runtime", "--yes"],
         environment=environment,
         cwd=tmp_path,
         check=False,

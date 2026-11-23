@@ -698,8 +698,8 @@ The mount adds `app doctor` and `app paths` even without config or resource
 declarations. `config` and `workspace` depend on their declarations. Set
 `maintenance_group_name="app"` to choose the maintenance group's name (the
 default shown here), and `maintenance_help_panel="AppRC: Commands"` to choose
-its root-help panel. `app repair`, `app uninstall`, and `app migrate` require
-`installation_management=True`, which also enables `app install -e`.
+its root-help panel. Set `installation_management=True` to enable
+`app install -e`.
 For a Source Build, enable distribution authoring in the checkout or supply an
 explicit `installer_entrypoint`. See the [command reference](References.md#terminal-commands).
 
@@ -1525,7 +1525,7 @@ and uninstall. Set `NO_COLOR` to suppress styling while keeping the
 human-readable layout. Color never carries the only indication of success,
 warnings, failures, or items selected for removal.
 
-The repair, migration, resource maintenance, and workspace list commands
+The runtime recovery, migration, resource maintenance, and workspace list commands
 show human-readable results on a terminal. Where offered, use `--json` for
 structured output. Redirected output keeps its existing format. Use
 `--dry-run` where offered to review the exact targets without applying changes.
@@ -1544,21 +1544,30 @@ app. It may invoke the application's validators through the recorded runtime;
 unavailable checks are explicit warnings, not successful validation.
 Actual validation/authority errors remain nonzero.
 
-For managed repair:
+Doctor names any saved operation and gives its retry command. For a pending
+editable registration, run `uv run --locked demo app install --editable` from
+the checkout named in the report. For an editable installation with broken
+Python dependencies, run `uv sync --locked` in the recorded checkout.
+
+If doctor identifies a pending managed installation and there is no installed
+native command yet, rerun the matching setup with the original options. If the
+native command is available, it can resume the candidate or rebuild a broken
+managed runtime:
 
 ```shell
-demo app repair
+demo app recover-runtime
 ```
 
-Repair uses the recorded verified project archive and placement to prepare a
-replacement slot. It never selects newer application source. An interrupted
-candidate resumes under its exact operation/revision; an old active target
-remains selected until its replacement is validated and published. Dependency
-acquisition may still require network access and credentials.
+The command describes the action and asks for confirmation. Pass `--yes` for
+unattended execution. A pending managed installation resumes its saved candidate.
+For a ready managed installation, recovery rebuilds the saved project at its
+recorded placement. AppRC selects the replacement only after validation and
+publication. Dependency acquisition may require network access and credentials.
 
-If the stable command is missing, the matching original setup provides the
-independent recovery entry point. For an editable checkout, use
-`uv sync --locked` instead: AppRC does not rebuild or own that environment.
+If the pending project's archive is missing, rerun the setup that started that
+installation with the original options. For a broken managed runtime whose
+installed command is unavailable, run the matching setup executable with
+`app recover-runtime` as its arguments.
 Application-specific migrations and cleanup run in an application runtime; if
 required code is unavailable, the dependent operation stops safely.
 

@@ -57,7 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b3...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1b4...HEAD
+[0.39.1b4]: https://github.com/HisQu/apprc/compare/v0.39.1b3...v0.39.1b4
 [0.39.1b3]: https://github.com/HisQu/apprc/compare/v0.39.1b2...v0.39.1b3
 [0.39.1b2]: https://github.com/HisQu/apprc/compare/v0.39.1b1...v0.39.1b2
 [0.39.1b1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1b1
@@ -109,10 +110,16 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+### 🔒 Security
+
+<br>
+
+## [0.39.1b4] - 2026-11-23
+
+### 🐛 Fixed
+
 - Root help uses ASCII panel borders when redirected stdout cannot encode
   the Unicode borders.
-
-### 🔒 Security
 
 <br>
 

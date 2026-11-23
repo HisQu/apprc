@@ -81,8 +81,7 @@ def _verified_release_candidate(
     environment: Mapping[str, str],
     *,
     regular_app_id: str,
-    release_tag: str | None,
-    release_version: str | None,
+    release_selector: str | None,
     expected_regular: NativeBinding | None = None,
 ) -> tuple[DownloadedReleaseSetup, NativeBinding, Version, bool]:
     """Download one release and verify its package and intended product."""
@@ -106,23 +105,13 @@ def _verified_release_candidate(
         if sys.platform == "win32"
         else "x86_64-unknown-linux-gnu"
     )
-    try:
-        requested = (
-            Version(release_version) if release_version is not None else None
-        )
-    except InvalidVersion as error:
-        raise InstallationError(
-            f"Invalid requested version {release_version!r}."
-        ) from error
-
     download = download_release_setup(
         source,
         app_id=regular_app_id,
         target=target,
         directory=stage,
         environment=environment,
-        release_tag=release_tag,
-        requested_version=requested,
+        selector=release_selector,
     )
     setup = download.path
     regular, preview = _inspect_native_products(
@@ -158,14 +147,14 @@ def _verified_release_candidate(
             numeric_product_version,
         )
 
-        assert requested is not None
         if next_version != download.version or (
-            requested != download.version
-            and numeric_product_version(candidate.version) != requested.release
+            download.windows_version is not None
+            and numeric_product_version(candidate.version)
+            != download.windows_version
         ):
             raise InstallationError(
                 f"Release {download.tag!r} contains version {candidate.version}, "
-                f"expected {download.version} for {release_version!r}."
+                f"expected {download.version} for {release_selector!r}."
             )
     return download, candidate, next_version, is_preview
 
@@ -176,8 +165,7 @@ def install_preview_release(
     binding: NativeBinding,
     *,
     regular: NativeBinding,
-    release_tag: str | None,
-    release_version: str | None,
+    release_selector: str,
     arguments: Sequence[str],
 ) -> int:
     """Apply an explicit released Preview setup through its manual install path."""
@@ -206,8 +194,7 @@ def install_preview_release(
             stage,
             environment,
             regular_app_id=regular.identity.app_id,
-            release_tag=release_tag,
-            release_version=release_version,
+            release_selector=release_selector,
             expected_regular=regular,
         )
         setup = download.path
@@ -239,8 +226,7 @@ def _managed_update(
     confirm: Callable[[str], None],
     *,
     regular_app_id: str,
-    release_tag: str | None,
-    release_version: str | None,
+    release_selector: str | None,
 ) -> bool:
     from packaging.version import InvalidVersion, Version
 
@@ -256,8 +242,7 @@ def _managed_update(
         stage,
         environment,
         regular_app_id=regular_app_id,
-        release_tag=release_tag,
-        release_version=release_version,
+        release_selector=release_selector,
     )
     setup = download.path
     if active.version is None:
@@ -280,9 +265,7 @@ def _managed_update(
         print(f"Already up to date ({active.version}).")
         return False
     release = (
-        f" (release {download.tag!r})"
-        if release_tag is not None or release_version is not None
-        else ""
+        f" (release {download.tag!r})" if release_selector is not None else ""
     )
     confirm(
         f"Update {record.command_name} from {active.version} to {candidate.version}{release}?"
@@ -524,13 +507,10 @@ def update_application(
     regular_app_id: str | None,
     maintenance_group: str,
     confirm: Callable[[str], None],
-    release_tag: str | None = None,
-    release_version: str | None = None,
+    release_selector: str | None = None,
     expected_target: tuple[UUID, str] | None = None,
 ) -> int:
     """Update the ready installation associated with this command."""
-    if release_tag is not None and release_version is not None:
-        raise InstallationError("Choose either --version or --release.")
     observed = manager.inspect()
     if observed.record is None or observed.revision is None:
         raise InstallationError(
@@ -550,13 +530,10 @@ def update_application(
         command_dir = recorded_command_directory(record, manager.directory)
     runtime = record.active_runtime
     editable = runtime if isinstance(runtime, EditableCheckout) else None
-    selector = "--release" if release_tag is not None else "--version"
-    if editable is not None and (
-        release_tag is not None or release_version is not None
-    ):
+    if editable is not None and release_selector is not None:
         raise InstallationError(
-            f"{selector} requires a managed installation. Run update without "
-            f"{selector} to follow the checkout's upstream branch."
+            "--version requires a managed installation. Run update without "
+            "--version to follow the checkout's upstream branch."
         )
     executables = tuple(
         Path(item.path)
@@ -638,8 +615,7 @@ def update_application(
                 work,
                 confirm,
                 regular_app_id=regular_app_id or binding.identity.app_id,
-                release_tag=release_tag,
-                release_version=release_version,
+                release_selector=release_selector,
             ):
                 return 0
         if os.name == "nt":

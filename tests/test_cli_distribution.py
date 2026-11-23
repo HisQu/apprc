@@ -220,10 +220,7 @@ assert "prompt_toolkit" not in sys.modules
     else:
         assert "--yes" in output
         assert "--preview" in output
-        assert any(
-            "--release" in line and "TAG" in line
-            for line in output.splitlines()
-        )
+        assert "--release" not in output
         assert any(
             "--version" in line and "-v" in line.split() and "VERSION" in line
             for line in output.splitlines()

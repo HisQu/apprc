@@ -831,9 +831,9 @@ def _install_from_launcher(
     preview_command: bool,
 ) -> int:
     """Handle released Preview selection in the native installer delegate."""
-    release_options = {"--release", "--version", "-v"}
+    version_options = ("--version", "-v")
     if not any(
-        token.split("=", 1)[0] in release_options for token in arguments
+        token.split("=", 1)[0] in version_options for token in arguments
     ):
         return _install(
             binding,
@@ -854,9 +854,7 @@ def _install_from_launcher(
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--preview", "-p", action="store_true")
     parser.add_argument("--smoke", "-s", action="store_true")
-    selectors = parser.add_mutually_exclusive_group(required=True)
-    selectors.add_argument("--version", "-v")
-    selectors.add_argument("--release")
+    parser.add_argument(*version_options, required=True)
     parser.add_argument("--yes", "-y", action="store_true")
     parser.add_argument("--skip-setup", action="store_true")
     parser.add_argument("--desktop", action="store_true")
@@ -907,8 +905,7 @@ def _install_from_launcher(
             target,
             preview,
             regular=regular,
-            release_tag=options.release,
-            release_version=options.version,
+            release_selector=options.version,
             arguments=setup_args,
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:

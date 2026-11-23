@@ -111,6 +111,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🔥 Removed
 
+- **Breaking:** 💥 `update` and `app install --preview` use `--version` (`-v`)
+  for release selection. Replace `--release TAG` with `--version TAG` in scripts.
+  AppRC checks for an exact published tag before trying version spellings.
 - **Breaking:** 💥 Removed `app repair`. On a managed installation, use
   `app recover-runtime` through the installed native command or matching setup.
   For an editable installation, follow the recovery steps from `app doctor`.

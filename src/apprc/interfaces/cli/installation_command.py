@@ -67,21 +67,13 @@ def update_command(
             "--preview", help="Update the managed Preview installation."
         ),
     ] = False,
-    release_tag: Annotated[
-        str | None,
-        typer.Option(
-            "--release",
-            metavar="TAG",
-            help="Select a published release tag for a managed installation.",
-        ),
-    ] = None,
-    release_version: Annotated[
+    release_selector: Annotated[
         str | None,
         typer.Option(
             "--version",
             "-v",
             metavar="VERSION",
-            help="Select a published package or Windows product version.",
+            help="Select a published release by tag, package version, or Windows product version.",
         ),
     ] = None,
 ) -> None:
@@ -113,8 +105,6 @@ def update_command(
         regular_app_id = None
         expected_target = None
         manager = context.manager
-        if preview and release_tag is not None and release_version is not None:
-            raise click.ClickException("Choose either --version or --release.")
         if preview and binding is None:
             raise click.ClickException(
                 "Run preview update through an installed managed command."
@@ -158,8 +148,7 @@ def update_command(
             regular_app_id=regular_app_id,
             maintenance_group=group,
             confirm=confirm,
-            release_tag=release_tag,
-            release_version=release_version,
+            release_selector=release_selector,
             **(
                 {"expected_target": expected_target}
                 if expected_target is not None
@@ -212,8 +201,8 @@ def mount_installation_group(
 
         if native_management:
             install_help += (
-                "\n\nUse --preview --version VERSION or --preview --release TAG "
-                "to install a published release into Preview."
+                "\n\nUse --preview --version VERSION (or -v VERSION) "
+                "to install a published release into Preview by tag or version."
             )
 
         @child.command(
@@ -306,16 +295,10 @@ def mount_installation_group(
                 raise typer.BadParameter(
                     "Invalid editable update generation."
                 ) from error
-            if (
-                editable
-                and native_management
-                and any(
-                    token.split("=", 1)[0] in {"--version", "-v", "--release"}
-                    for token in ctx.args
-                )
-            ):
+            if editable and ctx.args:
                 raise typer.BadParameter(
-                    "Release selection requires a managed preview install."
+                    "Editable installation received unsupported arguments: "
+                    + " ".join(ctx.args)
                 )
             if editable and (preview or smoke):
                 raise typer.BadParameter(

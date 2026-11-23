@@ -1584,8 +1584,10 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         "args = sys.argv[1:]\n"
         "tag = args[-1].rsplit('/', 1)[-1]\n"
         f"releases = {{'v2.0.0b1': {str(beta_release)!r}, 'v2.0.0rc1': {str(rc_release)!r}}}\n"
-        "assert tag in releases, args\n"
         "if args[0] == 'api':\n"
+        " if tag not in releases:\n"
+        "  print('HTTP/2.0 404 Not Found\\n\\n{}')\n"
+        "  sys.exit(1)\n"
         " print('HTTP/2.0 200 OK\\n')\n"
         " print(json.dumps({'tag_name': tag, 'draft': False, 'prerelease': True}))\n"
         "else:\n"
@@ -1654,7 +1656,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         "app",
         "update",
         "--preview",
-        "--release",
+        "-v",
         "v2.0.0b1",
         "--yes",
     )
@@ -1665,8 +1667,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         "app",
         "install",
         "--preview",
-        "--release",
-        "v2.0.0b1",
+        "--version=v2.0.0b1",
         *install_flags,
     )
     assert replaced.returncode == 0, replaced.stdout + replaced.stderr

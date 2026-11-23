@@ -152,6 +152,7 @@ class DownloadedReleaseSetup(NamedTuple):
     digest: str
     tag: str
     version: Version | None
+    windows_version: tuple[int, ...] | None = None
 
 
 def _lookup_release_tag(
@@ -277,43 +278,69 @@ def _version_tags(version: Version, *, windows: bool) -> tuple[str, ...]:
     )
 
 
-def _resolve_release_version(
+def _resolve_release(
     repository: str,
-    requested: Version,
+    selector: str | None,
     gh: str | None,
     environment: Mapping[str, str],
-) -> tuple[str, Version]:
-    """Select a matching tag across the package and Windows interpretations."""
-    from packaging.version import Version
+) -> tuple[str, Version | None, tuple[int, ...] | None]:
+    """Find a published tag and capture constraints from version matching."""
+    tag = _lookup_release_tag(repository, selector, gh, environment)
+    if tag is not None:
+        return tag, None, None
+
+    guidance = _PRIVATE_RELEASE_GUIDANCE if gh else ""
+    if selector is None:
+        raise ValueError(
+            f"No published stable release was found for {repository}.{guidance}"
+        )
+
+    from packaging.version import InvalidVersion, Version
 
     from apprc.distribution.runtime._windows_version import (
         package_version_from_windows_number,
     )
+
+    try:
+        requested = Version(selector)
+    except InvalidVersion as error:
+        raise ValueError(
+            f"No published release matches {selector!r} in {repository}.{guidance}"
+        ) from error
 
     candidates = [(requested, False)]
     if not requested.epoch and str(requested) == requested.base_version:
         decoded = package_version_from_windows_number(requested.release)
         if decoded is not None:
             candidates.append((Version(decoded), True))
-    matches: list[tuple[str, Version]] = []
+    checked = {selector}
+    matches: list[tuple[str, Version, tuple[int, ...] | None]] = []
     for version, windows in candidates:
         for tag in _version_tags(version, windows=windows):
+            if tag in checked:
+                continue
+            checked.add(tag)
             published_tag = _lookup_release_tag(
                 repository, tag, gh, environment
             )
             if published_tag is not None:
-                matches.append((published_tag, version))
+                matches.append(
+                    (
+                        published_tag,
+                        version,
+                        requested.release if windows else None,
+                    )
+                )
                 break
     if len(matches) > 1:
-        tags = " and ".join(repr(tag) for tag, _ in matches)
+        tags = " and ".join(repr(tag) for tag, _, _ in matches)
         raise ValueError(
             f"Version {requested} matches releases {tags} in {repository}. "
-            "Select one with --release TAG."
+            "Pass one of those exact tags to --version."
         )
     if not matches:
-        guidance = _PRIVATE_RELEASE_GUIDANCE if gh else ""
         raise ValueError(
-            f"No published release matches version {requested} in {repository}.{guidance}"
+            f"No published release matches {selector!r} in {repository}.{guidance}"
         )
     return matches[0]
 
@@ -325,19 +352,17 @@ def download_release_setup(
     target: NativeTarget,
     directory: Path,
     environment: Mapping[str, str],
-    release_tag: str | None = None,
-    requested_version: Version | None = None,
+    selector: str | None = None,
 ) -> DownloadedReleaseSetup:
     """Select a published release and verify its setup.
 
-    :param release_tag: Exact published tag, which may identify a prerelease.
-    :param requested_version: Package or Windows version to resolve.
+    :param selector: Exact tag or version, or ``None`` for the latest stable release.
     :return: Downloaded setup, verified digest, and release selection.
     """
-    if release_tag is not None and (
-        not release_tag.strip() or release_tag in {".", ".."}
+    if selector is not None and (
+        not selector.strip() or selector in {".", ".."}
     ):
-        raise ValueError("--release requires a valid, nonempty release tag.")
+        raise ValueError("--version requires a valid tag or version.")
     suffix = (
         "windows-x86_64.exe"
         if target == "x86_64-pc-windows-msvc"
@@ -346,32 +371,19 @@ def download_release_setup(
     setup = directory / f"{app_id}-setup-{suffix}"
     manifest = directory / "SHA256SUMS"
     repository = source.repository
-    selection = (
-        f"{repository} at tag {release_tag!r}"
-        if release_tag is not None
-        else repository
-    )
     gh: str | None = None
     if not source.public:
         gh = shutil.which("gh", path=environment.get("PATH"))
         if gh is None:
             raise ValueError(
                 "Install GitHub CLI and run `gh auth login` to update "
-                f"from {selection}."
+                f"from {repository}."
             )
     guidance = _PRIVATE_RELEASE_GUIDANCE if gh else ""
-    version = None
-    if requested_version is not None:
-        tag, version = _resolve_release_version(
-            repository, requested_version, gh, environment
-        )
-        selection = f"{repository} at tag {tag!r}"
-    else:
-        tag = _lookup_release_tag(repository, release_tag, gh, environment)
-        if tag is None:
-            raise ValueError(
-                f"No published release was found for {selection}.{guidance}"
-            )
+    tag, version, windows_version = _resolve_release(
+        repository, selector, gh, environment
+    )
+    selection = f"{repository} at tag {tag!r}"
     try:
         if gh is None:
             base = f"https://github.com/{repository}/releases/download/{quote(tag, safe='')}"
@@ -435,4 +447,4 @@ def download_release_setup(
         raise ValueError(
             f"The downloaded setup for {selection} does not match its release checksum."
         )
-    return DownloadedReleaseSetup(setup, digest, tag, version)
+    return DownloadedReleaseSetup(setup, digest, tag, version, windows_version)

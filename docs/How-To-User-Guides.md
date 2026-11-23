@@ -1059,8 +1059,8 @@ demo app install --preview --version 2.0.0b1
 demo update --preview --version 2.0.0b2
 ```
 
-Use `demo app update` if the root alias is disabled. Both commands also accept
-`--release TAG` for exact release selection. Installation follows the setup's
+Use `demo app update` if the root alias is disabled. Both commands accept an
+exact GitHub release tag as the value of `--version`. Installation follows the setup's
 replacement confirmation. The update command checks the existing preview
 version and rejects downgrades.
 
@@ -1455,19 +1455,21 @@ hand work to a helper while the original launcher closes. Read the helper or
 setup output for the final result.
 
 A release installation uses the latest stable release from the publisher's
-configured GitHub repository by default. To choose a published version, use
+configured GitHub repository by default. To choose a published release, use
 `--version` or `-v`. For example, if the publisher has released `2.0.0rc1`,
-use either the app version or the corresponding Windows numeric version.
+use the app version, the corresponding Windows numeric version, or the tag.
 
 ```shell
 demo app update --version 2.0.0rc1
 demo app update -v 2.0.0.301
+demo app update -v v2.0.0rc1
 ```
 
-AppRC also accepts SemVer spelling such as `2.0.0-rc.1` and an optional leading
-`v`. If the numeric version matches two published versions, AppRC lists their
-tags. Use `demo app update --release TAG` to choose an exact tag in that case or
-when the publisher uses a custom tag.
+AppRC first checks whether your input exactly matches a published tag. If the
+tag is missing, it resolves Python, SemVer (such as `2.0.0-rc.1`), and Windows
+version spellings. An optional leading `v` is accepted. If a numeric version
+matches two published releases, AppRC lists their tags. Pass one of those
+tags to the same `--version` option.
 
 This also works with `demo update` when the alias is enabled. You can select a
 published prerelease, and AppRC rejects releases older than the installed

@@ -1244,7 +1244,7 @@ def test_uninstall_path_tree_shares_windows_parents_and_preserves_unc():
     ("option", "value"),
     [
         (None, None),
-        ("--release", "preview/v2.0rc1"),
+        ("--version", "preview/v2.0rc1"),
         ("--version", "2.0.0rc1"),
         ("-v", "2.0.0.301"),
     ],
@@ -1258,17 +1258,16 @@ def test_update_command_routes_share_confirmation(
 ) -> None:
     from apprc.distribution.runtime import update
 
-    requests: list[tuple[str, str | None, str | None]] = []
+    requests: list[tuple[str, str | None]] = []
 
     def recorded_update(
         *_args: object,
         confirm: Callable[[str], None],
         maintenance_group: str,
-        release_tag: str | None = None,
-        release_version: str | None = None,
+        release_selector: str | None = None,
         **_kwargs: object,
     ) -> int:
-        requests.append((maintenance_group, release_tag, release_version))
+        requests.append((maintenance_group, release_selector))
         confirm("Replace 1.0 with 2.0?")
         return 0
 
@@ -1284,9 +1283,7 @@ def test_update_command_routes_share_confirmation(
     accepted = CliRunner().invoke(app, args)
     assert accepted.exit_code == 0, accepted.output
     assert "Replace 1.0 with 2.0?" in accepted.output
-    release_tag = value if option == "--release" else None
-    release_version = value if option in {"--version", "-v"} else None
-    assert requests == [(group, release_tag, release_version)] * 2
+    assert requests == [(group, value)] * 2
 
 
 @pytest.mark.parametrize("route", [["update"], ["app", "update"]])
@@ -1300,15 +1297,13 @@ def test_preview_update_requires_managed_invocation(route: list[str]) -> None:
     )
 
 
-def test_update_rejects_conflicting_release_selectors() -> None:
-    args = ["app", "update", "-v", "2.0.0", "--release", "v2.0.0"]
+@pytest.mark.parametrize("legacy_option", ["--release", "-r"])
+def test_update_rejects_legacy_release_selectors(legacy_option: str) -> None:
+    args = ["app", "update", "-v", "2.0.0", legacy_option, "v2.0.0"]
     result = CliRunner().invoke(_app(args=args), args)
 
-    assert result.exit_code == 1
-    assert (
-        "Choose either --version or --release."
-        in Text.from_ansi(result.output).plain
-    )
+    assert result.exit_code == 2
+    assert legacy_option in Text.from_ansi(result.output).plain
 
 
 @pytest.mark.parametrize("arguments", [("app", "update"), ("update",)])

@@ -113,6 +113,33 @@ class UninstallPreparation:
     can_execute: bool
 
 
+def uninstall_activity_warning(preparation: UninstallPreparation) -> str | None:
+    """Give the confirmation prompt an advisory observation of existing leases."""
+    from apprc.distribution.runtime._leases import (
+        runtime_slot_is_busy,
+    )
+
+    record = preparation.inspection.record
+    if not preparation.can_execute or record is None:
+        return None
+
+    slot_ids = list(record.retiring_runtime_ids)
+    if isinstance(record.active_runtime, RuntimeSlot):
+        slot_ids.append(record.active_runtime.slot_id)
+    detection_unavailable = not isinstance(record.active_runtime, RuntimeSlot)
+    close_application = (
+        "Close the application and its background processes before removal."
+    )
+    for slot_id in slot_ids:
+        slot = preparation.inspection.directory / "runtimes" / str(slot_id)
+        try:
+            if runtime_slot_is_busy(slot):
+                return f"A managed runtime is in use. {close_application}"
+        except (OSError, ValueError):
+            detection_unavailable = True
+    return close_application if detection_unavailable else None
+
+
 @dataclass(slots=True)
 class UninstallHandoff:
     """Independent controller process and explicit original-process exit channel."""
@@ -1181,9 +1208,49 @@ def _await_uninstall(
     *,
     timeout: float = 300,
 ) -> InstallationInspection:
-    """Wait for the specific handoff's staging to retire, then verify authority."""
+    """Report the handoff's recorded failure or verify completed cleanup."""
+    from apprc.distribution.runtime.uninstall_handoff import _parse_plan
+
     deadline = time.monotonic() + timeout
-    while any(staging.glob("apprc-uninstall-*")):
+    checked_plan_file: Path | None = None
+    staged = None
+    while handoffs := tuple(staging.glob("apprc-uninstall-*")):
+        if len(handoffs) == 1:
+            current = manager.inspect()
+            record = current.record
+            operation = record.operation if record is not None else None
+            if (
+                current.revision is not None
+                and record is not None
+                and record.generation_id == previous.generation_id
+                and operation is not None
+                and operation.kind == "uninstall"
+                and operation.phase == "failed"
+                and operation.diagnostic is not None
+            ):
+                plan_file = handoffs[0] / "handoff.json"
+                if plan_file != checked_plan_file:
+                    # > Authenticate the manager copy at most once per plan.
+                    checked_plan_file = plan_file
+                    staged = None
+                    try:
+                        assert_no_links(plan_file)
+                        staged = _parse_plan(plan_file)
+                    except (OSError, ValueError):
+                        pass
+                if (
+                    staged is not None
+                    and Path(staged["directory"]) == current.directory
+                    and staged["app_id"] == current.app_id
+                    and staged["generation_id"] == str(record.generation_id)
+                    and staged["operation_id"] == str(operation.operation_id)
+                    # > A retry may start with this failure already recorded.
+                    and staged["expected_revision"] != current.revision
+                ):
+                    diagnostic = operation.diagnostic
+                    raise InstallationError(
+                        f"Uninstall failed: {diagnostic.message} {diagnostic.recovery}"
+                    )
         if time.monotonic() >= deadline:
             raise InstallationError(
                 f"Uninstall did not finish. Recovery is under {staging}."

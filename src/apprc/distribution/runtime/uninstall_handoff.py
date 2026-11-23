@@ -944,7 +944,7 @@ def _cleanup_provider(
                 claim = try_acquire_runtime_quiescence(slot_directory)
                 if claim is None:
                     raise InstallationError(
-                        "A managed runtime is busy; uninstall remains pending without deleting data or runtime files."
+                        "A managed runtime is busy. Close the application and its background processes, then retry uninstall."
                     )
                 claims.append(claim)
             if needs_cleanup:
@@ -1024,7 +1024,7 @@ def _retire_managed_runtimes(
             slot_directory = directory / "runtimes" / str(slot_id)
             if not try_retire_runtime_slot(slot_directory):
                 raise InstallationError(
-                    f"Managed runtime slot is busy and remains intact: {slot_id}."
+                    f"Managed runtime slot {slot_id} is busy. Close the application and its background processes, then retry uninstall."
                 )
             if slot_id in retiring:
                 current = record_runtime_retired(

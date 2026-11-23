@@ -612,6 +612,21 @@ def test_native_managed_repair_update_and_cleanup_lifecycle(
     before_cleanup = _record(directory)
     assert before_cleanup["status"] == "ready"
     assert before_cleanup["operation"] is None
+    from apprc.distribution.runtime._leases import acquire_runtime_lease
+
+    active = directory / "runtimes" / _active_slot(before_cleanup)
+    with acquire_runtime_lease(active):
+        busy = run(
+            uninstall, environment=environment, cwd=tmp_path, check=False
+        )
+        assert "A managed runtime is busy." in busy.stderr
+        assert "then retry uninstall" in busy.stderr
+        assert active.is_dir()
+        assert provider_file.is_file() and unrelated_file.is_file()
+        blocked = _record(directory)["operation"]
+        assert blocked["phase"] == "failed"
+        assert blocked["steps"] == []
+
     cleanup_failure = run(
         uninstall,
         environment={**environment, "FIXTURE_FAIL_CLEANUP": "1"},
@@ -1487,6 +1502,28 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     assert "cleanup is incomplete" not in failed.stderr
     assert not preview_authority.exists()
     assert not list(Path(environment["TMPDIR"]).glob("apprc-preview-smoke-*"))
+    cleanup_failure = subprocess.run(
+        [str(setup), "-s"],
+        env={**environment, "FIXTURE_FAIL_CLEANUP": "1"},
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    reason = "Application data is in use. Close the application and retry."
+    assert cleanup_failure.returncode != 0
+    assert (
+        f"Preview cleanup is incomplete at {preview_dir}. Uninstall failed: {reason}"
+        in cleanup_failure.stderr
+    )
+    failed_uninstall = _record(preview_dir)["operation"]
+    assert failed_uninstall["diagnostic"]["message"] == reason
+    (recovery,) = Path(environment["TMPDIR"]).glob("apprc-dist-test-*")
+    assert any(recovery.glob("apprc-uninstall-*/recovery"))
+    retry = invoke(preview_dir / "fixture-preview", "app", "uninstall", "--yes")
+    assert retry.returncode == 0, retry.stdout + retry.stderr
+    assert not preview_authority.exists()
     assert regular_authority.read_bytes() == regular_before
     assert (
         hashlib.sha256(regular_command.read_bytes()).digest() == regular_digest

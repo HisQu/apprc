@@ -461,6 +461,15 @@ class LauncherHomeScreen(Screen[None]):
             if preserves_data
             else "The native manager will remove the program and managed data. Whole-directory targets include all contents:\n"
         )
+        warning = await asyncio.to_thread(
+            _uninstall_controller.uninstall_activity_warning, preparation
+        )
+        message = Text()
+        if warning is not None:
+            message.append(warning + "\n\n", style="bold yellow")
+        message.append(
+            explanation + (detail or "No data targets are selected.")
+        )
         actions: tuple[tuple[str, str, ButtonVariant], ...] = (
             (
                 "remove",
@@ -478,9 +487,7 @@ class LauncherHomeScreen(Screen[None]):
         result = await self.app.push_screen_wait(
             ConfirmScreen(
                 title=title,
-                message=Text(
-                    explanation + (detail or "No data targets are selected.")
-                ),
+                message=message,
                 actions=actions,
             )
         )

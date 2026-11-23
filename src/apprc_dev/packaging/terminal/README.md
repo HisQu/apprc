@@ -568,8 +568,9 @@ the [preview identity and endpoint policy](https://github.com/HisQu/apprc/blob/m
 
 ## Review removal and keep configuration
 
-Stop the application, including running servers. For an installed application
-named `yourapp`:
+Stop the application, including running servers. Interactive uninstall warns
+when AppRC detects a busy managed runtime. For an installed application named
+`yourapp`, start with a preview:
 
 ```shell
 yourapp app uninstall --keep-config --dry-run

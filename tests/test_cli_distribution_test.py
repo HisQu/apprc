@@ -9,7 +9,7 @@ from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import typer
@@ -19,10 +19,12 @@ from typer.core import TyperCommand
 from apprc import AppRC
 from apprc.definition.installation import (
     CleanupInventory,
-    InventoryEntry,
-    UninstallPlan,
+    InstallationDiagnostic,
     InstallationError,
     InstallationInspection,
+    InstallationOperation,
+    InventoryEntry,
+    UninstallPlan,
 )
 from apprc.distribution.runtime import _uninstall_controller as removal
 from apprc.distribution.runtime._uninstall_controller import (
@@ -31,6 +33,7 @@ from apprc.distribution.runtime._uninstall_controller import (
 from apprc.interfaces.cli import _distribution_test as guide
 from apprc.interfaces.cli._distribution_authoring import CheckoutAuthoring
 from apprc.services.installation import InstallationManager
+from apprc.user_files.installation.codec import encode_record
 from tests.support_installation import installation_record
 
 
@@ -39,6 +42,40 @@ def _manager(tmp_path: Path) -> InstallationManager:
         app_id="coordination-fixture", command_name="coordination-fixture"
     )
     return InstallationManager(app.schema, directory=tmp_path / "installation")
+
+
+def _write_handoff_plan(
+    recovery: Path,
+    directory: Path,
+    app_id: str,
+    generation_id: UUID,
+    operation_id: UUID,
+    staged_revision: str,
+) -> None:
+    (recovery.parent / "handoff.json").write_text(
+        json.dumps(
+            {
+                "directory": str(directory),
+                "app_id": app_id,
+                "generation_id": str(generation_id),
+                "operation_id": str(operation_id),
+                "expected_revision": staged_revision,
+                "original_pid": 1,
+                "original_start": "started",
+                "readiness_token": uuid4().hex,
+                "recovery_directory": str(recovery),
+                "wait": False,
+                "complete": False,
+                "categories": [],
+                "forget_retained": False,
+                "inventory": [],
+                "retained": [],
+                "manager_executable": None,
+                "manager_executable_revision": None,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_waits_for_handoff_staging_after_launcher_return(
@@ -56,30 +93,28 @@ def test_waits_for_handoff_staging_after_launcher_return(
         sleeps.append(delay)
         pending.rmdir()
 
-    def inspect_after_cleanup() -> InstallationInspection:
+    def verify_after_cleanup(*args: object) -> None:
         assert not pending.exists()
-        return InstallationInspection(
-            "missing", manager.directory, None, manager.spec.app_id
-        )
 
+    missing = InstallationInspection(
+        "missing", manager.directory, None, manager.spec.app_id
+    )
+    verify = Mock(side_effect=verify_after_cleanup)
     monkeypatch.setattr(removal.time, "sleep", finish_handoff)
-    monkeypatch.setattr(manager, "inspect", inspect_after_cleanup)
-    monkeypatch.setattr(removal, "verify_windows_registration", Mock())
-    removal._await_uninstall(
+    monkeypatch.setattr(manager, "inspect", lambda: missing)
+    monkeypatch.setattr(removal, "verify_windows_registration", verify)
+    result = removal._await_uninstall(
         manager, staging, record, tmp_path / "command", "app"
     )
     assert sleeps
+    assert result == missing
+    verify.assert_called_once_with(manager, tmp_path / "command", None, "app")
 
 
-def test_handoff_timeout_preserves_recovery(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_handoff_timeout_preserves_recovery(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     staging = tmp_path / "handoff"
     (staging / "apprc-uninstall-job").mkdir(parents=True)
-    monkeypatch.setattr(
-        manager, "inspect", Mock(side_effect=AssertionError("still running"))
-    )
     with pytest.raises(
         InstallationError, match="Uninstall did not finish"
     ) as failure:
@@ -93,6 +128,108 @@ def test_handoff_timeout_preserves_recovery(
         )
     assert str(staging) in str(failure.value)
     assert (staging / "apprc-uninstall-job").is_dir()
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "current",
+        "stale",
+        "retry-failed-again",
+        "other-operation",
+        "other-generation",
+        "other-plan-generation",
+        "other-kind",
+        "other-app",
+        "other-directory",
+        "missing-plan",
+    ],
+)
+def test_handoff_reports_only_attributable_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str
+) -> None:
+    manager = _manager(tmp_path)
+    previous = installation_record()
+    staged_revision = "1" * 64
+    operation_id = uuid4()
+    staging = tmp_path / "handoff"
+    pending = staging / "apprc-uninstall-job"
+    recovery = pending / "recovery"
+    recovery.mkdir(parents=True)
+    diagnostic = InstallationDiagnostic(
+        "uninstall-incomplete",
+        "Application cleanup was blocked.",
+        "Review the recorded cleanup effects before retrying.",
+    )
+    operation = InstallationOperation(
+        operation_id=uuid4() if scenario == "other-operation" else operation_id,
+        kind="repair" if scenario == "other-kind" else "uninstall",
+        phase="failed",
+        intended=None,
+        placement=previous.placement,
+        diagnostic=diagnostic,
+    )
+    record = replace(
+        previous,
+        generation_id=(
+            uuid4()
+            if scenario == "other-generation"
+            else previous.generation_id
+        ),
+        status="incomplete",
+        operation=operation,
+    )
+    failure = InstallationInspection(
+        "incomplete",
+        manager.directory,
+        staged_revision if scenario == "stale" else "2" * 64,
+        manager.spec.app_id,
+        record,
+    )
+    if scenario != "missing-plan":
+        _write_handoff_plan(
+            recovery,
+            tmp_path / "other-installation"
+            if scenario == "other-directory"
+            else manager.directory,
+            "other-app" if scenario == "other-app" else manager.spec.app_id,
+            uuid4()
+            if scenario == "other-plan-generation"
+            else previous.generation_id,
+            operation_id,
+            staged_revision,
+        )
+    inspect = (
+        Mock(side_effect=[replace(failure, revision=staged_revision), failure])
+        if scenario == "retry-failed-again"
+        else Mock(return_value=failure)
+    )
+    sleep = Mock(
+        side_effect=[None]
+        if scenario == "retry-failed-again"
+        else AssertionError("the handoff outcome is already known")
+    )
+    monkeypatch.setattr(manager, "inspect", inspect)
+    monkeypatch.setattr(removal.time, "sleep", sleep)
+
+    attributable = scenario in {"current", "retry-failed-again"}
+    message = diagnostic.message if attributable else "Uninstall did not finish"
+    with pytest.raises(InstallationError, match=message) as error:
+        removal._await_uninstall(
+            manager,
+            staging,
+            previous,
+            tmp_path / "command",
+            "app",
+            timeout=300 if attributable else 0,
+        )
+    if attributable:
+        assert diagnostic.recovery in str(error.value)
+    else:
+        assert diagnostic.message not in str(error.value)
+        assert str(staging) in str(error.value)
+    assert sleep.call_count == (1 if scenario == "retry-failed-again" else 0)
+    assert recovery.is_dir()
 
 
 def test_handoff_does_not_accept_a_different_installation(
@@ -344,9 +481,9 @@ def test_guided_uninstall_child_rejects_changed_authority(
     assert preview.call_count == (0 if changed_at == "initial" else 1)
 
 
-@pytest.mark.parametrize("declined", [False, True])
+@pytest.mark.parametrize("uninstall_outcome", ["success", "declined", "failed"])
 def test_uninstall_child_carries_accepted_revision_and_root_options(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declined: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, uninstall_outcome: str
 ) -> None:
     manager = _manager(tmp_path)
     record = installation_record()
@@ -373,8 +510,22 @@ def test_uninstall_child_carries_accepted_revision_and_root_options(
             plan, expected, (), (), True
         ),
     )
-    monkeypatch.setattr(removal, "_await_uninstall", lambda *args: expected)
+    monkeypatch.setattr(removal.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(removal, "verify_windows_registration", Mock())
     calls: list[tuple[list[str], dict[str, str]]] = []
+    diagnostic = InstallationDiagnostic(
+        "uninstall-incomplete",
+        "Application cleanup provider refused to uninstall.",
+        "Review the application's recorded cleanup effects.",
+    )
+    declined = uninstall_outcome == "declined"
+
+    if uninstall_outcome == "failed":
+        monkeypatch.setattr(
+            removal.time,
+            "sleep",
+            Mock(side_effect=AssertionError("failure should be prompt")),
+        )
 
     def execute(
         command: list[str], *, cwd: Path, env: dict[str, str], check: bool
@@ -383,15 +534,45 @@ def test_uninstall_child_carries_accepted_revision_and_root_options(
         calls.append((command, env))
         if declined:
             raise subprocess.CalledProcessError(1, command)
+        if uninstall_outcome == "failed":
+            # > The child creates its own operation ID after the preview.
+            operation = InstallationOperation(
+                operation_id=uuid4(),
+                kind="uninstall",
+                phase="pending",
+                intended=None,
+                placement=record.placement,
+            )
+            pending = replace(record, status="incomplete", operation=operation)
+            manager.directory.mkdir()
+            authority = manager.directory / "installation.json"
+            authority.write_bytes(encode_record(pending))
+            staged_revision = manager.inspect().revision
+            assert staged_revision is not None
+            recovery = Path(env["TMPDIR"]) / "apprc-uninstall-job" / "recovery"
+            recovery.mkdir(parents=True)
+            _write_handoff_plan(
+                recovery,
+                manager.directory,
+                manager.spec.app_id,
+                record.generation_id,
+                operation.operation_id,
+                staged_revision,
+            )
+            failed = replace(operation, phase="failed", diagnostic=diagnostic)
+            authority.write_bytes(
+                encode_record(replace(pending, operation=failed))
+            )
         return ""
 
     monkeypatch.setattr(removal.subprocess, "run", execute)
     report: dict[str, object] = {}
-    outcome = (
-        pytest.raises(subprocess.CalledProcessError)
-        if declined
-        else nullcontext()
-    )
+    if declined:
+        outcome = pytest.raises(subprocess.CalledProcessError)
+    elif uninstall_outcome == "failed":
+        outcome = pytest.raises(InstallationError, match=diagnostic.message)
+    else:
+        outcome = nullcontext()
     with outcome:
         removal.run_checked_uninstall(
             tmp_path / "checkout-command",
@@ -425,8 +606,13 @@ def test_uninstall_child_carries_accepted_revision_and_root_options(
         *([] if declined else ["--yes"]),
     ]
     assert environment["_APPRC_DIST_TEST_UNINSTALL_REVISION"] == "accepted"
-    assert "uninstall_recovery" not in report
-    assert not Path(environment["TMPDIR"]).exists()
+    staging = Path(environment["TMPDIR"])
+    if uninstall_outcome == "failed":
+        assert report["uninstall_recovery"] == str(staging)
+        assert (staging / "apprc-uninstall-job" / "recovery").is_dir()
+    else:
+        assert "uninstall_recovery" not in report
+        assert not staging.exists()
 
 
 def test_distribution_capture_keeps_selectors_without_resolving_paths(

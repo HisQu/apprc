@@ -978,6 +978,103 @@ def test_uninstall_config_prompt_and_unattended_policy(
     assert len(prompts) == (1 if mode == "interactive" else 0)
 
 
+@pytest.mark.parametrize(
+    "mode",
+    ["busy", "idle", "unknown", "lock-busy", "yes", "unattended", "preview"],
+)
+def test_uninstall_activity_warning_is_advisory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from contextlib import ExitStack
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from filelock import FileLock
+
+    from apprc.definition.installation import InstallationHooks
+    from apprc.definition.resolution import CliRuntimeOptions
+    from apprc.distribution.runtime import _uninstall_controller as controller
+    from apprc.distribution.runtime._leases import acquire_runtime_lease
+    from apprc.interfaces.cli import installation_command
+    from apprc.services.installation import InstallationManager
+    from tests.support_installation import managed_installation
+
+    directory, runtime = managed_installation(
+        tmp_path, hooks=InstallationHooks()
+    )
+    app = rc.AppRC(app_id="handoff-app", paths=rc.Paths())
+    manager = InstallationManager(app.schema, directory=directory)
+    slot = directory / "runtimes" / str(runtime.slot_id)
+    marker = slot / ".apprc-runtime-lease"
+    if mode == "unknown":
+        marker.unlink()
+
+    context = InstallationCommandContext(
+        CliRuntimeOptions(),
+        None,
+        manager.environment,
+        manager.inspect(),
+        manager,
+    )
+    monkeypatch.setattr(installation_command, "_inspection", lambda _: context)
+    monkeypatch.setattr(
+        installation_command,
+        "sys",
+        SimpleNamespace(
+            stdin=SimpleNamespace(
+                isatty=lambda: mode not in {"yes", "unattended"}
+            )
+        ),
+    )
+    handoff = Mock()
+    start = Mock(return_value=handoff)
+    monkeypatch.setattr(controller, "start_uninstall_handoff", start)
+
+    args = ["app", "uninstall"]
+    if mode == "yes":
+        args.append("--yes")
+    elif mode == "preview":
+        args.append("--dry-run")
+    with ExitStack() as stack:
+        if mode in {"busy", "yes", "unattended", "preview"}:
+            stack.enter_context(acquire_runtime_lease(slot))
+        if mode == "lock-busy":
+            stack.enter_context(
+                FileLock(
+                    directory / "locks" / "operation.lock",
+                    preserve_lock_file=True,
+                    fallback_to_soft=False,
+                )
+            )
+        result = CliRunner().invoke(
+            _app(app, args=args), args, input="y\n", terminal_width=1000
+        )
+
+    assert result.exit_code == (2 if mode == "unattended" else 0), result.output
+    prompt = 'delete the items marked "Delete"?'
+    if mode in {"busy", "idle", "unknown", "lock-busy"}:
+        assert result.output.count(prompt) == 1
+    else:
+        assert prompt not in result.output
+    reminder = "Close the application and its background processes"
+    if mode == "busy":
+        assert result.output.index("A managed runtime is in use.") < (
+            result.output.index(prompt)
+        )
+    elif mode in {"unknown", "lock-busy"}:
+        assert reminder in result.stderr
+        assert "A managed runtime is in use." not in result.stderr
+    else:
+        assert reminder not in result.stderr
+    if mode == "unknown":
+        assert not marker.exists()
+    if mode in {"preview", "unattended"}:
+        start.assert_not_called()
+    else:
+        start.assert_called_once()
+        handoff.signal_exit.assert_called_once()
+
+
 @pytest.mark.parametrize("keep_config", [False, True])
 @pytest.mark.parametrize("repository_selected", [False, True])
 def test_uninstall_tree_separates_retained_paths_and_integrations(

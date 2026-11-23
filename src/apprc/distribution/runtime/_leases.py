@@ -199,67 +199,104 @@ def try_acquire_runtime_quiescence(directory: Path) -> RuntimeLease | None:
             "Runtime slot is outside its installation runtime area."
         )
     with installation_lock(directory.parent.parent):
-        assert_no_links(directory)
-        if not stat.S_ISDIR(directory.lstat().st_mode):
-            raise InstallationError(
-                "Managed runtime slot is not a real directory."
+        return _claim_runtime_slot_locked(directory, probe_only=False)
+
+
+def runtime_slot_is_busy(directory: Path) -> bool:
+    """Observe an existing runtime lease under the same lock as new launches.
+
+    :param directory: Exact managed runtime slot.
+    :return: Whether the slot's existing lease excludes an exclusive probe.
+    :raises OSError: If the namespace or lease cannot be inspected.
+    :raises InstallationError: If the namespace or lease is unsafe to inspect.
+    """
+    if directory.parent.name != "runtimes":
+        raise InstallationError(
+            "Runtime slot is outside its installation runtime area."
+        )
+    installation = directory.parent.parent
+    lock_path = installation / "locks" / "operation.lock"
+    assert_no_links(lock_path)
+    if not stat.S_ISREG(lock_path.lstat().st_mode):
+        raise InstallationError("Installation lock is not a regular file.")
+    with installation_lock(installation, timeout=0.01):
+        claim = _claim_runtime_slot_locked(directory, probe_only=True)
+        if claim is None:
+            return True
+        # > Release the exclusive lease before allowing new shared opens.
+        claim.close()
+        return False
+
+
+def _claim_runtime_slot_locked(
+    directory: Path, *, probe_only: bool
+) -> RuntimeLease | None:
+    """Check the exact slot's lease while the installation lock is held."""
+    assert_no_links(directory)
+    if not stat.S_ISDIR(directory.lstat().st_mode):
+        raise InstallationError("Managed runtime slot is not a real directory.")
+    lease_path = directory / _LEASE_NAME
+    assert_no_links(lease_path)
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.CreateFileW.argtypes = [
+                wintypes.LPCWSTR,
+                wintypes.DWORD,
+                wintypes.DWORD,
+                wintypes.LPVOID,
+                wintypes.DWORD,
+                wintypes.DWORD,
+                wintypes.HANDLE,
+            ]
+            kernel.CreateFileW.restype = wintypes.HANDLE
+            handle = kernel.CreateFileW(
+                str(lease_path),
+                0x80000000,
+                0,
+                None,
+                3 if probe_only else 4,  # < OPEN_EXISTING or OPEN_ALWAYS.
+                0x80,
+                None,
             )
-        lease_path = directory / _LEASE_NAME
-        assert_no_links(lease_path)
-        try:
-            if os.name == "nt":
-                import ctypes
-                from ctypes import wintypes
-
-                kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-                kernel.CreateFileW.argtypes = [
-                    wintypes.LPCWSTR,
-                    wintypes.DWORD,
-                    wintypes.DWORD,
-                    wintypes.LPVOID,
-                    wintypes.DWORD,
-                    wintypes.DWORD,
-                    wintypes.HANDLE,
-                ]
-                kernel.CreateFileW.restype = wintypes.HANDLE
-                handle = kernel.CreateFileW(
-                    str(lease_path), 0x80000000, 0, None, 4, 0x80, None
-                )
-                if handle == wintypes.HANDLE(-1).value:
-                    if ctypes.get_last_error() in {5, 32, 33}:
-                        return None
-                    raise OSError(
-                        ctypes.get_last_error(), "Unable to claim runtime slot"
-                    )
-                descriptor = int(handle)
-                os.set_handle_inheritable(descriptor, True)
-            else:
-                import fcntl
-
-                descriptor = os.open(
-                    lease_path,
-                    os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
-                    0o600,
-                )
-                metadata = os.fstat(descriptor)
-                if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != 0:
-                    os.close(descriptor)
-                    raise InstallationError(
-                        "Runtime lease must be a zero-data regular file."
-                    )
-                try:
-                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    os.close(descriptor)
+            if handle == wintypes.HANDLE(-1).value:
+                error = ctypes.get_last_error()
+                if error in {32, 33} or (error == 5 and not probe_only):
                     return None
-                os.set_inheritable(descriptor, True)
-            return RuntimeLease(directory, descriptor, exclusive=True)
-        except OSError as error:
-            if error.errno in {13, 16, 26}:
+                raise OSError(error, "Unable to claim runtime slot")
+            descriptor = int(handle)
+            if not probe_only:
+                os.set_handle_inheritable(descriptor, True)
+        else:
+            import fcntl
+
+            flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+            if not probe_only:
+                flags |= os.O_CREAT
+            descriptor = os.open(lease_path, flags, 0o600)
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != 0:
+                os.close(descriptor)
+                raise InstallationError(
+                    "Runtime lease must be a zero-data regular file."
+                )
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                os.close(descriptor)
                 return None
-            raise InstallationError(
-                "Unable to claim runtime slot quiescence."
-            ) from error
+            if not probe_only:
+                os.set_inheritable(descriptor, True)
+        return RuntimeLease(directory, descriptor, exclusive=True)
+    except OSError as error:
+        if not probe_only and error.errno in {13, 16, 26}:
+            return None
+        raise InstallationError(
+            "Unable to claim runtime slot quiescence."
+        ) from error
 
 
 def _remove_slot_contents(directory: Path, lease_path: Path) -> None:

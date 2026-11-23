@@ -1591,6 +1591,12 @@ configuration directory, with **Yes** as the default. It then previews the
 selected targets and asks for final confirmation, defaulting to **No**. Use
 `--keep-config` to keep configuration without the first question.
 
+Before confirmation, AppRC warns if it detects a busy managed runtime. When
+AppRC lacks a reliable activity signal, it shows a reminder to close the
+application and its background processes. You can still choose to proceed.
+Uninstall checks leases again before removal and stops if a protected resource
+is still in use.
+
 **CLI uninstall choices**
 
 ```mermaid

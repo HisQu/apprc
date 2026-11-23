@@ -828,12 +828,18 @@ def mount_installation_group(
                 raise typer.Exit(code=1)
             if not assume_yes and not sys.stdin.isatty():
                 raise typer.BadParameter("Unattended removal requires --yes.")
-            if not assume_yes and not typer.confirm(
-                f'Uninstall {command_context.manager.spec.display_name or command_context.manager.spec.app_id} and delete the items marked "Delete"?',
-                default=False,
-                err=json_output,
-            ):
-                raise typer.Abort()
+            if not assume_yes:
+                warning = _uninstall_controller.uninstall_activity_warning(
+                    preparation
+                )
+                if warning is not None:
+                    cli_line(ctx, warning, style="warning", error=True)
+                if not typer.confirm(
+                    f'Uninstall {command_context.manager.spec.display_name or command_context.manager.spec.app_id} and delete the items marked "Delete"?',
+                    default=False,
+                    err=json_output,
+                ):
+                    raise typer.Abort()
 
             try:
                 handoff = _uninstall_controller.start_uninstall_handoff(

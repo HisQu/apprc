@@ -109,6 +109,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Root help uses ASCII panel borders when redirected stdout cannot encode
+  the Unicode borders.
+
 ### 🔒 Security
 
 <br>

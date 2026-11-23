@@ -95,17 +95,18 @@ def _app(
 
 
 @pytest.mark.parametrize(
-    "help_args",
+    ("help_args", "encoding"),
     [
-        ("--help",),
-        ("dist", "build", "--help"),
-        ("app", "install", "--help"),
-        ("app", "update", "--help"),
-        ("update", "--help"),
+        (("--help",), "utf-8"),
+        (("--help",), "cp1252"),
+        (("dist", "build", "--help"), "utf-8"),
+        (("app", "install", "--help"), "utf-8"),
+        (("app", "update", "--help"), "utf-8"),
+        (("update", "--help"), "utf-8"),
     ],
 )
 def test_distribution_help_is_lazy_in_a_fresh_process(
-    checkout: Path, help_args: tuple[str, ...]
+    checkout: Path, help_args: tuple[str, ...], encoding: str
 ) -> None:
     if help_args[:2] == ("app", "install"):
         _enable_preview(checkout)
@@ -152,10 +153,12 @@ mount_app_cli(
 def serve():
     pass
 
+stdout_encoding = sys.stdout.encoding
 try:
     app()
 except SystemExit as exc:
     assert exc.code == 0
+assert sys.stdout.encoding == stdout_encoding
 assert "authoring_fixture" not in sys.modules
 assert "apprc.distribution.native" not in sys.modules
 assert "apprc.distribution.runtime.update" not in sys.modules
@@ -166,28 +169,41 @@ assert "prompt_toolkit" not in sys.modules
             *help_args,
         ],
         cwd=checkout.parent,
-        env={**os.environ, "NO_COLOR": "1"},
+        env={**os.environ, "NO_COLOR": "1", "PYTHONIOENCODING": encoding},
         check=False,
         capture_output=True,
-        text=True,
+        encoding=encoding,
     )
     assert result.returncode == 0, result.stderr
     output = Text.from_ansi(result.stdout).plain
     if help_args == ("--help",):
+        assert result.stderr == ""
+        for heading in ("AppRC: Runtime Options", "Help & Completion"):
+            assert heading in output
+        if encoding == "utf-8":
+            corners = ("╭─", "┌─") if sys.platform == "win32" else ("╭─",)
+            vertical = "│"
+        else:
+            corners, vertical = ("+-",), "|"
+        assert any(
+            line.startswith(corners) and "AppRC: Commands" in line
+            for line in output.splitlines()
+        )
         host_help, apprc_help = output.split("AppRC: Commands", 1)
         assert any(
-            line.split()[:2] == ["│", "serve"]
+            line.split()[:2] == [vertical, "serve"]
             for line in host_help.splitlines()
         )
         assert all(
-            line.split()[:2] != ["│", "dist"] for line in host_help.splitlines()
+            line.split()[:2] != [vertical, "dist"]
+            for line in host_help.splitlines()
         )
         assert any(
-            line.split()[:2] == ["│", "dist"]
+            line.split()[:2] == [vertical, "dist"]
             for line in apprc_help.splitlines()
         )
         assert any(
-            line.split()[:2] == ["│", "update"]
+            line.split()[:2] == [vertical, "update"]
             for line in apprc_help.splitlines()
         )
     elif help_args[:2] == ("dist", "build"):

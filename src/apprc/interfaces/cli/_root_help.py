@@ -37,6 +37,7 @@ class AppRCRootGroup(TyperGroup):
             super().format_help(ctx, formatter)
             output_formatter.write(formatter.getvalue())
             return
+        from rich import box
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
@@ -93,12 +94,19 @@ class AppRCRootGroup(TyperGroup):
             STAGE_STYLE,
         )
 
+        stdout = typer.get_text_stream("stdout")
+        border = box.ROUNDED
+        if stdout.encoding is not None:
+            try:
+                str(border).encode(stdout.encoding)
+            except UnicodeEncodeError:
+                border = box.ASCII
         output = StringIO()
         console = terminal_console(
             output,
             width=formatter.width,
             color=ctx.color,
-            terminal=typer.get_text_stream("stdout").isatty(),
+            terminal=stdout.isatty(),
         )
         for title, rows in panels.items():
             if not rows:
@@ -122,6 +130,7 @@ class AppRCRootGroup(TyperGroup):
                     table,
                     title=Text(title, style=style),
                     title_align="left",
+                    box=border,
                     border_style=style,
                 )
             )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 import stat
@@ -19,10 +20,11 @@ from apprc.definition.installation import (
     PublicationImage,
     PublicationOutput,
 )
-from apprc.distribution.runtime._install_progress import report
+from apprc.distribution.runtime._install_progress import report, warn
 from apprc.distribution.runtime._os_integration import (
     command_is_owned,
     publish_global_command,
+    remove_owned_command,
 )
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.installation.operations import (
@@ -414,6 +416,45 @@ def publish_commands(
             report("result", "Global command", "PUBLISHED", item.path)
         published.append(output)
     return published, revision
+
+
+def retire_command_alias(
+    manager: InstallationManager,
+    inspection: InstallationInspection,
+    filename: str,
+) -> InstallationInspection:
+    """Retire exact owned aliases after the canonical command is activated."""
+    record, revision = inspection.record, inspection.revision
+    if record is None or revision is None:
+        return inspection
+    removed: list[OwnedOutput] = []
+    try:
+        for item in record.owned_outputs:
+            path = Path(item.path)
+            if (
+                item.kind == "command"
+                and path.parent != manager.directory
+                and os.path.normcase(path.name) == os.path.normcase(filename)
+            ):
+                remove_owned_command(item)
+                removed.append(item)
+        if removed:
+            return record_owned_outputs(
+                manager.directory,
+                app_id=record.identity.app_id,
+                expected_revision=revision,
+                generation_id=record.generation_id,
+                owned_outputs=tuple(
+                    item for item in record.owned_outputs if item not in removed
+                ),
+            )
+    except (OSError, ValueError) as error:
+        warn(
+            logging.getLogger(__name__),
+            "Preview alias cleanup remains pending",
+            error,
+        )
+    return inspection
 
 
 def cleanup_publication_images(

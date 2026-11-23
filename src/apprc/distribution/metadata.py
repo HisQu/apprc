@@ -145,12 +145,18 @@ def _preview_product(
         or not required.issubset(value)
         or set(value)
         - required
-        - {"display-name", "install-next-step", "default-for-beta-rc"}
+        - {
+            "display-name",
+            "install-next-step",
+            "default-for-beta-rc",
+            "short-alias",
+        }
         or not isinstance(value.get("default-for-beta-rc", False), bool)
+        or not isinstance(value.get("short-alias", True), bool)
         or not all(
             isinstance(item, str) and item.strip()
             for key, item in value.items()
-            if key != "default-for-beta-rc"
+            if key not in {"default-for-beta-rc", "short-alias"}
         )
     ):
         raise ValueError(
@@ -183,6 +189,7 @@ def _preview_product(
         prefix,
         value.get("install-next-step"),
         value.get("default-for-beta-rc", False),
+        value.get("short-alias", True),
     )
 
 

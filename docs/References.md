@@ -352,6 +352,7 @@ and lifecycle hooks.
 | `display-name` | Optional display name. Defaults to the preview app ID. |
 | `install-next-step` | Optional completion text for a persistent preview. |
 | `default-for-beta-rc` | Optional boolean. When enabled, launching a beta or release candidate setup directly selects the preview. |
+| `short-alias` | Defaults to `true`. A name ending in `-preview` also gets a managed `-p` alias when available. Set to `false` to opt out. |
 
 Use `--preview/-p` to leave the preview installed or `--smoke/-s` to install,
 verify and uninstall a fresh preview. The preview identity is opt-in.

@@ -1450,6 +1450,8 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     overlapping = invoke(setup, "-s", XDG_CONFIG_HOME=str(root / "appdata"))
     assert overlapping.returncode != 0
     assert "overlaps a protected path" in overlapping.stderr
+    preview_alias = commands / "fixture-p"
+    preview_alias.write_text("unrelated command", encoding="utf-8")
     preview = invoke(
         setup,
         "--yes",
@@ -1459,6 +1461,9 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     )
     assert preview.returncode == 0, preview.stdout + preview.stderr
     assert " · Install" in preview.stdout
+    assert "Preview alias was skipped" in preview.stderr
+    assert preview_alias.read_text(encoding="utf-8") == "unrelated command"
+    preview_alias.unlink()
     preview_command = commands / "fixture-preview"
     assert (
         "Preview entry point ran" in invoke(preview_command, "--version").stdout
@@ -1487,9 +1492,13 @@ def test_native_preview_and_smoke_preserve_regular_installation(
         updated_preview.stdout + updated_preview.stderr
     )
     assert " · Reinstall" in updated_preview.stdout
-    removed = invoke(preview_command, "app", "uninstall", "--yes")
+    assert (
+        "Preview entry point ran" in invoke(preview_alias, "--version").stdout
+    )
+    removed = invoke(preview_alias, "app", "uninstall", "--yes")
     assert removed.returncode == 0, removed.stdout + removed.stderr
     assert not preview_authority.exists()
+    assert not os.path.lexists(preview_alias)
 
     smoke = invoke(setup, "-p", "-s")
     assert smoke.returncode == 0, smoke.stdout + smoke.stderr
@@ -1533,7 +1542,14 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     # > Retain the beta assets while preparing another release from a newer version.
     beta_release = tmp_path / "beta-release"
     shutil.copytree(setup.parent, beta_release)
-    metadata.write_text(metadata.read_text().replace("2.0.0b1", "2.0.0rc1", 1))
+    metadata.write_text(
+        metadata.read_text()
+        .replace("2.0.0b1", "2.0.0rc1", 1)
+        .replace(
+            "default-for-beta-rc = true",
+            "default-for-beta-rc = true\nshort-alias = false",
+        )
+    )
     run([str(uv), "lock"], environment=author, cwd=preview_project)
     run(
         ["git", "add", "--", "pyproject.toml", "uv.lock"],
@@ -1603,6 +1619,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     )
     assert installed.returncode == 0, installed.stdout + installed.stderr
     assert _record(preview_dir)["active_runtime"]["version"] == "2.0.0b1"
+    assert preview_alias.is_file()
     preview_data = Path(_record(preview_dir)["placement"]["appdata_dir"])
     preview_sentinel = preview_data / "preview-data.txt"
     preview_sentinel.write_text("preview data")
@@ -1630,6 +1647,7 @@ def test_native_preview_and_smoke_preserve_regular_installation(
     )
     assert updated.returncode == 0, updated.stdout + updated.stderr
     assert _record(preview_dir)["active_runtime"]["version"] == "2.0.0rc1"
+    assert not os.path.lexists(preview_alias)
     assert preview_sentinel.read_text() == "preview data"
     down = invoke(
         regular_command,

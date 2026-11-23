@@ -1439,6 +1439,8 @@ def install_application(
     other_app_id: str | None = None,
     reserve_other_native_paths: bool = False,
     expected_update: tuple[UUID, str] | None = None,
+    preview_alias: str | None = None,
+    publish_preview_alias: bool = False,
 ) -> InstallationInspection:
     if not manager_executable.is_absolute() or not manager_executable.is_file():
         raise InstallationError(
@@ -1610,6 +1612,38 @@ def install_application(
                 global_command,
                 previous=(*prior_outputs, *publication_authority),
             )
+        link_target = None if _windows_command_path.enabled() else str(stable)
+        commands = ((global_command, link_target),) if global_command else ()
+        if pending_publication:
+            # > Resume the accepted output set even if alias availability changed.
+            commands += tuple(
+                (item.path, item.intended.link_target)
+                for item in pending_publication[2:]
+            )
+        elif (
+            global_command is not None
+            and preview_alias
+            and publish_preview_alias
+        ):
+            alias = global_command.with_name(_command_filename(preview_alias))
+            found = shutil.which(
+                preview_alias, path=environment.get("PATH", "")
+            )
+            try:
+                if found is not None and os.path.normcase(
+                    os.path.abspath(found)
+                ) != os.path.normcase(str(alias)):
+                    raise InstallationError(
+                        "The short name already resolves to another command."
+                    )
+                if other_app_id is not None:
+                    check_other_product_paths(
+                        (alias,), other_app_id, environment
+                    )
+                validate_global_command(alias, previous=prior_outputs)
+                commands += ((alias, link_target),)
+            except (OSError, ValueError) as error:
+                warn(LOG, "Preview alias was skipped", error, path=alias)
         if operation is not None:
             pending_archive = (
                 directory / "runtimes" / str(runtime.slot_id) / "project.zip"
@@ -1651,17 +1685,14 @@ def install_application(
             manager_executable=manager_executable,
             uv=uv,
             archive=project_archive,
-            commands=(
-                (
-                    global_command,
-                    None if _windows_command_path.enabled() else str(stable),
-                ),
-            )
-            if global_command is not None
-            else (),
+            commands=commands,
             user_path_command=global_command if update_user_path else None,
             prepared_command=prepared_command,
         )
+        if preview_alias and not publish_preview_alias:
+            result = _command_publication.retire_command_alias(
+                manager, result, _command_filename(preview_alias)
+            )
         if (
             _windows_command_path.enabled()
             and update_user_path

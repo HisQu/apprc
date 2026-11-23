@@ -23,7 +23,11 @@ from apprc.definition.installation import (
     OwnedOutput,
     RuntimeSlot,
 )
-from apprc.distribution.models import NativeBinding, read_native_bindings
+from apprc.distribution.models import (
+    NativeBinding,
+    preview_alias_name,
+    read_native_bindings,
+)
 from apprc.distribution.runtime._native_product import (
     check_other_product_paths,
     read_products,
@@ -40,7 +44,7 @@ def _executable() -> Path:
 
 def _read_products(
     *, include_project: bool = False
-) -> tuple[NativeBinding, NativeBinding | None, bytes | None, bool]:
+) -> tuple[NativeBinding, NativeBinding | None, bytes | None, bool, bool]:
     return read_products(
         _executable(),
         globals().get("_APPRC_ARCHIVE_SIZE"),
@@ -54,7 +58,7 @@ def _read_product(
     include_project: bool = False,
     identity: InstallationIdentity | None = None,
 ) -> tuple[NativeBinding, bytes | None]:
-    regular, preview, project, _ = _read_products(
+    regular, preview, project, _, _ = _read_products(
         include_project=include_project
     )
     if identity is None or identity == regular.identity:
@@ -113,6 +117,7 @@ def _install(
     regular: NativeBinding | None = None,
     preview: NativeBinding | None = None,
     smoke: bool = False,
+    publish_preview_alias: bool = False,
 ) -> int:
     """Render native setup progress and report its terminal outcome."""
     _setup_launch()["install"] = True
@@ -145,6 +150,7 @@ def _install(
                 args,
                 regular=regular,
                 preview=preview,
+                publish_preview_alias=publish_preview_alias,
             )
     except (
         OSError,
@@ -191,6 +197,7 @@ def _install_managed(
     regular: NativeBinding | None = None,
     preview: NativeBinding | None = None,
     smoke_command_directory: Path | None = None,
+    publish_preview_alias: bool = False,
 ) -> tuple[str | None, InstallationInspection]:
     """Install the embedded project, offer optional setup, and return its hint."""
     import argparse
@@ -382,6 +389,10 @@ def _install_managed(
                 else None,
                 reserve_other_native_paths=preview is not None,
                 expected_update=expected_update,
+                preview_alias=preview_alias_name(binding.command_name, ())
+                if regular is not None and smoke_command_directory is None
+                else None,
+                publish_preview_alias=publish_preview_alias,
             )
 
     if smoke_command_directory is not None:
@@ -918,7 +929,9 @@ def main() -> int:
     argv = list(sys.argv[1:])
     if argv and argv[0].startswith("--apprc-"):
         _setup_launch()["dispatched"] = True
-    regular, preview, _, preview_default = _read_products()
+    regular, preview, _, preview_default, publish_preview_alias = (
+        _read_products()
+    )
     if argv and argv[0] == "--apprc-execute-handoff":
         if len(argv) != 2:
             raise ValueError("Native uninstall handoff arguments are invalid.")
@@ -956,9 +969,23 @@ def main() -> int:
 
     _setup_launch()["dispatched"] = True
     environment = dict(os.environ)
-    preview_command = preview is not None and (
+    preview_commands = ()
+    if preview is not None:
+        alias = preview_alias_name(
+            preview.command_name, regular.identity.commands
+        )
+        preview_commands = (
+            (preview.command_name,)
+            if alias is None
+            else (
+                preview.command_name,
+                alias,
+            )
+        )
+    preview_command = any(
         os.path.normcase(executable.name)
-        == os.path.normcase(_command_filename(preview.command_name))
+        == os.path.normcase(_command_filename(name))
+        for name in preview_commands
     )
     regular_command = os.path.normcase(executable.name) == os.path.normcase(
         _command_filename(regular.command_name)
@@ -1002,6 +1029,7 @@ def main() -> int:
             tuple(argv),
             regular=regular,
             smoke=smoke,
+            publish_preview_alias=publish_preview_alias,
         )
 
     binding = preview if preview_command and preview is not None else regular
@@ -1127,6 +1155,7 @@ def main() -> int:
                 executable,
                 tuple(argv),
                 regular=regular,
+                publish_preview_alias=publish_preview_alias,
             )
         return _install(
             binding, manager, executable, tuple(argv), preview=preview

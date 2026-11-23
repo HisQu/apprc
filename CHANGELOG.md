@@ -99,6 +99,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Preview setups publish a short `-p` alias for commands ending in
+  `-preview`. Authors can opt out, and existing commands take precedence.
+
 ### 🛠️ Changed
 
 - Publish cumulative GitHub release notes from one changelog section per

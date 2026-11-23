@@ -1046,6 +1046,11 @@ When the publisher enables the preview default for beta and release candidate
 builds, launching one of those setups directly selects Preview. Pass
 `--regular` as the first option to select the regular installation explicitly.
 
+When setup publishes a command ending in `-preview`, it also offers the short
+`-p` spelling unless the publisher opted out. For example, run `demo-p` to
+launch `demo-preview`. If the short name is occupied, setup skips the alias
+and the full Preview command is available.
+
 From the installed managed command, choose a published version and install it
 as Preview. Run update to apply a newer version to an existing Preview.
 

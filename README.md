@@ -528,6 +528,8 @@ For a managed app with a preview identity, use
 as a preview. Use `yourapp update --preview --version VERSION` to update an
 existing preview when the alias is enabled. A publisher can make standalone
 beta and release-candidate setups default to Preview.
+If the Preview command ends in `-preview`, its setup can also publish a short
+`-p` alias. For example, `yourapp-p` runs `yourapp-preview` when the alias is available.
 
 ### Keep the installation's saved placement
 

@@ -30,10 +30,21 @@ from apprc.user_files.app_home.permissions import (
 )
 
 
-@pytest.mark.parametrize("preview_default", [None, False, True])
+@pytest.mark.parametrize(
+    ("preview_default", "short_alias", "regular_collision"),
+    [
+        (None, None, False),
+        (False, None, False),
+        (True, None, False),
+        (True, False, False),
+        (True, None, True),
+    ],
+)
 def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
     tmp_path: Path,
     preview_default: bool | None,
+    short_alias: bool | None,
+    regular_collision: bool,
 ) -> None:
     project_path = tmp_path / "project.zip"
     project_entries = {
@@ -62,14 +73,19 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
         "[project.scripts]\narchive-fixture = 'fixture_app:main'\n"
     )
     if preview_default is not None:
+        if regular_collision:
+            settings += "archive-p = 'fixture_app:main'\n"
         settings += (
             "archive-preview = 'fixture_app:preview'\n"
+            "[tool.apprc.distribution]\ncommand-name = 'archive-fixture'\n"
             "[tool.apprc.distribution.preview]\n"
             "app-id = 'archive-preview'\ncommand-name = 'archive-preview'\n"
             "apprc-reference = 'fixture_app:PREVIEW'\n"
             "bootstrap-env-prefix = 'ARCHIVE_PREVIEW'\n"
             f"default-for-beta-rc = {str(preview_default).lower()}\n"
         )
+        if short_alias is not None:
+            settings += f"short-alias = {str(short_alias).lower()}\n"
     (declaration / "pyproject.toml").write_text(settings, encoding="utf-8")
     spec = read_distribution_spec(declaration)
     source_setting = GitHubReleaseSource("fixture/project", False)
@@ -85,11 +101,17 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
             preview_default is not None
         )
         assert ("preview-default" in names) is (preview_default is True)
+        assert ("preview-short-alias" in names) is (
+            preview_default is not None
+            and short_alias is not False
+            and not regular_collision
+        )
         if preview_default is not None:
             preview_binding = decode_native_binding(
                 sdk.read("preview-binding.json")
             )
             assert preview_binding.identity.app_id == "archive-preview"
+            assert preview_binding.identity.commands == ("archive-preview",)
             assert set(json.loads(sdk.read("preview-binding.json"))) == set(
                 json.loads(sdk.read("binding.json"))
             )

@@ -21,6 +21,21 @@ from apprc.user_files.installation.codec import _decode, _encode, _pairs
 
 _PREVIEW_DEFAULT_MEMBER = "preview-default"
 _PREVIEW_DEFAULT_POLICY = b"beta-rc\n"
+_PREVIEW_ALIAS_MEMBER = "preview-short-alias"
+_PREVIEW_ALIAS_POLICY = b"enabled\n"
+
+
+def preview_alias_name(
+    preview: str, regular_commands: tuple[str, ...]
+) -> str | None:
+    """Derive the short name when the regular product leaves it available."""
+    stem = preview.removesuffix("-preview")
+    if not stem or stem == preview:
+        return None
+    alias = stem + "-p"
+    if alias.casefold() in {name.casefold() for name in regular_commands}:
+        return None
+    return alias
 
 
 def read_preview_default(archive: ZipFile) -> bool:
@@ -66,6 +81,7 @@ class PreviewProduct:
     bootstrap_env_prefix: str
     install_next_step: str | None = None
     default_for_beta_rc: bool = False
+    short_alias: bool = True
 
 
 @dataclass(frozen=True, slots=True)

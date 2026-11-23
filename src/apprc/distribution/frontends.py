@@ -29,9 +29,12 @@ from apprc.distribution.models import (
     GitHubReleaseSource,
     DistributionSpec,
     NativeBinding,
+    _PREVIEW_ALIAS_MEMBER,
+    _PREVIEW_ALIAS_POLICY,
     _PREVIEW_DEFAULT_MEMBER,
     _PREVIEW_DEFAULT_POLICY,
     encode_native_binding,
+    preview_alias_name,
 )
 from apprc.distribution.native import (
     NATIVE_TOOLCHAIN_DOCS,
@@ -256,6 +259,13 @@ def _sdk_archive(
         )
     if preview is not None and preview.default_for_beta_rc:
         entries[_PREVIEW_DEFAULT_MEMBER] = _PREVIEW_DEFAULT_POLICY
+    if preview is not None and preview.short_alias:
+        if preview_alias_name(preview.command_name, binding.identity.commands):
+            entries[_PREVIEW_ALIAS_MEMBER] = _PREVIEW_ALIAS_POLICY
+        elif alias := preview_alias_name(preview.command_name, ()):
+            logger.warning(
+                "Preview alias %s is reserved by the regular product.", alias
+            )
     entries["project.zip"] = project_bytes
     entries["bootstrap-requirements.txt"] = (
         "\n".join((*requirements, UV_REQUIREMENT)) + "\n"

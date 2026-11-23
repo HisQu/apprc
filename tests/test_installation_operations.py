@@ -750,15 +750,41 @@ def test_migration_hook_failure_records_failed_pending_authority(
     )
 
 
+def test_installation_runtime_preserves_public_imports() -> None:
+    from apprc.distribution import runtime
+    from apprc.distribution.runtime import installation
+
+    shared = (
+        "install_application",
+        "register_editable_application",
+        "offer_configuration_setup",
+    )
+    for name in shared:
+        assert getattr(runtime, name) is getattr(installation, name)
+    for name in (
+        *shared,
+        "confirm_desktop_shortcut",
+        "publish_optional_shortcuts",
+        "installation_maintenance_group",
+        "recorded_command_directory",
+        "require_update_record",
+    ):
+        assert callable(getattr(installation, name))
+
+
 @pytest.mark.parametrize("alias", [False, True])
 def test_editable_interpreter_identity_is_checked_before_registration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alias: bool
 ) -> None:
     import os
     import sys
+    from types import SimpleNamespace
 
     import apprc as rc
-    from apprc.distribution.runtime import installation
+    from apprc.distribution.runtime.installation import (
+        editable,
+        register_editable_application,
+    )
     from apprc.services.installation import InstallationManager
 
     project = tmp_path / "checkout"
@@ -786,18 +812,15 @@ def test_editable_interpreter_identity_is_checked_before_registration(
         directory=tmp_path / "installation",
     )
 
-    class MetadataProbeReached(Exception):
-        pass
+    def probe(*args: object, **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(stdout="invalid metadata")
 
-    def stop_before_mutation(*args: object) -> None:
-        raise MetadataProbeReached
-
-    monkeypatch.setattr(
-        installation, "_validate_editable_metadata", stop_before_mutation
-    )
+    monkeypatch.setattr(editable, "subprocess", SimpleNamespace(run=probe))
     if alias:
-        with pytest.raises(MetadataProbeReached):
-            installation.register_editable_application(
+        with pytest.raises(
+            InstallationError, match="metadata probe is invalid"
+        ):
+            register_editable_application(
                 manager,
                 _identity(),
                 EditableCheckout(project, environment),
@@ -810,7 +833,7 @@ def test_editable_interpreter_identity_is_checked_before_registration(
             InstallationError,
             match="Expected environment:.*running environment:",
         ):
-            installation.register_editable_application(
+            register_editable_application(
                 manager,
                 _identity(),
                 EditableCheckout(project, environment),

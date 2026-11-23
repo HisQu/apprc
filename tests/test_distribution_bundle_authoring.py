@@ -118,6 +118,21 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
         assert "project.zip" in names
         assert "bootstrap-requirements.txt" in names
         assert "apprc/distribution/runtime/_manager.py" in names
+        installer_package = "apprc/distribution/runtime/installation"
+        assert {
+            f"{installer_package}/{module}.py"
+            for module in (
+                "__init__",
+                "candidate",
+                "commands",
+                "editable",
+                "managed",
+                "post_install",
+                "resources",
+                "transaction",
+            )
+        } <= names
+        assert f"{installer_package}.py" not in names
         assert len(metadata_names) == 2
         assert sdk.read("project.zip") == project_bytes
         binding_bytes = sdk.read("binding.json")

@@ -107,17 +107,31 @@ schema-2 installation records require the explicit
 [reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1-or-2),
 not a version-number edit or automatic conversion.
 
-Managed candidate preparation in `_prepare_candidate()` in
-`distribution/runtime/installation.py` owns project materialization, locked
-synchronization, validation, and resource initialization. Its caller owns the
-operation, durable support-publication intent, registration, and activation.
-Managed installation and repair share command publication, registration, final
-checkpoints, and activation; their candidate preparation remains explicit.
-Managed and editable installation share the final checkpoints, installation
-record commit, and post-commit registration and finalization. Each route owns
-its candidate preparation and selects its command destinations.
-`distribution/runtime/_command_publication.py` owns publication, recorded
-before-images, resume, and command rollback for both routes.
+Start in [`managed.py`](../src/apprc/distribution/runtime/installation/managed.py)
+for setup, replacement, and managed repair, or in
+[`editable.py`](../src/apprc/distribution/runtime/installation/editable.py)
+for checkout registration. Each route selects its candidate and command outputs
+under the installation lock. Managed candidate preparation materializes and
+verifies the project snapshot, synchronizes and probes the runtime, and invokes
+resource initialization. Editable registration probes an existing environment.
+[Candidate preparation](../src/apprc/distribution/runtime/installation/candidate.py)
+
+Both routes use the same checkpoints, activation commit, Windows registration,
+and caught-failure recovery. Resource handling validates ownership and records
+whether each root and owner marker existed before initialization, so rollback
+can identify artifacts created by the attempt.
+[Transaction](../src/apprc/distribution/runtime/installation/transaction.py) ·
+[Resource handling](../src/apprc/distribution/runtime/installation/resources.py)
+
+Command placement selects destinations and can add a verified, committed
+command directory to the Windows user PATH. Command publication owns the writes,
+recorded before-images, resume, and command rollback. The native manager and
+editable CLI call optional configuration setup and shortcut creation after
+activation.
+[Placement](../src/apprc/distribution/runtime/installation/commands.py) ·
+[Publication](../src/apprc/distribution/runtime/_command_publication.py) ·
+[Optional setup](../src/apprc/distribution/runtime/installation/post_install.py)
+
 Use `plan_resume()` for an exact pending operation and `plan_repair()` only for
 a new managed repair. A candidate rebuilt during the current invocation is not
 rebuilt again after a probe failure; previously prepared candidates can still be

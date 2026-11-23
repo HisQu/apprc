@@ -19,26 +19,31 @@ from apprc.definition.installation import (
     RuntimeSelection,
     RuntimeSlot,
 )
-from apprc.distribution.runtime import _command_publication, installation
+from apprc.distribution.runtime import _command_publication
+from apprc.distribution.runtime._leases import (
+    acquire_runtime_lease,
+    try_retire_runtime_slot,
+)
 from apprc.distribution.runtime._os_integration import publish_global_command
-from apprc.distribution.runtime._leases import try_retire_runtime_slot
+from apprc.distribution.runtime.installation import candidate
+from apprc.user_files.installation.coordination import installation_lock
 
 
 def _runtime(source: ProjectSnapshot) -> RuntimeSlot:
     return RuntimeSlot(uuid4(), source, RuntimeSelection("3.12"))
 
 
-def test_broken_pending_candidate_repair_waits_for_busy_runtime_child(
+def test_broken_pending_candidate_repair_preserves_runtime_with_shared_lease(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     directory = tmp_path / "installation"
     runtime = _runtime(ProjectSnapshot("a" * 64, "b" * 64, "c" * 40))
     slot = directory / "runtimes" / str(runtime.slot_id)
     source = slot / "source"
     environment = slot / ".venv"
-    source.mkdir(parents=True)
-    environment.mkdir()
+    with installation_lock(directory):
+        source.mkdir(parents=True)
+        environment.mkdir()
     source_marker = source / "user-marker"
     environment_marker = environment / "environment-marker"
     source_marker.write_text("retained candidate source", encoding="utf-8")
@@ -51,17 +56,13 @@ def test_broken_pending_candidate_repair_waits_for_busy_runtime_child(
         "fixture", "fixture", "fixture", None, ("fixture",)
     )
 
-    monkeypatch.setattr(
-        installation,
-        "try_acquire_runtime_quiescence",
-        lambda _slot: None,
-    )
-
-    with pytest.raises(InstallationError, match="Candidate runtime is busy"):
-        installation._rebuild_candidate_runtime(
-            slot,
-            archive,
+    with (
+        acquire_runtime_lease(slot),
+        pytest.raises(InstallationError, match="Candidate runtime is busy"),
+    ):
+        candidate._rebuild_candidate_runtime(
             directory,
+            archive,
             identity,
             runtime,
             uv,

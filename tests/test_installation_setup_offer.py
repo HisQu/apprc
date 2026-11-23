@@ -25,7 +25,7 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import Layout, Paths
 from apprc.definition.resolution import CliRuntimeOptions
-from apprc.distribution.runtime import installation
+from apprc.distribution.runtime.installation import post_install
 from apprc.interfaces.cli.config_command._handlers import ConfigCommandHandlers
 from apprc.interfaces.cli.mount import mount_app_cli
 
@@ -78,7 +78,7 @@ def test_installed_setup_offer_dispatches_conditionally_and_releases_lease(
 ) -> None:
     inspection = ready_inspection
     monkeypatch.setattr(
-        installation, "inspect_installation", lambda *args, **kwargs: inspection
+        post_install, "inspect_installation", lambda *args, **kwargs: inspection
     )
     events: list[str] = []
 
@@ -103,11 +103,11 @@ def test_installed_setup_offer_dispatches_conditionally_and_releases_lease(
         if scenario == "failure":
             raise subprocess.CalledProcessError(1, argv)
 
-    monkeypatch.setattr(installation, "acquire_runtime_lease", acquire)
-    monkeypatch.setattr(installation.subprocess, "run", run)
+    monkeypatch.setattr(post_install, "acquire_runtime_lease", acquire)
+    monkeypatch.setattr(post_install.subprocess, "run", run)
     stream = io.StringIO()
     monkeypatch.setattr(stream, "isatty", lambda: scenario != "noninteractive")
-    result = installation.offer_configuration_setup(
+    result = post_install.offer_configuration_setup(
         inspection,
         skip=scenario == "skip",
         input_stream=stream,
@@ -132,7 +132,7 @@ def test_setup_offer_can_report_process_failure(
     ready_inspection, monkeypatch, error
 ):
     monkeypatch.setattr(
-        installation, "inspect_installation", lambda *a, **k: ready_inspection
+        post_install, "inspect_installation", lambda *a, **k: ready_inspection
     )
 
     class Lease:
@@ -146,17 +146,17 @@ def test_setup_offer_can_report_process_failure(
             pass
 
     monkeypatch.setattr(
-        installation, "acquire_runtime_lease", lambda *a, **k: Lease()
+        post_install, "acquire_runtime_lease", lambda *a, **k: Lease()
     )
 
     def fail(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr(installation.subprocess, "run", fail)
+    monkeypatch.setattr(post_install.subprocess, "run", fail)
     stream = io.StringIO()
     monkeypatch.setattr(stream, "isatty", lambda: True)
     with pytest.raises(type(error)):
-        installation.offer_configuration_setup(
+        post_install.offer_configuration_setup(
             ready_inspection,
             skip=False,
             input_stream=stream,
@@ -211,7 +211,7 @@ def test_setup_offer_uses_captured_sources_and_recorded_placement(
     monkeypatch.delenv("OFFER_TOKEN", raising=False)
     monkeypatch.setenv("OFFER_CAPTURED", "later-value")
     monkeypatch.setattr(
-        installation,
+        post_install,
         "inspect_installation",
         lambda *args, **kwargs: ready_inspection,
     )
@@ -228,7 +228,7 @@ def test_setup_offer_uses_captured_sources_and_recorded_placement(
             events.append("closed")
 
     monkeypatch.setattr(
-        installation, "acquire_runtime_lease", lambda *args: Lease()
+        post_install, "acquire_runtime_lease", lambda *args: Lease()
     )
     app = typer.Typer()
     child_arguments: list[str] = []
@@ -269,7 +269,7 @@ def test_setup_offer_uses_captured_sources_and_recorded_placement(
         assert result.exit_code == 0, (result.output, result.exception)
         assert result.output == ""
 
-    monkeypatch.setattr(installation.subprocess, "run", run)
+    monkeypatch.setattr(post_install.subprocess, "run", run)
     before = {
         path: path.read_bytes()
         for path in manager.paths.require("config").rglob("*")
@@ -277,7 +277,7 @@ def test_setup_offer_uses_captured_sources_and_recorded_placement(
     }
     stream = io.StringIO()
     monkeypatch.setattr(stream, "isatty", lambda: True)
-    assert installation.offer_configuration_setup(
+    assert post_install.offer_configuration_setup(
         ready_inspection,
         skip=False,
         config_group_name="settings",

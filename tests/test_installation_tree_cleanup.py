@@ -306,7 +306,9 @@ def test_registration_rejects_unusable_callbacks_before_initializing_resources(
         RuntimeSlot,
     )
     from apprc.definition.paths import Layout
-    from apprc.distribution.runtime.installation import _initialize_runtime
+    from apprc.distribution.runtime.installation.resources import (
+        initialize_resources,
+    )
     from apprc.services.installation import InstallationManager
     from apprc.user_files.installation.operations import begin_operation
     from tests.support_installation import installation_record
@@ -335,7 +337,7 @@ def test_registration_rejects_unusable_callbacks_before_initializing_resources(
         directory, plan.operation_id, plan.generation_id, placement
     )
     with pytest.raises(InstallationError, match="AppRC declaration"):
-        _initialize_runtime(
+        initialize_resources(
             manager,
             identity,
             runtime,

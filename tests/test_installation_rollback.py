@@ -20,6 +20,7 @@ from apprc.definition.installation import (
     InstallationInspection,
     InstallationPlacement,
     InstallPlan,
+    OperationContext,
     OperationStep,
     ProjectSnapshot,
     RuntimeSelection,
@@ -27,6 +28,13 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime import _command_publication, installation
+from apprc.distribution.runtime.installation import (
+    commands,
+    editable,
+    managed,
+    transaction,
+)
+from apprc.distribution.runtime.installation.resources import ResourceSnapshot
 from apprc.distribution.runtime._install_progress import (
     InstallProgress,
     installation_progress,
@@ -81,7 +89,7 @@ def _prepare(
     *,
     environment: Mapping[str, str],
     manager_executable: Path,
-    resources: installation._ResourceSnapshot,
+    resources: ResourceSnapshot,
     version: str = "1.0",
 ) -> tuple[RuntimeSlot, str]:
     """Replace dependency acquisition while exercising real lifecycle writes."""
@@ -105,7 +113,7 @@ def _prepare(
         observed=observed,
     )
     manager.initialize(
-        context=installation._context(
+        context=OperationContext(
             manager.directory,
             plan.operation_id,
             plan.generation_id,
@@ -145,7 +153,7 @@ def native_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _NativeCase:
     files = tuple(tmp_path / name for name in ("setup", "uv", "project.zip"))
     for path in files:
         path.write_bytes(path.name.encode())
-    monkeypatch.setattr(installation, "_prepare_candidate", _prepare)
+    monkeypatch.setattr(managed, "prepare_candidate", _prepare)
     return _NativeCase(
         manager,
         InstallationIdentity(
@@ -188,13 +196,13 @@ def test_managed_setup_and_update_publish_the_probed_application_version(
     monkeypatch.setattr(_windows_registration, "publish_registration", register)
 
     first, second = "0.23.1b1", "0.23.1b2"
-    command_name = installation._command_filename("fixture")
+    command_name = commands.command_filename("fixture")
     paths = (
         native_case.manager.directory / command_name,
         command_directory / command_name,
     )
     monkeypatch.setattr(
-        installation, "_prepare_candidate", partial(_prepare, version=first)
+        managed, "prepare_candidate", partial(_prepare, version=first)
     )
     initial = native_case.install(
         command_directory=command_directory, setup_version=first
@@ -203,7 +211,7 @@ def test_managed_setup_and_update_publish_the_probed_application_version(
     assert all(path.read_bytes() == b"setup0.23.1b1" for path in paths)
 
     monkeypatch.setattr(
-        installation, "_prepare_candidate", partial(_prepare, version=second)
+        managed, "prepare_candidate", partial(_prepare, version=second)
     )
     updated = native_case.install(
         commit="d" * 40,
@@ -242,9 +250,7 @@ def test_managed_setup_compares_installed_and_incoming_builds(
         "Installed  No active installation",
         "Incoming   1.0",
     ]
-    published = case.manager.directory / installation._command_filename(
-        "fixture"
-    )
+    published = case.manager.directory / commands.command_filename("fixture")
     installed_digest = hashlib.sha256(published.read_bytes()).hexdigest()[:12]
     assert run_setup() == [
         "Reinstall",
@@ -279,7 +285,7 @@ def test_managed_setup_reads_snapshot_version_when_caller_omits_version(
         assert identity == native_case.identity
         return "1.0"
 
-    monkeypatch.setattr(installation, "_snapshot_metadata", snapshot_version)
+    monkeypatch.setattr(managed, "snapshot_metadata", snapshot_version)
     events: list[InstallProgress] = []
     with installation_progress(events.append):
         assert native_case.install(setup_version=None).status == "ready"
@@ -304,7 +310,7 @@ def test_caught_native_failure_restores_previous_state_and_retry_succeeds(
     before = case.manager.inspect()
     record_path = case.manager.directory / "installation.json"
     before_bytes = record_path.read_bytes() if record_path.exists() else None
-    stable = case.manager.directory / installation._command_filename("fixture")
+    stable = case.manager.directory / commands.command_filename("fixture")
     before_command = stable.read_bytes() if stable.exists() else None
     before_slots = (
         set((case.manager.directory / "runtimes").iterdir())
@@ -335,7 +341,7 @@ def test_caught_native_failure_restores_previous_state_and_retry_succeeds(
             def fail_prepare(*args, **kwargs):
                 raise failure
 
-            patch.setattr(installation, "_prepare_candidate", fail_prepare)
+            patch.setattr(managed, "prepare_candidate", fail_prepare)
         elif boundary == "resources":
             original_initialize = case.manager.initialize
 
@@ -458,7 +464,7 @@ def test_failed_rollback_preserves_payload_and_both_errors(
     obstruction: str,
 ) -> None:
     case = native_case
-    stable = case.manager.directory / installation._command_filename("fixture")
+    stable = case.manager.directory / commands.command_filename("fixture")
     payload: Path | None = None
     failure = InstallationError("controlled activation failure")
 
@@ -475,7 +481,7 @@ def test_failed_rollback_preserves_payload_and_both_errors(
     monkeypatch.setattr(case.manager, "commit_install", fail_activation)
     if obstruction == "busy-candidate":
         monkeypatch.setattr(
-            installation, "try_retire_runtime_slot", lambda slot: False
+            transaction, "try_retire_runtime_slot", lambda slot: False
         )
     elif obstruction == "authority-write":
 
@@ -543,11 +549,11 @@ def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
         resolution, "resolve_editable_environment", lambda project: environment
     )
     monkeypatch.setattr(
-        installation, "_validate_editable_metadata", lambda *args: None
+        editable, "_validate_editable_metadata", lambda *args: None
     )
-    monkeypatch.setattr(installation, "runtime_command", lambda *args: command)
+    monkeypatch.setattr(editable, "runtime_command", lambda *args: command)
     monkeypatch.setattr(
-        installation,
+        editable,
         "_probe_runtime_observations",
         lambda *args, **kwargs: (runtime, {"version": "1.0"}),
     )
@@ -555,7 +561,7 @@ def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
     def initialize(*args, **kwargs):
         return manager.initialize(context=args[4]).paths
 
-    monkeypatch.setattr(installation, "_initialize_runtime", initialize)
+    monkeypatch.setattr(editable, "initialize_resources", initialize)
 
     def register() -> InstallationInspection:
         return installation.register_editable_application(
@@ -574,7 +580,7 @@ def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
         def fail_probe(*args, **kwargs):
             raise failure
 
-        patch.setattr(installation, "_probe_runtime_observations", fail_probe)
+        patch.setattr(editable, "_probe_runtime_observations", fail_probe)
         with pytest.raises(InstallationError) as caught:
             register()
         assert caught.value is failure
@@ -653,15 +659,13 @@ def test_windows_default_command_is_transactional(
     )
 
     bin_dir = tmp_path / "shared-bin"
-    command = bin_dir / installation._command_filename("fixture")
+    command = bin_dir / commands.command_filename("fixture")
     monkeypatch.setattr(windows, "enabled", lambda: True)
     monkeypatch.setattr(
         _os_integration, "os", SimpleNamespace(**(vars(os) | {"name": "nt"}))
     )
     monkeypatch.setattr(windows, "is_user_directory", lambda *args: True)
-    monkeypatch.setattr(
-        installation, "_default_command_directory", lambda *args: bin_dir
-    )
+    monkeypatch.setattr(commands, "uv_command_directory", lambda *args: bin_dir)
 
     changes = []
 
@@ -690,10 +694,8 @@ def test_windows_default_command_is_transactional(
         "linked-parent",
         "changed-authority",
     }:
-        original_finish = installation._finish_installation
 
-        def change_after_commit(manager, result):
-            result = original_finish(manager, result)
+        def change_before_path_update(manager, result, published, environment):
             if scenario == "changed-command":
                 command.write_bytes(b"replaced command")
             elif scenario == "linked-command":
@@ -716,10 +718,12 @@ def test_windows_default_command_is_transactional(
                     replace(result.record, support_version="changed"),
                     expected_revision=result.revision,
                 )
-            return result
+            commands.update_windows_user_path(
+                manager, result, published, environment
+            )
 
         monkeypatch.setattr(
-            installation, "_finish_installation", change_after_commit
+            managed, "update_windows_user_path", change_before_path_update
         )
     events = []
     with installation_progress(events.append):
@@ -749,8 +753,8 @@ def test_windows_default_command_is_transactional(
     if scenario == "update":
         monkeypatch.setattr(windows, "is_on_path", lambda *args: True)
         monkeypatch.setattr(
-            installation,
-            "_default_command_directory",
+            commands,
+            "uv_command_directory",
             lambda *args: pytest.fail("Reuse the existing bin"),
         )
         assert native_case.install().status == "ready"
@@ -803,11 +807,9 @@ def test_pending_windows_publication_preserves_path_intent(
         _os_integration, "os", SimpleNamespace(**(vars(os) | {"name": "nt"}))
     )
     monkeypatch.setattr(windows, "is_user_directory", lambda *args: True)
+    monkeypatch.setattr(commands, "uv_command_directory", lambda *args: bin_dir)
     monkeypatch.setattr(
-        installation, "_default_command_directory", lambda *args: bin_dir
-    )
-    monkeypatch.setattr(
-        installation, "_command_directory", lambda *args: bin_dir
+        managed, "select_command_directory", lambda *args: bin_dir
     )
     changes = []
     monkeypatch.setattr(
@@ -850,7 +852,7 @@ def test_pending_windows_publication_preserves_path_intent(
             stop_before_publication,
         )
         interrupt.setattr(
-            installation, "_failed_operation", stop_before_publication
+            managed, "recover_installation_failure", stop_before_publication
         )
         with pytest.raises(SystemExit):
             attempt(bin_dir if original == "explicit" else None)
@@ -869,19 +871,19 @@ def test_pending_windows_publication_preserves_path_intent(
             runtime, version="1.0", python_version="3.14"
         ), manager.inspect().revision
 
-    monkeypatch.setattr(installation, "_prepare_candidate", reuse_prepared)
+    monkeypatch.setattr(managed, "prepare_candidate", reuse_prepared)
     if retry == "repair":
         pending = case.manager.inspect()
         assert pending.revision is not None
         with pytest.raises(InstallationError, match="changed before recovery"):
-            installation._repair_managed_application(
+            managed.repair_managed_installation(
                 case.manager,
                 manager_executable=case.setup,
                 uv=case.uv,
                 expected_revision="0" * 64,
             )
         assert case.manager.inspect() == pending
-        result = installation._repair_managed_application(
+        result = managed.repair_managed_installation(
             case.manager,
             manager_executable=case.setup,
             uv=case.uv,

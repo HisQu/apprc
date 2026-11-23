@@ -363,6 +363,14 @@ def _bridge_response(
                 "Application doctor failed without valid failure checks."
             )
     elif result.returncode != 0:
+        if (
+            action == "cleanup"
+            and result.returncode == 1
+            and set(payload) == {"error"}
+        ):
+            message = payload["error"]
+            if isinstance(message, str) and message.strip():
+                raise InstallationError(message)
         raise InstallationError(
             f"Application bridge {action} failed (exit {result.returncode}). "
             "Child diagnostics were written to stderr."

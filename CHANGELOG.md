@@ -113,6 +113,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Show the application's reason when its cleanup hook blocks uninstall or
+  guided installation validation, such as when a running server holds a lease.
+
 ### 🔒 Security
 
 <br>

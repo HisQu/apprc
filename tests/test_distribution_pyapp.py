@@ -602,6 +602,8 @@ def test_native_managed_repair_update_and_cleanup_lifecycle(
     assert cleanup_failure.returncode == 0, (
         cleanup_failure.stdout + cleanup_failure.stderr
     )
+    reason = "Application data is in use. Close the application and retry."
+    assert f"Uninstall failed: {reason}" in cleanup_failure.stderr
     assert provider_file.is_file() and unrelated_file.is_file()
     failed_record = _record(directory)
     assert failed_record.get("status") == "incomplete"
@@ -612,6 +614,7 @@ def test_native_managed_repair_update_and_cleanup_lifecycle(
     assert failed_operation["phase"] == "failed"
     assert failed_operation["categories"] == ["appdata", "config"]
     assert failed_operation["diagnostic"]["code"] == "uninstall-incomplete"
+    assert failed_operation["diagnostic"]["message"] == reason
     assert "provider_cleanup" not in failed_operation["steps"]
     assert "runtime_removed" not in failed_operation["steps"]
     assert "data_removed" not in failed_operation["steps"]

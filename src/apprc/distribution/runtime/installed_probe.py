@@ -233,13 +233,13 @@ def _serve_request(request: object) -> int:
         validated = _validate_provider_request(request)
         if validated.action == "doctor":
             result, status = _serve_doctor(validated)
+        elif validated.action == "cleanup":
+            result, status = _serve_cleanup(validated)
         else:
             if validated.action == "initialize":
                 result = _serve_initialize(validated)
             elif validated.action == "inventory":
                 result = _serve_inventory(validated)
-            elif validated.action == "cleanup":
-                result = _serve_cleanup(validated)
             else:
                 result = _serve_migrate(validated)
             status = 0
@@ -583,9 +583,12 @@ def _serve_inventory(request: _ProviderRequest) -> dict[str, object]:
     return result
 
 
-def _serve_cleanup(request: _ProviderRequest) -> dict[str, object]:
+def _serve_cleanup(request: _ProviderRequest) -> tuple[dict[str, object], int]:
     """Execute the authorized cleanup action using its captured inputs."""
-    from apprc.definition.installation import OperationContext
+    from apprc.definition.installation import (
+        InstallationError,
+        OperationContext,
+    )
 
     hooks, context = request.hooks, request.context
     if context is None:
@@ -595,9 +598,12 @@ def _serve_cleanup(request: _ProviderRequest) -> dict[str, object]:
     cleanup_callback = cast(
         Callable[[OperationContext], None], _hook(hooks.cleanup)
     )
-    cleanup_callback(context)
-    result: dict[str, object] = {"completed": True}
-    return result
+    try:
+        cleanup_callback(context)
+    except InstallationError as error:
+        message = str(error).strip() or "Application cleanup was refused."
+        return {"error": message}, 1
+    return {"completed": True}, 0
 
 
 def _serve_migrate(request: _ProviderRequest) -> dict[str, object]:

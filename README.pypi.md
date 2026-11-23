@@ -419,7 +419,8 @@ you through the selected lifecycle:
 | `yourapp dist test --managed` | Install a built release, check it, and uninstall it. |
 | `yourapp dist test --update-from OLD_SETUP` | Install the supplied older setup, update to the current checked setup, verify, and uninstall. |
 
-Run these through `uv run --locked` in the application checkout. The workflow
+Stop the application and any background servers before testing. Run these
+through `uv run --locked` in the application checkout. The workflow
 performs real installation and removal and writes its report under
 `.cache/apprc/dist-test/`. Automated checks and manual observations are recorded
 separately. The [validation guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#validate-installation-on-your-machine)

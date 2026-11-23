@@ -1122,6 +1122,12 @@ manual launch and platform observations, and records the outcome under
 `.cache/apprc/dist-test/`. Editable removal keeps the checkout and `.venv`.
 Review any retained configuration before starting another full lifecycle.
 
+Close the application and any servers started for the manual check before
+continuing to the final uninstall. If cleanup reports that a resource is in
+use, stop the process using it and resume the saved `app uninstall` before
+running `dist test` again. Keep the configuration choice from the original
+uninstall.
+
 `uv run --locked <app> dist test -m -y` runs unattended automated checks only
 when preflight permits them. A pre-existing personal installation stops this
 invocation. Human observations remain NOT VERIFIED in its report. Follow any

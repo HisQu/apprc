@@ -206,9 +206,13 @@ def _install_managed(
     from apprc.distribution.runtime._install_progress import warn
     from apprc.definition.paths import Layout
     from apprc.definition.resolution import ResolveOptions
-    from apprc.distribution.runtime.installation import (
-        _default_command_directory,
+    from apprc.distribution.runtime.installation._commands import (
+        uv_command_directory,
+    )
+    from apprc.distribution.runtime.installation._managed import (
         install_application,
+    )
+    from apprc.distribution.runtime.installation._transaction import (
         installation_maintenance_group,
     )
     from apprc.interfaces.cli.context import CliRuntimeOptions
@@ -330,7 +334,7 @@ def _install_managed(
         and os.name != "nt"
         and command_directory is None
     ):
-        command_directory = _default_command_directory(uv, environment)
+        command_directory = uv_command_directory(uv, environment)
     _, project_bytes = _read_product(include_project=True)
     if project_bytes is None:
         raise RuntimeError("The embedded project snapshot is unavailable.")
@@ -398,7 +402,7 @@ def _install_managed(
     if smoke_command_directory is not None:
         return None, inspection
 
-    from apprc.distribution.runtime.installation import (
+    from apprc.distribution.runtime.installation._post_install import (
         confirm_desktop_shortcut,
         offer_configuration_setup,
         publish_optional_shortcuts,
@@ -470,7 +474,9 @@ def _run_preview_smoke(
         run_checked_uninstall,
         verify_windows_registration,
     )
-    from apprc.distribution.runtime.installation import _command_filename
+    from apprc.distribution.runtime.installation._commands import (
+        command_filename,
+    )
     from apprc.user_files.app_home.permissions import (
         set_windows_private_acl,
     )
@@ -502,7 +508,7 @@ def _run_preview_smoke(
             smoke_command_directory=command_dir,
         )
         record = installed.record
-        command = command_dir / _command_filename(binding.command_name)
+        command = command_dir / command_filename(binding.command_name)
         if record is None:
             raise InstallationError(
                 "Smoke did not reach an identifiable preview generation."
@@ -751,8 +757,10 @@ def _preview_update_target(
     manager: InstallationManager,
 ) -> tuple[InstallationManager, NativeBinding, tuple[UUID, str]]:
     """Resolve a managed Preview and capture its verified update revision."""
-    from apprc.distribution.runtime.installation import (
-        _command_filename,
+    from apprc.distribution.runtime.installation._commands import (
+        command_filename,
+    )
+    from apprc.distribution.runtime.installation._transaction import (
         require_update_record,
     )
     from apprc.user_files.app_home.locations import assert_no_links
@@ -791,7 +799,7 @@ def _preview_update_target(
             raise InstallationError(
                 "The saved preview does not match the managed product."
             )
-        executable = target.directory / _command_filename(record.command_name)
+        executable = target.directory / command_filename(record.command_name)
         assert_no_links(executable)
         if not _owned_manager_invocation(executable, target, expected_preview):
             raise InstallationError(
@@ -965,7 +973,9 @@ def main() -> int:
     executable = _executable()
     os.environ["_APPRC_NATIVE_MANAGER"] = "1"
     os.environ["_APPRC_NATIVE_EXECUTABLE"] = str(executable)
-    from apprc.distribution.runtime.installation import _command_filename
+    from apprc.distribution.runtime.installation._commands import (
+        command_filename,
+    )
 
     _setup_launch()["dispatched"] = True
     environment = dict(os.environ)
@@ -984,11 +994,11 @@ def main() -> int:
         )
     preview_command = any(
         os.path.normcase(executable.name)
-        == os.path.normcase(_command_filename(name))
+        == os.path.normcase(command_filename(name))
         for name in preview_commands
     )
     regular_command = os.path.normcase(executable.name) == os.path.normcase(
-        _command_filename(regular.command_name)
+        command_filename(regular.command_name)
     )
     setup_flags = {"-p", "--preview", "-s", "--smoke"}
     standalone = not preview_command and not regular_command

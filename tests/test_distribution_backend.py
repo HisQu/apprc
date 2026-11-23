@@ -54,8 +54,10 @@ from apprc.distribution.runtime._os_integration import (
     windows_registration_intent,
 )
 from apprc.distribution.runtime.installation import (
-    _snapshot_metadata,
     offer_configuration_setup,
+)
+from apprc.distribution.runtime.installation._candidate import (
+    snapshot_metadata,
 )
 from apprc.services.installation import InstallationManager
 from apprc.user_files.installation.codec import decode_record, encode_record
@@ -527,11 +529,11 @@ def test_expected_version_comes_from_digest_verified_retained_archive(
         ("snapshot-fixture",),
     )
 
-    assert _snapshot_metadata(archive, runtime, identity) == "1.2.3"
+    assert snapshot_metadata(archive, runtime, identity) == "1.2.3"
 
     archive.write_bytes(archive.read_bytes() + b"changed")
     with pytest.raises(InstallationError, match="archive was modified"):
-        _snapshot_metadata(archive, runtime, identity)
+        snapshot_metadata(archive, runtime, identity)
 
 
 @pytest.mark.skipif(

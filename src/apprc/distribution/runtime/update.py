@@ -43,8 +43,10 @@ from apprc.distribution.runtime.backend import (
     runtime_environment,
     runtime_interpreter,
 )
-from apprc.distribution.runtime.installation import (
+from apprc.distribution.runtime.installation._commands import (
     recorded_command_directory,
+)
+from apprc.distribution.runtime.installation._transaction import (
     require_update_record,
 )
 from apprc.user_files.app_home.locations import assert_no_links

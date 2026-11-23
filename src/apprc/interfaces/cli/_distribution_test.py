@@ -31,7 +31,9 @@ from apprc.distribution.runtime._uninstall_controller import (
     run_checked_uninstall,
     verify_windows_registration,
 )
-from apprc.distribution.runtime.installation import _command_directory
+from apprc.distribution.runtime.installation._commands import (
+    select_command_directory,
+)
 from apprc.interfaces._terminal_console import cli_line
 from apprc.interfaces.cli._distribution_authoring import (
     _check,
@@ -286,7 +288,7 @@ def run_distribution_test(
         resource_paths = tuple(path for _, path in resource_roots(placement))
         check_protected_removal_paths(resource_paths, (root, prefix))
         publication = (
-            _command_directory(
+            select_command_directory(
                 uv,
                 None,
                 environment,

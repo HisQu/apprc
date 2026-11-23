@@ -40,7 +40,7 @@ The baseline and example smoke checks exercised ordinary configuration, workspac
 
 **Evidence and impact.** Managed and editable installation each repeated the final checkpoints, installation authority commit, Windows registration, and finalization. A change to those steps required tracing both paths and their shared recovery function.
 
-**Correction and verification.** Managed and editable callers share the final checkpoints, activation commit, and post-commit registration and finalization. Each caller prepares its candidate and publishes its command using its existing before-images and output ordering. The installer and rollback tests exercise both paths. [Activation](src/apprc/distribution/runtime/installation.py#L1262) · [Rollback tests](tests/test_installation_rollback.py)
+**Correction and verification.** Managed and editable callers share the final checkpoints, activation commit, and post-commit registration and finalization. Each caller prepares its candidate and publishes its command using its existing before-images and output ordering. The installer and rollback tests exercise both paths. [Activation](src/apprc/distribution/runtime/installation/_transaction.py) · [Rollback tests](tests/test_installation_rollback.py)
 
 ## Intuitive code traversal
 
@@ -116,7 +116,7 @@ The existing slot-name cache uses immutable results keyed by class and consumes 
 
 ### CSC-09 · P3 · Remove obsolete pre-activation Windows registration rollback
 
-**Evidence and impact.** Managed installation initializes its local Windows registration snapshot to `None` and never assigns it. Editable registration passes `None` directly. The shared failure handler still advertises and implements restoration for that parameter. Both callers now publish Windows Installed apps registration after committing installation authority. Development still describes restoration of captured Windows registration as part of pre-activation rollback. [Unused restoration branch](src/apprc/distribution/runtime/installation.py#L1058) · [Managed caller](src/apprc/distribution/runtime/installation.py#L1300) · [Editable failure path](src/apprc/distribution/runtime/installation.py#L2479) · [Development](docs/Development.md#source-ownership)
+**Evidence and impact.** Managed installation initializes its local Windows registration snapshot to `None` and never assigns it. Editable registration passes `None` directly. The shared failure handler still advertises and implements restoration for that parameter. Both callers now publish Windows Installed apps registration after committing installation authority. The development guide at the time described restoration of captured Windows registration as part of pre-activation rollback. [Historical rollback](https://github.com/HisQu/apprc/blob/11927af6cd03d08576427464c82a9f0660276043/src/apprc/distribution/runtime/installation.py#L1058)
 
 **Correction and verification.** Remove the unreachable installer parameter and branch and describe post-commit registration recovery in Development. Keep the Windows registration journal and the live uninstall restoration path. Verify managed and editable rollback plus the retained Windows fixture coverage. Record checkpoints are part of saved authority and do not need renaming for this cleanup. Native Windows validation remains deferred. [Registration recovery](src/apprc/distribution/runtime/_windows_registration.py#L166) · [Live uninstall caller](src/apprc/distribution/runtime/uninstall_handoff.py#L1468)
 
@@ -200,3 +200,14 @@ The opt-in Linux PyApp suite passed all 23 installation and recovery cases on
 the initial implementation, including both managed temporary-path variants.
 The final review added the mounted CLI retry and browser repoint regressions.
 [Native verification procedure](docs/Development.md#verify-an-application-distribution)
+
+## Installation runtime follow-up
+
+The installation module mixed entry points with candidate preparation,
+ownership checks, publication recovery, and optional prompts. Managed setup
+and editable registration now show their own sequence and meet at the shared
+transaction boundary. Checkpoint callers receive the validated revision
+directly. Named snapshot fields distinguish the prior resource state from the
+directory observed during rollback. The surrounding runtime keeps command
+publication, backend operations, and leases as separate owners.
+[Source ownership](docs/Development.md#source-ownership)

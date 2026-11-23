@@ -109,6 +109,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Installed native commands let foreground applications finish shutting down
+  after Ctrl+C without printing a launcher traceback.
+
 ### 🔒 Security
 
 <br>

@@ -278,9 +278,13 @@ def _retirement_probe_worker(
 @pytest.mark.skipif(
     os.name == "nt", reason="Managed lease inheritance uses POSIX descriptors."
 )
+@pytest.mark.parametrize(
+    "interrupt_wait", [False, True], ids=["normal", "ctrl-c"]
+)
 def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    interrupt_wait: bool,
 ) -> None:
     """Keep the selected slot protected without holding the lifecycle lock."""
     app_id = "forward-lease-fixture"
@@ -392,6 +396,19 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
     )
     retirer.start()
     child.close()
+    if interrupt_wait:
+
+        class InterruptedWait(subprocess.Popen[bytes]):
+            interrupted = False
+
+            def wait(self, timeout: float | None = None) -> int:
+                if not self.interrupted:
+                    self.interrupted = True
+                    raise KeyboardInterrupt
+                return super().wait(timeout)
+
+        monkeypatch.setattr(subprocess, "Popen", InterruptedWait)
+
     executor = ThreadPoolExecutor(max_workers=1)
     forward = None
 

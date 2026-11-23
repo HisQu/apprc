@@ -740,12 +740,22 @@ def _forward(
             else:
                 environment.pop("_APPRC_RUNTIME_LEASE_HANDLE", None)
                 spawn_options = {}
-        return subprocess.run(
+        with subprocess.Popen(
             [str(command), *args],
             env=environment,
-            check=False,
             **spawn_options,
-        ).returncode
+        ) as process:
+            try:
+                return process.wait()
+            except KeyboardInterrupt:
+                # > Ctrl+C also reaches the foreground child. Give it time to
+                #   finish cleanup before releasing the runtime lease.
+                try:
+                    return process.wait(timeout=10)
+                except (KeyboardInterrupt, subprocess.TimeoutExpired):
+                    process.kill()
+                    process.wait()
+                    return 130
     finally:
         if lease is not None:
             lease.close()

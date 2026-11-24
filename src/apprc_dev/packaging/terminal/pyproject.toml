@@ -9,7 +9,7 @@ version = "0.39.1rc1"
 description = "Configuration, installation, and lifecycle management for Python applications."
 requires-python = ">=3.12"
 license = "MIT"
-keywords = ["configuration", "dotenv", "runtime-config", "typer>=0.26.5"]
+keywords = ["configuration", "runtime-configuration", "typed-settings", "dotenv", "environment-variables", "application-installation", "application-lifecycle", "application-packaging"]
 classifiers = ["Development Status :: 3 - Alpha", "Intended Audience :: Developers", "Operating System :: OS Independent", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3.12", "Programming Language :: Python :: 3.13", "Programming Language :: Python :: 3.14", "Topic :: Software Development :: Libraries :: Python Modules", "Typing :: Typed"]
 readme = {file = "README.md", content-type = "text/markdown"}
 license-files = ["LICENSE"]

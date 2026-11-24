@@ -20,9 +20,13 @@ license-files = ["LICENSE"]
 requires-python = ">=3.12"
 keywords = [
     "configuration",
+    "runtime-configuration",
+    "typed-settings",
     "dotenv",
-    "runtime-config",
-    "typer>=0.26.5",
+    "environment-variables",
+    "application-installation",
+    "application-lifecycle",
+    "application-packaging",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

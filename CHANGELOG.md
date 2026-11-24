@@ -57,8 +57,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1rc1...HEAD
-[0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1rc1
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1rc2...HEAD
+[0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1rc2
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/HisQu/apprc/compare/v0.36.1...v0.37.0
@@ -99,9 +99,6 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
-- Editable updates can run an application-declared asset preparation command
-  before dependency sync and registration, even when the Git checkout is current.
-
 ### 🛠️ Changed
 
 ### 🗑️ Deprecated
@@ -114,7 +111,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-## [0.39.1] - 2026-11-23 (rc1)
+## [0.39.1] - 2026-11-24 (rc2)
 
 ### ✨ Added
 
@@ -125,6 +122,8 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
   default to Preview.
 - Preview setups publish a short `-p` alias for commands ending in
   `-preview`. Authors can opt out, and existing commands take precedence.
+- Editable updates can run an application-declared asset preparation command
+  before dependency sync and registration, even when the Git checkout is current.
 
 ### 🛠️ Changed
 

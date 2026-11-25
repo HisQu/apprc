@@ -90,8 +90,7 @@ def expired_releases(releases: list[dict[str, Any]], tag: str) -> list[int]:
         ),
         reverse=True,
     )
-    keep = 1 if preview_channel == "Beta" else 3
-    return [item["id"] for item in candidates[keep:]]
+    return [item["id"] for item in candidates[1:]]
 
 
 def _gh(*args: str) -> str:

@@ -657,6 +657,10 @@ defines the retention choices, ownership checks, and explicit repository removal
 
 ### Release context and upgrades
 
+AppRC keeps one published beta and one published release candidate on GitHub.
+See the [release procedure](https://github.com/HisQu/apprc/blob/main/docs/Development.md#release-procedure) for
+retention and publishing details.
+
 Existing integrations should follow the
 [migration guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#migrate-existing-applications),
 including the 0.32 API and on-disk configuration changes. AppRC does not

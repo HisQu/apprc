@@ -101,6 +101,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🛠️ Changed
 
+- Keep only the latest published release candidate and its downloads on GitHub
+  across target versions. Git tags preserve previous candidates.
+
 ### 🗑️ Deprecated
 
 ### 🔥 Removed

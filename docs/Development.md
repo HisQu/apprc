@@ -894,9 +894,10 @@ and stores the verified bundle under `.cache/apprc/releases/`. It then pushes
 main and the tag and publishes the cached files on GitHub. Rerun the same command
 to resume an interrupted GitHub upload. A raw tag push triggers CI checks.
 
-GitHub tests the published artifacts. Publishing a beta keeps only the latest
-published beta. Publishing a release candidate keeps the latest three release
-candidates. Pruning removes the older GitHub Release and its downloads. Git
+GitHub tests the published artifacts. The repository keeps the latest
+published beta and the latest published release candidate. Publishing a new
+beta or release candidate prunes older releases in the same channel across
+target versions. Pruning removes the older GitHub Release and its downloads. Git
 tags preserve the original changelog snapshots. All stable releases stay
 available. For stable releases, the release command
 requests trusted publishing of the same GitHub files to PyPI. The publisher

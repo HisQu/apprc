@@ -57,7 +57,7 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 <br>
 
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1rc2...HEAD
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.39.1...HEAD
 [0.39.1]: https://github.com/HisQu/apprc/compare/v0.39.0...v0.39.1
 [0.39.0]: https://github.com/HisQu/apprc/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/HisQu/apprc/compare/v0.37.0...v0.38.0

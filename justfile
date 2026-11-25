@@ -254,7 +254,7 @@ release-prepare level="patch":
         exit 1
     fi
 
-    echo "Preparing ${tag} locally. Nothing will upload until you push main and ${tag}."
+    echo "Preparing ${tag} locally. Nothing will upload until you publish ${tag}."
 
     release_root="$(mktemp -d)"
     notes_file="$release_root/release-notes.md"
@@ -320,10 +320,10 @@ release-prepare level="patch":
     echo
     echo "  just release-push ${tag}"
     echo
-    echo "Run from main to build locally and publish the GitHub Release."
+    echo "Run from the release commit to build locally and publish the GitHub Release."
     echo "====================================================================="
 
-# Build, verify, and publish the annotated tag at main's current commit.
+# Build, verify, and publish the annotated tag at the release branch tip.
 release-push tag:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -331,14 +331,19 @@ release-push tag:
     just _check-gh
     tag={{quote(tag)}}
     version="$(uv version --short)"
-    if [[ "$(git branch --show-current)" != main || "$tag" != "v$version" ]]; then
-        echo "Release pushes require main and a tag matching the committed version." >&2
+    if [[ "$tag" != "v$version" ]]; then
+        echo "The release tag must match the committed version." >&2
+        exit 1
+    fi
+    branch="$(git branch --show-current)"
+    if [[ "$branch" != main ]] && ! [[ "$branch" == "release/$version" && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Release pushes require main or the matching stable release/$version branch." >&2
         exit 1
     fi
     ref="refs/tags/$tag"
     commit="$(git rev-parse HEAD)"
     if ! git cat-file -e "$ref^{tag}" 2>/dev/null || [[ "$(git rev-parse "$ref^{commit}")" != "$commit" ]]; then
-        echo "Annotated tag $tag must reference the current main commit." >&2
+        echo "Annotated tag $tag must reference the current release branch commit." >&2
         exit 1
     fi
     release_pypi="$(just --no-dotenv --evaluate RELEASE_PYPI)"
@@ -364,7 +369,7 @@ release-push tag:
     fi
     PYTHONPATH=src python -m apprc_dev.packaging.release_assets verify "$tag" "$bundle"
 
-    git push --atomic origin refs/heads/main:refs/heads/main "$ref:$ref"
+    git push --atomic origin "refs/heads/$branch:refs/heads/$branch" "$ref:$ref"
     if [[ "$require_ci" == true ]]; then
         just _wait-release-ci "$tag" "$commit"
     fi

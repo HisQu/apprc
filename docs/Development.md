@@ -884,9 +884,11 @@ It also accepts `patch`, `minor`, and `major`. Use an explicit version when
 promoting a release candidate to stable.
 
 `just release-push TAG` runs the full local suite and builds the three wheels
-and three source archives from the tagged main commit. It smoke-tests them
-and stores the verified bundle under `.cache/apprc/releases/`. It then pushes
-main and the tag and publishes the cached files on GitHub. Rerun the same command
+and three source archives from the annotated tag at the current branch tip.
+Publish from `main`, or from `release/X.Y.Z` for the exact stable `vX.Y.Z` tag.
+The command smoke-tests the packages, stores the verified bundle under
+`.cache/apprc/releases/`, and pushes the release branch and tag together
+before publishing the cached files on GitHub. Rerun the same command
 to resume an interrupted GitHub upload. A raw tag push triggers CI checks.
 
 GitHub tests the published artifacts. Publishing a beta keeps only the latest

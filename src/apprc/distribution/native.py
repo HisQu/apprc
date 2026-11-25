@@ -17,11 +17,13 @@ import tarfile
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import BinaryIO, Literal, NotRequired, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
 from apprc.definition.installation import InstallationError
+from apprc.distribution.models import decode_native_binding
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
     create_private_directory,
@@ -482,10 +484,19 @@ class NativeFrontendBuilder:
             raise FileExistsError(destination)
         archive_bytes = runtime_archive.read_bytes()
         archive_digest = hashlib.sha256(archive_bytes).hexdigest()
+        windows = target == "x86_64-pc-windows-msvc"
+        version_resource = None
         from zipfile import ZipFile
 
-        with ZipFile(runtime_archive) as archive:
+        with ZipFile(BytesIO(archive_bytes)) as archive:
             requirements = archive.read("bootstrap-requirements.txt")
+            if windows and "binding.json" in archive.namelist():
+                from apprc.distribution.runtime._windows_version import (
+                    version_resource_file,
+                )
+
+                binding = decode_native_binding(archive.read("binding.json"))
+                version_resource = version_resource_file(binding.version)
         requirements_text = requirements.decode("utf-8")
         requirement_lines = tuple(
             line.strip()
@@ -606,16 +617,22 @@ class NativeFrontendBuilder:
             environment["XWIN_ARCH"] = "x86_64"
             report["settings"] = settings
             report["cargo_target_directory"] = str(target_directory)
-            windows = target == "x86_64-pc-windows-msvc"
             command = [
                 cargo,
                 *(["xwin"] if windows else []),
-                "build",
+                "rustc" if version_resource is not None else "build",
                 "--release",
                 "--locked",
                 "--target",
                 target,
             ]
+            if version_resource is not None:
+                resource_path = inputs / "version.res"
+                with _create_file(resource_path) as output:
+                    output.write(version_resource)
+                command.extend(
+                    ("--bin", "pyapp", "--", "-C", f"link-arg={resource_path}")
+                )
             result = self._run(
                 command,
                 environment=environment,

@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 from dataclasses import replace
@@ -185,6 +186,36 @@ def test_native_artifacts_match_manifest_and_binding(
         assert binding.identity == spec.metadata.identity
         assert binding.source == project.source
         assert binding.selection.extras == ("native-feature",)
+
+
+def test_windows_setup_links_the_bound_application_version(
+    native_product: NativeProduct,
+) -> None:
+    llvm_readobj = shutil.which("llvm-readobj")
+    if llvm_readobj is None:
+        pytest.skip("llvm-readobj is unavailable for PE resource inspection")
+    _, _, _, checksums, spec, _ = native_product
+    setup = (
+        checksums.parent
+        / f"{spec.metadata.identity.app_id}-setup-windows-x86_64.exe"
+    )
+    resources = run(
+        [llvm_readobj, "--coff-resources", str(setup)],
+        environment=authoring_environment(),
+        cwd=setup.parent,
+    ).stdout
+    assert "Type: VERSIONINFO (ID 16)" in resources
+    with ZipFile(setup) as archive:
+        binding = decode_native_binding(archive.read("binding.json"))
+    assert binding.version == "1.0.0"
+    content = setup.read_bytes()
+    assert (
+        struct.pack(
+            "<8I", 0xFEEF04BD, 0x10000, 1 << 16, 400, 1 << 16, 400, 0x3F, 0
+        )
+        in content
+    )
+    assert content.count("1.0.0\0".encode("utf-16le")) >= 2
 
 
 def test_native_managed_command_and_doctor_use_installed_runtime(

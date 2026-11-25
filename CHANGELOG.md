@@ -99,6 +99,10 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Authenticated Bash and PowerShell one-line installers accept `--beta` (`-b`)
+  and `--release-candidate` (`-rc`) to install the latest release in that channel
+  as Preview.
+
 ### 🛠️ Changed
 
 ### 🗑️ Deprecated

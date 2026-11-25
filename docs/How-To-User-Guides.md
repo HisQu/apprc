@@ -1181,9 +1181,25 @@ to choose the workflow that matches your starting point.
 If the publisher provides a **One-line installer (OLI)**, copy the command
 from the app’s trusted installation page. It fetches the app’s OLI script and
 runs it in the current shell. The script finds the platform executable and
-`SHA256SUMS` in the app’s latest published GitHub release, verifies the
+`SHA256SUMS` in the app’s latest stable GitHub release by default, verifies the
 executable, and then starts it. It uses the published assets even when the
 application has newer changes on `main`.
+
+If the publisher uses authenticated installers and publishes Preview-enabled
+setups, pass `--beta` (`-b`) or `--release-candidate` (`-rc`) to choose the
+latest release in that channel. Replace `<PUBLIC_SCRIPT_URL>` with the
+publisher’s Bash or PowerShell script URL.
+
+```bash
+curl -fsSL <PUBLIC_SCRIPT_URL> | bash -s -- --beta
+```
+
+```powershell
+& ([scriptblock]::Create((irm <PUBLIC_SCRIPT_URL>))) --beta
+```
+
+Use `--release-candidate` in the same position for an RC. The verified setup
+installs Preview alongside the regular installation.
 
 **What the One-line installer runs**
 

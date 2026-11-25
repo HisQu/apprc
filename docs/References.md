@@ -37,7 +37,7 @@
 
 | Kind | Term | Meaning |
 | --- | --- | --- |
-| Route | **One-line installer (OLI)** | The application's one-line entry point and its script. The script finds the platform RBE in the latest published release, checks it against `SHA256SUMS`, and runs it. |
+| Route | **One-line installer (OLI)** | The application's one-line entry point and its script. The script finds the platform RBE in the selected release, checks it against `SHA256SUMS`, and runs it. |
 | Route and artifact | **Released Binary Executable (RBE)** | A platform installer executable published as an application release asset. The direct route starts by downloading and verifying this asset. |
 | Route | **Editable Source Checkout (eSC)** | Register the existing checkout and its environment with `app install -e`. The operation is called **editable registration**. |
 | Route | **Source Build (SB)** | Use checkout `app install` to verify or build a local executable, then run it. |
@@ -416,7 +416,7 @@ instructions.
 | Term | Meaning |
 | --- | --- |
 | One-line installer (OLI) command | The terminal command a recipient copies from the application's installation guide. |
-| OLI script | The `.sh` or `.ps1` fetched by that command. The generated header calls it OLIS. It downloads the platform RBE and `SHA256SUMS` from the latest published application release, checks the hash, and starts setup. |
+| OLI script | The `.sh` or `.ps1` fetched by that command. The generated header calls it OLIS. It downloads the platform RBE and `SHA256SUMS` from the selected application release, checks the hash, and starts setup. |
 | OLI template | One of four source templates in `apprc-core` covering public and private release access on Linux and Windows. |
 | Native setup executable | The PyApp binary that performs the release installation. |
 
@@ -425,6 +425,11 @@ instructions.
 | `--olis-repo` / `-o` | GitHub repository in `OWNER/REPO` form that contains the native setup releases. An explicit flag overrides `RELEASE_REPO_OLIS`. |
 | `RELEASE_REPO_OLIS` | Default GitHub release source when the flag is absent. If both are omitted, the build skips OLI generation and warns if existing scripts may be stale. |
 | `RELEASE_PUBLIC` | `true` selects the public templates. `false`, an empty value, or an unset value selects the private templates. Invalid settings warn without failing the native build. |
+
+Authenticated scripts accept `--beta` (`-b`) and `--release-candidate` (`-rc`).
+They select the highest published prerelease with a canonical `vX.Y.ZbN` or
+`vX.Y.ZrcN` tag, respectively, and launch the verified setup in Preview mode.
+Without a channel flag, the installer uses the latest stable release.
 
 The build reads these settings from its authoring environment. A configured
 build produces both `dist/install_from_github.sh` and

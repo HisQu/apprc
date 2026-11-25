@@ -355,3 +355,170 @@ def test_powershell_olis_forwards_options_after_checksum(
         assert marker.read_text().splitlines() == ["--smoke", "a space"]
     else:
         assert not marker.exists()
+
+
+@pytest.mark.skipif(
+    platform.system() != "Linux", reason="Uses local mock executables."
+)
+@pytest.mark.parametrize("shell", ["bash", "pwsh"])
+@pytest.mark.parametrize(
+    ("scenario", "installer_args", "expected_tag", "error"),
+    [
+        ("ok", (), "", ""),
+        ("ok", ("-b",), "v0.24.0b10", ""),
+        ("ok", ("--beta",), "v0.24.0b10", ""),
+        ("ok", ("-rc",), "v0.23.1rc10", ""),
+        ("ok", ("--release-candidate",), "v0.23.1rc10", ""),
+        ("ok", ("--", "--beta"), "", ""),
+        ("empty", ("--beta",), None, "No published prerelease"),
+        ("lookup", ("--beta",), None, "GitHub release lookup failed"),
+        (
+            "ok",
+            ("--regular", "--beta"),
+            None,
+            "cannot be combined with --regular",
+        ),
+        ("ok", ("--beta", "-rc"), None, "Choose one release channel"),
+        ("download", ("--beta",), "v0.24.0b10", ""),
+        ("bad-hash", ("--beta",), "v0.24.0b10", "checksum verification failed"),
+    ],
+)
+def test_private_olis_selects_release_before_downloading(
+    tmp_path: Path,
+    shell: str,
+    scenario: str,
+    installer_args: tuple[str, ...],
+    expected_tag: str | None,
+    error: str,
+) -> None:
+    if not shutil.which(shell):
+        pytest.skip(f"{shell} is needed to exercise the rendered installer.")
+
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    setup_name = (
+        _LINUX_SETUP if shell == "bash" else "fixture-setup-windows-x86_64.exe"
+    )
+    setup = downloads / setup_name
+    setup.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$OLIS_MARKER"\n')
+    setup.chmod(0o755)
+    digest = (
+        "0" * 64
+        if scenario == "bad-hash"
+        else hashlib.sha256(setup.read_bytes()).hexdigest()
+    )
+    (downloads / "SHA256SUMS").write_text(f"{digest}  {setup_name}\n")
+
+    release_rows = tmp_path / "release-rows"
+    release_rows.write_text(
+        "v0.23.1rc10\ttrue\tfalse\nv0.23.1rc99\ttrue\ttrue\n"
+        if scenario == "empty"
+        else (
+            "v0.24.0b2\ttrue\tfalse\n"
+            "v0.24.0b99\ttrue\ttrue\n"
+            "v0.23.1rc10\ttrue\tfalse\n"
+            "v0.24.0b100\tfalse\tfalse\n"
+            "v0.23.1rc2\ttrue\tfalse\n"
+            "v0.24.1b1-extra\ttrue\tfalse\n"
+            "v0.24.0b10\ttrue\tfalse\n"
+            "v0.9.0b99\ttrue\tfalse\n"
+        )
+    )
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    gh = commands / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        'case "$1 $2" in\n'
+        '  "api --paginate")\n'
+        '    [ "$3" = "repos/$OLIS_REPOSITORY/releases?per_page=100" ] || exit 98\n'
+        '    printf "queried\\n" > "$OLIS_QUERY_LOG"\n'
+        '    cat "$OLIS_RELEASE_ROWS"\n'
+        '    [ "$OLIS_SCENARIO" != lookup ] ;;\n'
+        '  "release download")\n'
+        "    shift 2\n"
+        '    printf "%s\\n" "$@" > "$OLIS_DOWNLOAD_LOG"\n'
+        '    [ "$OLIS_SCENARIO" != download ] || exit 42\n'
+        "    for last do :; done\n"
+        '    cp -p "$OLIS_DOWNLOADS/"* "$last/" ;;\n'
+        "  *) exit 99 ;;\n"
+        "esac\n"
+    )
+    gh.chmod(0o755)
+    temporary = tmp_path / "temporary"
+    temporary.mkdir()
+    temporary_link = tmp_path / "temporary-link"
+    temporary_link.symlink_to(temporary, target_is_directory=True)
+    temporary_parent = (
+        temporary_link if installer_args == ("--beta",) else temporary
+    )
+    frontends._write_olis(
+        tmp_path, "fixture", {"RELEASE_REPO_OLIS": _REPOSITORY}
+    )
+    marker, query_log, download_log = (
+        tmp_path / name for name in ("marker", "query-log", "download-log")
+    )
+    args = ["--smoke", "a space", *installer_args]
+    script_input = None
+    if shell == "bash":
+        script = tmp_path / _OUTPUTS[0]
+        script_input = script.read_bytes()
+        command = [shell, "-s", "--", *args]
+    else:
+        script = tmp_path / _OUTPUTS[1]
+        driver = tmp_path / "invoke.ps1"
+        driver.write_text(
+            "try { & ([scriptblock]::Create((Get-Content -Raw $env:OLIS_SCRIPT))) @args }\n"
+            "catch { [Console]::Error.WriteLine($_.Exception.Message) }\n"
+            "exit $LASTEXITCODE\n"
+        )
+        command = [shell, "-NoProfile", "-File", str(driver), *args]
+
+    result = subprocess.run(
+        command,
+        input=script_input,
+        capture_output=True,
+        env={
+            **os.environ,
+            "PATH": f"{commands}{os.pathsep}{os.environ['PATH']}",
+            "TMPDIR": str(temporary_parent),
+            "OS": "Windows_NT",
+            "PROCESSOR_ARCHITECTURE": "AMD64",
+            "OLIS_REPOSITORY": _REPOSITORY,
+            "OLIS_DOWNLOADS": str(downloads),
+            "OLIS_MARKER": str(marker),
+            "OLIS_SCENARIO": scenario,
+            "OLIS_SCRIPT": str(script),
+            "OLIS_RELEASE_ROWS": str(release_rows),
+            "OLIS_QUERY_LOG": str(query_log),
+            "OLIS_DOWNLOAD_LOG": str(download_log),
+        },
+        check=False,
+        timeout=20,
+    )
+    success = scenario == "ok" and expected_tag is not None
+    assert (result.returncode == 0) == success, result.stderr
+    if error:
+        assert error.encode() in result.stderr
+    assert query_log.exists() == (
+        expected_tag not in (None, "") or scenario in {"empty", "lookup"}
+    )
+    assert download_log.exists() == (expected_tag is not None)
+    if expected_tag is not None:
+        downloaded = download_log.read_text().splitlines()
+        assert downloaded[:-1] == [
+            *([expected_tag] if expected_tag else []),
+            "-R",
+            _REPOSITORY,
+            "-p",
+            setup_name,
+            "-p",
+            "SHA256SUMS",
+            "-D",
+        ]
+        assert not Path(downloaded[-1]).exists()
+    assert marker.exists() == success
+    if success:
+        expected_args = ["--preview", *args[:2]] if expected_tag else args
+        assert marker.read_text().splitlines() == expected_args
+    assert not list(temporary.iterdir())

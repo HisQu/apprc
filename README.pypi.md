@@ -480,8 +480,9 @@ uv run --locked yourapp dist build --olis-repo OWNER/REPO
 Private releases use `RELEASE_PUBLIC=false` and require authenticated GitHub
 access. Supply the application's release repository with `--olis-repo` or
 `RELEASE_REPO_OLIS`. The published script selects, downloads, verifies, and
-launches setup from the latest published release. For an analysis tied to a
-specific release, share that release's identified setup. See the
+launches setup from the latest stable release by default. Authenticated scripts
+also accept channel flags for beta and release-candidate installs. For an analysis
+tied to a specific release, share that release's identified setup. See the
 [script generation guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#generate-one-line-install-scripts).
 
 

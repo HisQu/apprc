@@ -64,43 +64,37 @@ across updates, and provide repair and uninstall.
 
 ---
 
-
-<!-- ====================================================================== -->
-<!-- == Reader journeys -->
-
-| Use the SDK | Ship an application | Use an installed application |
-| --- | --- | --- |
-| [Choose your components](#install-the-apprc-sdk), [load settings](#load-settings), and [connect your existing tools](#works-with-your-existing-application). | [Prepare a release](#ship-an-application), [build its installers](#build-a-release-package), and [check its lifecycle](#verify-installation-update-and-removal). | [Install the application](#choose-an-installation-route), [launch it](#run-the-application), and [manage updates and removal](#maintain-the-application). |
-
 <br>
 
 <!-- ====================================================================== -->
 ### Table of Contents
 
 1. [`AppRC`](#apprc)
-2. [Why AppRC?](#why-apprc)
-3. [Installation](#installation)
+   1. [Why AppRC?](#why-apprc)
+2. [Installation](#installation)
    1. [Install the AppRC SDK](#install-the-apprc-sdk)
    2. [Install from a Cloned Repository](#install-from-a-cloned-repository)
    3. [Uninstall](#uninstall)
-4. [Usage](#usage)
+3. [Usage](#usage)
    1. [Load settings](#load-settings)
    2. [Choose application paths](#choose-application-paths)
    3. [Save user settings](#save-user-settings)
    4. [Add terminal commands](#add-terminal-commands)
    5. [Add a Gradio settings page](#add-a-gradio-settings-page)
    6. [Works with your existing application](#works-with-your-existing-application)
-5. [Ship an application](#ship-an-application)
+4. [Ship an application](#ship-an-application)
    1. [Build a release package](#build-a-release-package)
    2. [Verify installation, update, and removal](#verify-installation-update-and-removal)
    3. [Publish one-line install scripts](#publish-one-line-install-scripts)
-6. [Use an installed application](#use-an-installed-application)
+5. [Use an installed application](#use-an-installed-application)
    1. [Choose an installation route](#choose-an-installation-route)
    2. [Run the application](#run-the-application)
    3. [Maintain the application](#maintain-the-application)
    4. [Try a preview beside the regular application](#try-a-preview-beside-the-regular-application)
    5. [Review removal and keep configuration](#review-removal-and-keep-configuration)
-7. [Documentation](#documentation)
+6. [Documentation](#documentation)
+
+<br>
 
 ---
 
@@ -108,22 +102,56 @@ across updates, and provide repair and uninstall.
 <!-- ====================================================================== -->
 <br>
 
-# Why AppRC?
 
-[Pydantic Settings], [`typed-settings`], [uv], and [PyApp] provide useful
-foundations for configuration, dependency management, and executable delivery.
-AppRC links those tools through one application declaration that supplies
-settings, resource locations, and installation identity.
+## Why AppRC?
 
-| Define once | Reuse across the application |
-| --- | --- |
-| [Settings and field metadata](docs/Explanations.md#config-sections-and-fields) | Typed application values, validation, help, settings editors, and source diagnostics. |
-| [Application resources](docs/Explanations.md#application-paths) | Known configuration, appdata, cache, and state locations with explicit ownership. |
-| [Installation identity and placement](docs/Explanations.md#installation) | Installed commands, runtime replacement, inspection, and removal. |
+*Turn your **prototypes** and **production code** into a cross-platform app!*
 
-Your application keeps its business logic, data models, and interface. AppRC
-provides the configuration and lifecycle operations around them, with explicit
-[hooks for application-specific behavior](docs/References.md#application-hooks-and-command-dispatch).
+Even with **coding agents**, the surrounding
+infrastructure needs to be designed, tested and maintained.
+AppRC's CLI and extensive [*documentation*](docs/) give both
+you and your agents a common foundation for application
+**lifecycle** management across **all** your projects.
+
+<br>
+
+### For Your Users 👤
+
+Don't lie to your users:
+
+> **"Installation is easy..! You already have Python and Git, right?"**
+
+**It should "just work":**
+- ***Install*** Python applications like you're used to (`setup.exe`).
+- ***Launch*** applications like you're used to (desktop shortcut).
+- ***Configure*** settings through a UI instead of editing configuration files.
+- ***Update*** applications without repeating the initial setup.
+- ***Uninstall*** applications like you're used to: Start menu, desktop shortcut or `Add/Remove Programs`.
+
+### For Researchers 🔬
+
+> "You shouldn't need a coding agent to try 32 different workflows!"
+
+Share your code as **installable applications**, without asking
+your colleagues to use a terminal or set up software beforehand.
+AppRC packages fixed software releases with locked dependencies,
+helping make installations ***reproducible*** even years after publication.
+
+### For Developers 💻
+
+> The prototype took an afternoon. Getting it to run on someone else's machine took the rest of the week.
+
+AppRC gives you a **single settings definition** that serves your Python
+code, GUI, TUI and CLI. **Environment variables** make sharing
+settings across languages and runtimes easy.
+
+AppRC is **modular**. Its features are optional and designed to
+complement tools like Pydantic, Typer, Gradio and uv. Its
+environment-based configuration also works with TypeScript
+applications running on Node.js, Bun or Deno, shell scripts and
+Docker containers.
+
+
 
 <!-- ====================================================================== -->
 <br>

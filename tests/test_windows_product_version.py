@@ -16,6 +16,7 @@ from apprc.distribution.runtime._windows_version import (
     _version_resource,
     numeric_product_version,
     package_version_from_windows_number,
+    version_resource_file,
     versioned_executable,
 )
 
@@ -28,6 +29,7 @@ from apprc.distribution.runtime._windows_version import (
         ("0.23.1b1", (0, 23, 1, 201)),
         ("0.23.1b2", (0, 23, 1, 202)),
         ("0.23.1rc1", (0, 23, 1, 301)),
+        ("0.23.1rc2", (0, 23, 1, 302)),
         ("0.23.1", (0, 23, 1, 400)),
         ("0.23.1.post1", (0, 23, 1, 501)),
         ("0.23.1.7", (0, 23, 1, 7)),
@@ -127,6 +129,34 @@ def test_version_resource_has_fixed_and_text_versions() -> None:
     for text in ("040904b0", "FileVersion", "ProductVersion", "Translation"):
         assert (text + "\0").encode("utf-16le") in resource
     assert resource.count("0.23.1b1\0".encode("utf-16le")) == 2
+
+
+def test_setup_resource_file_encodes_the_rc_version() -> None:
+    resource = version_resource_file("0.23.1rc2")
+    assert resource is not None
+    assert struct.unpack_from("<IIHHHH", resource) == (
+        0,
+        32,
+        0xFFFF,
+        0,
+        0xFFFF,
+        0,
+    )
+    size, header, type_ordinal, kind, name_ordinal, name = struct.unpack_from(
+        "<IIHHHH", resource, 32
+    )
+    assert (header, type_ordinal, kind, name_ordinal, name) == (
+        32,
+        0xFFFF,
+        16,
+        0xFFFF,
+        1,
+    )
+    assert resource[64 : 64 + size] == _version_resource(
+        23, (1 << 16) | 302, "0.23.1rc2", 2
+    )
+    assert len(resource) % 4 == 0
+    assert version_resource_file("0.23.1rc2.dev1") is None
 
 
 @pytest.mark.parametrize("has_existing_version", [False, True])

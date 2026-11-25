@@ -403,6 +403,8 @@ This is an explicit value handoff. AppRC's registered settings classes remain
 The distribution workflow packages a committed project snapshot and `uv.lock`
 into a native setup executable. After verifying that executable, the recipient
 runs it to prepare the locked runtime and publish the application command.
+Windows setup executables carry the application version in their file metadata,
+which the managed command inherits.
 
 ```mermaid
 flowchart LR

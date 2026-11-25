@@ -176,6 +176,44 @@ def _version_resource(ms: int, ls: int, version: str, flags: int) -> bytes:
     )
 
 
+def _fixed_version_fields(
+    projection: tuple[_VersionNumbers, bool],
+) -> tuple[int, int, int]:
+    """Pack the projected number and prerelease flag for the resource."""
+    (major, minor, patch, revision), prerelease = projection
+    return (
+        major << 16 | minor,
+        patch << 16 | revision,
+        _PRERELEASE if prerelease else 0,
+    )
+
+
+def version_resource_file(version: str) -> bytes | None:
+    """Encode a linker input for a supported Windows executable version."""
+    projection = _project_version(version)
+    if projection is None:
+        return None
+    ms, ls, flags = _fixed_version_fields(projection)
+    data = _version_resource(ms, ls, version, flags)
+    # > The Win32 .res format starts with an empty ordinal resource.
+    header = struct.Struct("<IIHHHHIHHII")
+    marker = header.pack(0, header.size, 0xFFFF, 0, 0xFFFF, 0, 0, 0, 0, 0, 0)
+    entry = header.pack(
+        len(data),
+        header.size,
+        0xFFFF,
+        _VERSION_TYPE,
+        0xFFFF,
+        _VERSION_NAME,
+        0,
+        0,
+        _NEUTRAL_LANGUAGE,
+        0,
+        0,
+    )
+    return marker + entry + data + b"\0" * (-len(data) % 4)
+
+
 def _replace_version_resource(path: Path, resource: bytes) -> None:
     """Replace version entries from the setup or launcher while retaining other resources."""
     import win32api
@@ -262,11 +300,9 @@ def versioned_executable(content: bytes, version: str) -> bytes:
         if end > len(content):
             raise ValueError("invalid executable section bounds")
         overlay = content[end:]
-        (major, minor, patch, revision), prerelease = projection
         import win32api
 
-        ms, ls = major << 16 | minor, patch << 16 | revision
-        flags = _PRERELEASE if prerelease else 0
+        ms, ls, flags = _fixed_version_fields(projection)
         resource = _version_resource(ms, ls, version, flags)
 
         with tempfile.TemporaryDirectory(prefix="apprc-version-") as staging:

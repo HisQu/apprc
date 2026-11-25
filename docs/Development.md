@@ -648,8 +648,11 @@ from a Windows session. macOS support remains deferred.
 
 ### AppRC executable version convention
 
-AppRC stamps the installed Windows launchers with the hosted application's
-validated distribution version during installation and replacement. Numeric
+Windows Release-Built Executables (RBEs) embed the application's validated
+distribution version when they are linked. Managed launchers inherit the
+resource from the setup executable. AppRC also stamps the published launcher
+during installation and replacement, including when an older setup has no
+version resource. Numeric
 `FILEVERSION` and `PRODUCTVERSION` use
 `major.minor.patch.(stage × 100 + serial)`. Missing minor and patch components
 are zero. The stages are dev (0), alpha (1), beta (2), RC (3), final (4), and
@@ -685,7 +688,9 @@ default. A Windows PE build or an automated registry test is not native
 execution evidence.
 
 Check the executable selected from PATH and compare its numeric and text
-versions with the application and uninstall entry. For PersoDB `0.23.1b1`,
+versions with the application and uninstall entry. Use the command for the
+installation you tested. For example, use `pdb-preview` if the setup selected
+PersoDB Preview. For a regular PersoDB installation of `0.23.1b1`,
 expect `0.23.1.201` from PowerShell, `0.23.1b1` in all three text metadata
 fields and CLI output, and `IsPreRelease` equal to `True`.
 

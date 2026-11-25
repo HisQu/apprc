@@ -107,6 +107,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### 🐛 Fixed
 
+- Embed the application version in Windows setup executables at build time so
+  managed launchers retain it if install-time stamping fails.
+
 ### 🔒 Security
 
 <br>

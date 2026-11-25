@@ -16,10 +16,8 @@ def _package_files(directory: Path, version: str) -> None:
             (directory / f"{name}-{version}{suffix}").write_bytes(name.encode())
 
 
-@pytest.mark.parametrize(("suffix", "expired"), [("b", [3, 2, 1]), ("rc", [1])])
-def test_retention_leaves_other_channels_and_tags_alone(
-    suffix: str, expired: list[int]
-) -> None:
+@pytest.mark.parametrize("suffix", ["b", "rc"])
+def test_retention_leaves_other_channels_and_tags_alone(suffix: str) -> None:
     def release(
         number: int, tag: str, *, draft: bool = False, preview: bool = True
     ) -> dict[str, object]:
@@ -34,7 +32,7 @@ def test_retention_leaves_other_channels_and_tags_alone(
     other = "rc" if suffix == "b" else "b"
     releases = [
         release(4, f"v1.0.0{suffix}1"),
-        release(3, f"v1.0.0{suffix}4"),
+        release(3, f"v0.9.0{suffix}1"),
         release(2, f"v1.0.0{suffix}2"),
         release(1, f"v1.0.0{suffix}3"),
         release(7, f"v1.0.0{suffix}5", draft=True),
@@ -43,7 +41,7 @@ def test_retention_leaves_other_channels_and_tags_alone(
         release(10, "testing"),
         release(11, f"v1.0.0{other}1"),
     ]
-    assert assets.expired_releases(releases, f"v1.0.0{suffix}1") == expired
+    assert assets.expired_releases(releases, f"v1.0.0{suffix}1") == [3, 2, 1]
     assert assets.expired_releases(releases, "v1.0.0") == []
 
 

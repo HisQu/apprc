@@ -36,6 +36,7 @@
 > 1) When GitHub Actions is unavailable, apply the required workflow labels through `gh` or the GitHub API.
 > 1) Keep the existing **Types**, **Priorities**, and **Effort** definitions below. Do not create type, priority, or effort labels from those report values.
 > 1) If an issue is fully resolved, use a closing reference such as `Closes #123` in the pull request to `main` and remove the completed backlog entry in the same change. Add a `CHANGELOG.md` entry only when the change has a notable user- or contributor-facing effect. For a partial fix, use an ordinary reference such as `Refs #123` and keep the unresolved issue and backlog scope open.
+> 1) Schedule a reopened issue only after a fresh scheduling decision in `BACKLOG.md`.
 > 1) Every agent maintains the issue, backlog, TODO, and changelog records related to its work. Reconcile them while discovering, organizing, working, deferring, and completing work.
 > 1) Record any pending GitHub write, its source evidence, and its current outcome in the active `TODO.md`. Before retiring the TODO, transfer unfinished GitHub operations through the existing unfinished-work handoff. If a GitHub write fails, keep a local pending-publication record with the evidence and report the synchronization as unfinished. Do not claim that it succeeded or discard the only copy of the finding.
 > 1) **Types:**
@@ -62,22 +63,22 @@
 > # Planned Pass: <pass name>
 >
 > ## <Priority> / <Effort> [<Type>] - *Short problem title*
+> - **Issue:** complete GitHub issue URL
 > - **Area:** `path/or/symbol`
 > - **Observed while:** short context
 > - **Why not fixed now:** scope, risk, uncertainty, or user decision needed
 > - **Evidence:** concrete observation
 > - **Context:** explanation to ensure the problem is understood in the big-picture of the repo.
 > - **Suggested next step:** smallest reasonable follow-up. Reference related issues as complete URLs.
-> - **Issue:** complete GitHub issue URL
 > 
 > <br>
 > 
 > # Deferred
 >
 > ## <Priority> / <Effort> [<Type>] - *Short problem title*
+> - **Issue:** complete GitHub issue URL
 > - **Area:** `path/or/symbol`
 > - ...
-> - **Issue:** complete GitHub issue URL
 > ```
 
 

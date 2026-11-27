@@ -88,6 +88,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 ### ✨ Added
 
+- Add issue and contribution guidance for the ordered backlog and changelog,
+  including the issue template and acceptance workflow.
+
 - Authenticated Bash and PowerShell one-line installers accept `--beta` (`-b`)
   and `--release-candidate` (`-rc`) to install the latest release in that channel
   as Preview.

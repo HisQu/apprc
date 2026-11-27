@@ -1,0 +1,19 @@
+name: Accept focused issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  accept:
+    if: github.event.issue.user.login == 'markur4'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Add accepted label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh api --method POST "repos/$GH_REPO/issues/$ISSUE_NUMBER/labels" -f 'labels[]=accepted'

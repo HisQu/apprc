@@ -2,6 +2,8 @@
 
 ## Repo routing
 - Warn me if the paths below appear outdated.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before repository work and follow its links to the relevant [Development](docs/Development.md) procedures.
+- GitHub Issues keep durable work and its details, `BACKLOG.md` orders planned Passes, `TODO.md` beside `PLAN.md` holds the active Pass's checklist, and `CHANGELOG.md` records notable delivered changes. `CONTRIBUTING.md` owns the shared rules for maintaining these records.
 - Reuse existing helpers and utilities before adding new helper functions.
 - Before changing CLI composition, facades, or help, follow [lightweight CLI startup](docs/Development.md#lightweight-cli-startup). Check transitive parent-package imports; declarations must not load editors, prompt engines, or host business implementations. Verify with a fresh-process help test before publishing.
 - For an app that opts into a no-argument launch, follow the [application-owned default action](docs/Development.md#choose-a-default-action-for-an-installed-command) convention.
@@ -10,7 +12,7 @@
 - Check these modules first:
   - `apprc.utils`
 - If a helper is broadly reusable, place it in the appropriate shared module.
-- Read `BACKLOG.md` before starting, assess related issues, and fix those that belong in your pass.
+- Read `BACKLOG.md` and linked issues before starting, assess related work, and follow the current execution order while allowing independent Tasks within an authorized Pass to continue.
 - An active pass's `TODO.md` checklist belongs beside its `PLAN.md`, not in the durable backlog.
 
 ## Project rules
@@ -22,9 +24,10 @@
 - AppRC production code must use stdlib `logging`; semantic logging helpers
   live outside this repository.
 - For facade `__init__.py` files, prefer clean batch re-export imports plus file-level `# ruff: noqa: F401`; do not use redundant `symbol as symbol` aliases solely to satisfy Ruff.
-- Update `README.md`, docs, and changelogs when a change affects usage,
+- Update `README.md` and docs when a change affects usage,
   setup, CLI behavior, public APIs, environment variables, user-visible
-  workflows, or release-relevant behavior.
+  workflows, or release-relevant behavior. Follow the changelog rules in
+  [CONTRIBUTING.md](CONTRIBUTING.md#changelog) for notable delivered changes.
 - Add minimal `__main__` demo code only when it improves discoverability or manual testing.
 - If a test needs a lighter setup, add or reuse a dedicated test helper instead of widening production code to `Any`.
 - If a boundary is truly dynamic, model that boundary explicitly; do not probe strict domain objects defensively.

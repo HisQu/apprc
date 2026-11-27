@@ -642,6 +642,7 @@ defines the retention choices, ownership checks, and explicit repository removal
 
 ### Contributing and maintaining
 
+- [Contributing](https://github.com/HisQu/apprc/blob/main/CONTRIBUTING.md): Quick start and shared issue, backlog, and changelog rules.
 - [Development](https://github.com/HisQu/apprc/blob/main/docs/Development.md): Change, verify, build, and release AppRC.
 - [Documentation checks](https://github.com/HisQu/apprc/blob/main/docs/Development.md#documentation-checks) and [README maintenance](https://github.com/HisQu/apprc/blob/main/docs/Development.md#readme-maintenance): Preserve the documentation contracts and Buildben presentation.
 - [Changelog](https://github.com/HisQu/apprc/blob/main/CHANGELOG.md): Release history and migration requirements.

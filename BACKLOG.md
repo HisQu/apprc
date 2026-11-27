@@ -1,67 +1,10 @@
 # Backlog
 
-Treat this as the parking lot for actionable problems discovered while working but intentionally left unresolved.
+Treat this as the concise organization of issue-backed planned Passes in their current execution order.
+See [Contributing](CONTRIBUTING.md#issues-and-backlog) for issue and backlog rules and formats.
 
 
 <br>
-
-> [!CAUTION]
-> This is git-tracked: Never record secrets, absolute paths, credentials, private host data, or speculative security claims. Use only relative paths. 
-
-
-> [!IMPORTANT]
-> 
-> ## Rules
-> 1) Do not remove or change this header and TOC without very good reason. 
-> 1) Newest at the top.
-> 1) Append a new entry only when the observation is real, actionable, not already listed, and out of scope for the current change. Do not modify `BACKLOG.md` when there is nothing useful to add.
-> 1) If an issue is new and related to another issue, reference it in the `Suggested next step`. Do not create a new entry for the same problem. Place the reference in both entries (bi-directional).
-> 1) If an issue was resolved, remove it. Add a CHANGELOG.md entry only when the change has a notable user- or contributor-facing effect.
-> 1) **Types:**
->       - **Bug risk**: Potential defect with concrete evidence, not yet confirmed.
->       - **Code smell**: Implementation, architectural, maintainability or clarity issue that is not currently a defect.
->       - **Docs drift**: Documentation is stale, incomplete, or inconsistent.
->       - **Tooling**: Issue with build, test, lint, type-check, and general slowdown of developer workflow.
->       - **Security**: Evidence-backed security risk. Use Question for uncertainty.
->       - **Question**: Design, behavior, or ownership uncertainty needing investigation & maybe decision.
-> 
-> 1) **Priorities:**
->       - **P1**: Should be handled ASAP.
->       - **P2**: Should be handled before next release or milestone.
->       - **P3**: Useful cleanup for a later focused pass.
-> 1) **Effort:**
->       - **E1**: Issue deserves its own focused pass.
->       - **E2**: Can be batched with a few other issues.
->       - **E3**: Can be batched with many other issues.
-> 1) **Format:**
-> ```markdown
-> 
-> <br>
-> 
-> # YYYY-MM-DD 
->
-> ## <Priority> / <Effort> [<Type>] - *Short problem title*
-> - **Area:**  `path/or/symbol`
-> - **Observed while:** short context
-> - **Why not fixed now:** scope, risk, uncertainty, or user decision needed
-> - **Evidence:** concrete observation
-> - **Context:** explanation to ensure the problem is understood in the big-picture of the repo.
-> - **Suggested next step:** smallest reasonable follow-up. If applicable, reference related backlog items [here](#backlog).
-> 
-> ## <Priority> / <Effort> [<Type>] - *Short problem title*
-> - **Area:** `path/or/symbol`
-> - ...
-> 
-> <br>
-> 
-> # YYYY-MM-DD
->
-> ## <Priority> / <Effort> [<Type>] - *Short problem title*
-> - **Area:** `path/or/symbol`
-> - ...
-> ```
-
-
 
 <br>
 
@@ -73,32 +16,28 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-09](#2026-11-09)
+2. [Deferred](#deferred)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
-
 
 <br>
 
-# 2026-11-09
+---
+
+<br>
+
+# Deferred
 
 <a id="p2--e1-tooling---windows-and-macos-installation-ci-fails"></a>
 
 ## P3 / E1 [Tooling] - *Windows and macOS installation validation is deferred*
+- **Issue:** https://github.com/HisQu/apprc/issues/49
 - **Area:** `src/apprc/distribution/runtime`, `src/apprc/user_files/app_home/locations.py`, `src/apprc/interfaces/tui`, and their native tests.
-- **Observed while:** Inspecting automatic [push CI run 42605623620](https://github.com/HisQu/apprc/actions/runs/42605623620) for `661738`.
-- **Why not fixed now:** Explicitly deferred by the user. Keep CI Linux-only; native remediation is not a prerequisite for Linux releases or the current maintainability work.
-- **Evidence:** Windows core/GUI and macOS core jobs failed while Ubuntu core Python 3.12/3.13/3.14 and Ubuntu GUI passed. Representative failures include Windows private staging ACL rejection, missing `ntsecuritycon` in standalone execution, macOS temporary-address link rejection, and native secret persistence/editor workflows.
-- **Context:** The installation-rollback pass identified missing ACL application on operation-created bridge/project temporary directories and corrected those creation paths. Native Windows execution is still needed to establish that correction on Windows. The other historical native failures remain unresolved; disabling their jobs did not fix them or establish compatibility. Their causes have not yet been separated into production defects, fixture/platform assumptions, interpreter prerequisites, newline expectations, or shell setup. Permission rejection alone is not evidence of a security vulnerability.
-- **Managed setup follow-up:** The PersoDB Windows setup traceback confirmed
-  that creating a runtime source directory before the materializer skipped the
-  private ACL helper. The materializer now owns directory creation, with a
-  regression covering fresh extraction and rebuild. Native Windows verification
-  of the rebuilt installer remains manual and deferred.
-- **Suggested next step:** Leave the native jobs disabled while this work is deferred. When suitable environments are available, validate native Windows install and uninstall, ACLs, shortcuts, and standalone dependencies first. Then investigate the recorded macOS path, interpreter, and secret/UI failures. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
+- **Observed while:** Reviewing native failures in CI run 42605623620.
+- **Why not fixed now:** Explicitly deferred. Keep CI Linux-only.
+- **Evidence:** Linux passed while Windows and macOS jobs exposed native installer, dependencies and UI failures.
+- **Context:** The Windows ACL correction still needs native verification. [AppRC #31](https://github.com/HisQu/apprc/issues/31) covers related shortcut evidence.
+- **Suggested next step:** Run the documented native checks when suitable environments are available, including shortcut and executable version verification.
 
 <a id="p3--e3-bug-risk---verify-managed-desktop-shortcuts-on-windows"></a>
 
-- **Desktop shortcut verification (Windows):** The automated test uses a stand-in for Windows Script Host. Verify shortcut creation, launch, and removal for managed and editable installs on native Windows. Check the icon in Windows Installed apps and the classic-console uninstall window.
-- **Executable version verification (Windows):** Check the actual PowerShell command, numeric and textual versions, prerelease flag, and uninstall entry on a fresh PersoDB installation and after an update replaces its launcher. [Windows verification](docs/Development.md#verify-on-windows)
-
-<br>
+See [AppRC #31](https://github.com/HisQu/apprc/issues/31) for the related Windows shortcut investigation.

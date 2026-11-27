@@ -1,6 +1,8 @@
 # Development
 
-[Documentation](README.md) · [Explanations](Explanations.md) · [How-to user guides](How-To-User-Guides.md) · [References](References.md) · [Examples](EXAMPLES.md)
+[Contributing](../CONTRIBUTING.md) · [Documentation](README.md) · [Explanations](Explanations.md) · [How-to user guides](How-To-User-Guides.md) · [References](References.md) · [Examples](EXAMPLES.md)
+
+Use [CONTRIBUTING.md](../CONTRIBUTING.md) for shared repository rules and its quick start. This guide covers detailed technical procedures.
 
 - [Work in the repository](#work-in-the-repository)
   - [Environment](#environment)
@@ -868,18 +870,12 @@ When false, run and pass the full local test suite before merge or release and
 report hosted CI status separately. When true, exact-commit hosted CI must pass.
 This setting is independent of `RELEASE_PYPI`.
 
-Keep one cumulative changelog section per target version. Start it as
-`## [0.40.0] - YYYY-MM-DD (b1)` for package version `0.40.0b1`. Update the same
-heading, date, and entries for another beta or for `rc1`, then remove the stage
-marker for stable `0.40.0`. Use one beta and one release candidate by default.
+Follow [CONTRIBUTING.md's Changelog section](../CONTRIBUTING.md#changelog) when
+editing changelog entries. AppRC supports beta and release-candidate package
+versions such as `0.40.0b1`; use one beta and one release candidate by default.
 Use `b2` or `rc2` when a fix needs another public test. Each tagged build's
 GitHub notes capture the changes that ship since the previous stable release,
 including changes from earlier previews that are still present.
-
-Keep the six categories under `[Unreleased]` empty at release time. Add a
-table-of-contents entry when an `X.Y.0` version becomes stable. Link the
-cumulative section to the comparison from the previous stable tag to the
-current tagged build.
 
 `just publish-check` rehearses the Python 3.12 tests, metadata validation,
 local package builds, and clean installs without pushing or uploading.

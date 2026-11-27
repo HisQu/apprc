@@ -685,6 +685,7 @@ defines the retention choices, ownership checks, and explicit repository removal
 
 ### Contributing and maintaining
 
+- [Contributing](CONTRIBUTING.md): Quick start and shared issue, backlog, and changelog rules.
 - [Development](docs/Development.md): Change, verify, build, and release AppRC.
 - [Documentation checks](docs/Development.md#documentation-checks) and [README maintenance](docs/Development.md#readme-maintenance): Preserve the documentation contracts and Buildben presentation.
 - [Changelog](CHANGELOG.md): Release history and migration requirements.
